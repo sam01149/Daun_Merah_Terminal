@@ -11,12 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-05 (Session 383 — Kalibrasi ulang label Risk-Off)
+> **Last updated:** 2026-10-18 (Session 384 — Migrasi Sumber COT ke CFTC Socrata Open Data API)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 384 (2026-10-18) — Migrasi Sumber COT ke CFTC Socrata Open Data API
+
+**Diagnosis dan akar masalah.** Panel *COT Positioning* di UI aplikasi menampilkan "COT data tidak tersedia saat ini." dan macet pada status "Memuat...". Investigasi jaringan menemukan bahwa endpoint scraping HTML lama CFTC (`https://www.cftc.gov/dea/options/financial_lof.htm`) diblokir oleh proteksi bot Cloudflare Turnstile/WAF dengan HTTP 403 Challenge ("Just a moment..."). Hal ini menyebabkan `cotHandler` (`api/feeds.js`) selalu gagal fetch, memicu circuit breaker kegagalan, dan saat cache Redis kosong/kadaluarsa mengembalikan HTTP 502 Bad Gateway.
+
+**Perbaikan dan arsitektur data.** `cotHandler` dimigrasi untuk memakai **CFTC Socrata Open Data API** (`https://publicreporting.cftc.gov/resource/yw9f-hn96.json`) sebagai sumber data primer. Endpoint ini adalah API data resmi publik yang disediakan CFTC (dataset Traders in Financial Futures — Combined), terstruktur dalam JSON, dan bebas dari blokir anti-bot Turnstile:
+1. Helper murni `_parseCotSocrataRows(rows)` dan `_formatCotDates(isoString)` mengekstrak posisi mingguan terbaru untuk 8 mata uang utama (USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF) lengkap dengan Leveraged Funds (net, long, short, change), Asset Manager (net, long, short, change), Open Interest (OI), dan % of OI.
+2. Jika Socrata berhasil, data dikembalikan dan dicache di Redis `cot_cache_v2` (TTL 48 jam) serta diakumulasi ke `cot_history`.
+3. Fallback bertingkat: jika Socrata terkendala, handler mencoba parser HTML legacy `_parseCotHtmlText`, dan bila keduanya gagal tetap menyajikan cache lama (*stale*).
+4. Penanganan persentil 3 tahun: jika persentil belum tersedia di Redis pada cold start, sistem langsung menginisialisasi sinkronisasi sehingga respons pertama sudah membawa data persentil P## untuk visualisasi ekstremitas.
+
+**Verifikasi.** Dibuat unit test suite `test/feeds/cot_socrata.test.js` (4/4 test lulus) memvalidasi formatting tanggal UTC serta parsing baris Socrata terhadap 8 mata uang. Seluruh test feed `test/feeds/**/*.test.js` lulus 56/56 (100% hijau). Verifikasi live runtime membuktikan respons status 200 dengan 8 mata uang dan persentil 3 tahun lengkap per 13 Oktober 2026 (rilis 16 Oktober 2026).
 
 ## Changelog Session 383 (2026-10-05) — Kalibrasi ulang label Risk-Off
 

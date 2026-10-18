@@ -431,59 +431,122 @@ const COT_CACHE_TTL = 6 * 60 * 60 * 1000; // ambang KESEGARAN (kapan fetch CFTC 
 // umur laporan ("laporan N hari lalu") sehingga AI tetap tahu tingkat kebasiannya.
 const COT_KEY_TTL_SEC = 48 * 60 * 60;
 
-const MARKET_MARKERS = {
-  USD: ['u.s. dollar index', 'dollar index'],
-  EUR: ['euro fx'],
-  GBP: ['british pound'],
-  JPY: ['japanese yen'],
-  CAD: ['canadian dollar'],
-  AUD: ['australian dollar'],
-  NZD: ['new zealand dollar', 'nz dollar'],
-  CHF: ['swiss franc'],
+const COT_SOCRATA_MARKETS = {
+  USD: ['USD INDEX', 'U.S. DOLLAR INDEX - ICE FUTURES U.S.'],
+  EUR: ['EURO FX'],
+  GBP: ['BRITISH POUND', 'BRITISH POUND STERLING'],
+  JPY: ['JAPANESE YEN'],
+  CAD: ['CANADIAN DOLLAR'],
+  AUD: ['AUSTRALIAN DOLLAR'],
+  NZD: ['NZ DOLLAR', 'NEW ZEALAND DOLLAR'],
+  CHF: ['SWISS FRANC'],
 };
 
-async function cotHandler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'no-cache');
+function _formatCotDates(isoString) {
+  if (!isoString) return { reportDate: null, releaseDate: null };
+  const dateStr = String(isoString).slice(0, 10);
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return { reportDate: null, releaseDate: null };
+  const dObj = new Date(Date.UTC(y, m - 1, d));
+  const friObj = new Date(Date.UTC(y, m - 1, d + 3));
+  const reportDate = dObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  const releaseDate = friObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  return { reportDate, releaseDate };
+}
 
-  try {
-    const cached = await redisCmd('GET', 'cot_cache_v2');
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Date.now() - new Date(parsed.fetched_at).getTime() < COT_CACHE_TTL) {
-        return res.status(200).json(parsed);
-      }
-    }
-  } catch(e) {}
+function _parseCotSocrataRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
 
-  let preText = '';
-  try {
-    if (!await cbk.canCall('cftc')) throw new Error('CIRCUIT_OPEN');
-    const r = await fetch(CFTC_URL, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' },
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const html = await r.text();
-    const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
-    if (!preMatch) throw new Error('No <pre> block in CFTC response');
-    preText = preMatch[1]
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>');
-    cbk.onSuccess('cftc').catch(() => {});
-  } catch(e) {
-    if (e.message !== 'CIRCUIT_OPEN') cbk.onFailure('cftc').catch(() => {});
-    console.error('CFTC fetch failed:', e.message);
-    try {
-      const stale = await redisCmd('GET', 'cot_cache_v2');
-      if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true });
-    } catch(e2) {}
-    return res.status(502).json({ error: 'CFTC unavailable: ' + e.message });
+  const nameToCur = {};
+  for (const [cur, names] of Object.entries(COT_SOCRATA_MARKETS)) {
+    for (const n of names) nameToCur[n] = cur;
   }
 
+  let latestDateIso = null;
+  for (const row of rows) {
+    if (row.report_date_as_yyyy_mm_dd && (!latestDateIso || row.report_date_as_yyyy_mm_dd > latestDateIso)) {
+      latestDateIso = row.report_date_as_yyyy_mm_dd;
+    }
+  }
+  if (!latestDateIso) return null;
+
+  const positions = {};
+  for (const row of rows) {
+    if (row.report_date_as_yyyy_mm_dd !== latestDateIso) continue;
+    const cur = nameToCur[row.contract_market_name];
+    if (!cur || positions[cur]) continue;
+
+    const amLong = parseInt(row.asset_mgr_positions_long);
+    const amShort = parseInt(row.asset_mgr_positions_short);
+    const amNet = amLong - amShort;
+    const levLong = parseInt(row.lev_money_positions_long);
+    const levShort = parseInt(row.lev_money_positions_short);
+    const levNet = levLong - levShort;
+
+    const amChgLong = parseInt(row.change_in_asset_mgr_long);
+    const amChgShort = parseInt(row.change_in_asset_mgr_short);
+    const amChangeNet = (!isNaN(amChgLong) && !isNaN(amChgShort)) ? (amChgLong - amChgShort) : null;
+
+    const levChgLong = parseInt(row.change_in_lev_money_long);
+    const levChgShort = parseInt(row.change_in_lev_money_short);
+    const levChangeNet = (!isNaN(levChgLong) && !isNaN(levChgShort)) ? (levChgLong - levChgShort) : null;
+
+    const oi = row.open_interest_all ? parseInt(row.open_interest_all) : null;
+
+    const amNetPctOi = (row.pct_of_oi_asset_mgr_long != null && row.pct_of_oi_asset_mgr_short != null)
+      ? +(parseFloat(row.pct_of_oi_asset_mgr_long) - parseFloat(row.pct_of_oi_asset_mgr_short)).toFixed(1)
+      : null;
+
+    const levNetPctOi = (row.pct_of_oi_lev_money_long != null && row.pct_of_oi_lev_money_short != null)
+      ? +(parseFloat(row.pct_of_oi_lev_money_long) - parseFloat(row.pct_of_oi_lev_money_short)).toFixed(1)
+      : null;
+
+    positions[cur] = {
+      am_long: amLong,
+      am_short: amShort,
+      am_net: amNet,
+      am_change_net: amChangeNet,
+      lev_long: levLong,
+      lev_short: levShort,
+      lev_net: levNet,
+      lev_change_net: levChangeNet,
+      ...(oi != null ? { oi } : {}),
+      ...(amNetPctOi != null ? { am_net_pct_oi: amNetPctOi } : {}),
+      ...(levNetPctOi != null ? { lev_net_pct_oi: levNetPctOi } : {}),
+    };
+  }
+
+  const { reportDate, releaseDate } = _formatCotDates(latestDateIso);
+
+  return {
+    positions,
+    reportDate,
+    releaseDate,
+    latestDateIso
+  };
+}
+
+async function _fetchCotFromSocrata() {
+  const allNames = Object.values(COT_SOCRATA_MARKETS).flat();
+  const inList = allNames.map(n => `'${n.replace(/'/g, "''")}'`).join(',');
+  const params = new URLSearchParams({
+    '$where': `contract_market_name in(${inList})`,
+    '$order': 'report_date_as_yyyy_mm_dd DESC',
+    '$limit': '40',
+  });
+  const r = await fetch(`https://publicreporting.cftc.gov/resource/yw9f-hn96.json?${params}`, {
+    headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!r.ok) throw new Error(`CFTC Socrata HTTP ${r.status}`);
+  const rows = await r.json();
+  if (!Array.isArray(rows) || rows.length < 8) throw new Error('CFTC Socrata returned insufficient rows');
+  const parsed = _parseCotSocrataRows(rows);
+  if (!parsed || Object.keys(parsed.positions).length < 5) throw new Error('CFTC Socrata failed to parse currencies');
+  return parsed;
+}
+
+function _parseCotHtmlText(preText) {
   const dateMatch = preText.match(/Positions as of\s+([A-Za-z]+ \d+,?\s*\d{4})/i);
   const reportDate = dateMatch ? dateMatch[1].trim() : null;
 
@@ -551,11 +614,6 @@ async function cotHandler(req, res) {
       }
     }
 
-    // Open Interest + baris "Percent of Open Interest ..." — dua-duanya SUDAH ada di
-    // blok teks yang sama (audit vendor 2026-07-12, terverifikasi live): net mentah 50K
-    // kontrak beda makna saat OI 200K vs 700K, jadi net sebagai % of OI adalah
-    // normalisasi ekstremitas standar. Nol fetch tambahan. Kolom baris persen persis
-    // sejajar dengan baris Positions (idx 3/4 = AM long/short, 6/7 = Lev long/short).
     const oi = _parseOpenInterest(block);
     const { amNetPctOi, levNetPctOi } = _parseCotPercentLine(lines);
 
@@ -577,15 +635,76 @@ async function cotHandler(req, res) {
     }
   }
 
-  const parsedCount = Object.keys(positions).length;
+  return { positions, reportDate, releaseDate };
+}
 
+async function cotHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  try {
+    const cached = await redisCmd('GET', 'cot_cache_v2');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Date.now() - new Date(parsed.fetched_at).getTime() < COT_CACHE_TTL) {
+        return res.status(200).json(parsed);
+      }
+    }
+  } catch(e) {}
+
+  let positions = {};
+  let reportDate = null;
+  let releaseDate = null;
+
+  // 1. Coba CFTC Socrata API (publicreporting.cftc.gov) — API publik resmi CFTC,
+  // tahan Cloudflare challenge dan menyediakan data terstruktur yang sama dengan financial_lof.htm.
+  try {
+    const socrataRes = await _fetchCotFromSocrata();
+    positions = socrataRes.positions;
+    reportDate = socrataRes.reportDate;
+    releaseDate = socrataRes.releaseDate;
+    cbk.onSuccess('cftc').catch(() => {});
+  } catch(socErr) {
+    console.warn('CFTC Socrata fetch failed, trying legacy HTML:', socErr.message);
+
+    // 2. Fallback: coba fetch HTML mentah legacy jika Socrata terkendala
+    let preText = '';
+    try {
+      if (!await cbk.canCall('cftc')) throw new Error('CIRCUIT_OPEN');
+      const r = await fetch(CFTC_URL, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FJFeed/1.0)' },
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const html = await r.text();
+      const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+      if (!preMatch) throw new Error('No <pre> block in CFTC response');
+      preText = preMatch[1]
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+      cbk.onSuccess('cftc').catch(() => {});
+      
+      const parsedHtml = _parseCotHtmlText(preText);
+      positions = parsedHtml.positions;
+      reportDate = parsedHtml.reportDate;
+      releaseDate = parsedHtml.releaseDate;
+    } catch(htmlErr) {
+      if (htmlErr.message !== 'CIRCUIT_OPEN') cbk.onFailure('cftc').catch(() => {});
+      console.error('CFTC HTML fetch also failed:', htmlErr.message);
+    }
+  }
+
+  const parsedCount = Object.keys(positions).length;
   if (parsedCount < 5) {
-    console.warn(`COT parser: only ${parsedCount} currencies parsed — expected 8. Possible format change. Falling back to stale cache.`);
+    console.warn(`COT parser: only ${parsedCount} currencies parsed — expected 8. Falling back to stale cache.`);
     try {
       const stale = await redisCmd('GET', 'cot_cache_v2');
       if (stale) return res.status(200).json({ ...JSON.parse(stale), stale: true, parse_warning: `Only ${parsedCount}/8 currencies parsed from fresh fetch` });
     } catch(e2) {}
-    return res.status(500).json({ error: `COT parser degraded: only ${parsedCount}/8 currencies parsed`, positions });
+    return res.status(502).json({ error: `COT unavailable: only ${parsedCount}/8 currencies parsed`, positions });
   }
 
   // Percentile posisi 3 tahun (CFTC Socrata API) — konteks ekstremitas jangka panjang
@@ -600,7 +719,22 @@ async function cotHandler(req, res) {
     }
   } catch(e) {}
   const pctileStaleMs = percentiles ? Date.now() - new Date(percentiles.stored_at).getTime() : Infinity;
-  if (pctileStaleMs > 6 * 24 * 3600 * 1000) updateCotPercentiles().catch(e => console.warn('cot pctile refresh failed:', e.message));
+  if (pctileStaleMs > 6 * 24 * 3600 * 1000) {
+    if (!percentiles) {
+      try {
+        await updateCotPercentiles();
+        const rawPctile = await redisCmd('GET', 'cot_pctile_v1');
+        if (rawPctile) {
+          const p = JSON.parse(rawPctile);
+          if (p && p.by_currency) percentiles = p;
+        }
+      } catch(e) {
+        console.warn('cot pctile initial sync failed:', e.message);
+      }
+    } else {
+      updateCotPercentiles().catch(e => console.warn('cot pctile refresh failed:', e.message));
+    }
+  }
 
   const payload = {
     positions,
@@ -655,16 +789,7 @@ function _parseCotPercentLine(lines) {
 // laporan mingguan x 8 market, lalu dihitung percentile rank posisi net TERAKHIR
 // (AM & Lev) terhadap distribusi 3 tahunnya sendiri. Diverifikasi live 2026-07-12:
 // row terbaru identik dengan rilis financial_lof (EUR AM net +279.5K, Lev -66.1K).
-const COT_SOCRATA_MARKETS = {
-  USD: ['USD INDEX', 'U.S. DOLLAR INDEX - ICE FUTURES U.S.'],
-  EUR: ['EURO FX'],
-  GBP: ['BRITISH POUND', 'BRITISH POUND STERLING'],
-  JPY: ['JAPANESE YEN'],
-  CAD: ['CANADIAN DOLLAR'],
-  AUD: ['AUSTRALIAN DOLLAR'],
-  NZD: ['NZ DOLLAR', 'NEW ZEALAND DOLLAR'],
-  CHF: ['SWISS FRANC'],
-};
+// Menggunakan COT_SOCRATA_MARKETS yang dideklarasikan di blok COT di atas.
 
 // Percentile rank (0-100) nilai terakhir terhadap seluruh distribusi (inklusif).
 function _pctileRank(values, latest) {
@@ -1783,7 +1908,12 @@ module.exports.newsTranslateBackfillHandler = newsTranslateBackfillHandler;
 module.exports._pctileRank = _pctileRank;
 module.exports._parseOpenInterest = _parseOpenInterest;
 module.exports._parseCotPercentLine = _parseCotPercentLine;
+module.exports._parseCotSocrataRows = _parseCotSocrataRows;
+module.exports._formatCotDates = _formatCotDates;
+module.exports._parseCotHtmlText = _parseCotHtmlText;
+module.exports.COT_SOCRATA_MARKETS = COT_SOCRATA_MARKETS;
 module.exports.parseNBERItems = parseNBERItems;
 module.exports.parseRePEcIfnItems = parseRePEcIfnItems;
 module.exports.parseScopusEntries = parseScopusEntries;
 module.exports.RESEARCH_RELEVANCE_RE = RESEARCH_RELEVANCE_RE;
+
