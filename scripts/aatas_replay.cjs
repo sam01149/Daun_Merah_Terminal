@@ -180,7 +180,12 @@ function replayRecord(record, rawCandles, config = {}, calendarEvents = []) {
       return { id: record.id, status: 'unavailable', reason: 'missing_recorded_close_bar' };
     }
   }
-  if (decisionMs > 0 && all[0].t * 1000 - decisionMs > maxGapSeconds * 1000) {
+  // Posisi yang SUDAH `open` mulai diputar ulang dari `filled_t`, bukan dari waktu
+  // keputusan awal. Membandingkan candle pertama pasca-fill dengan `decisionMs`
+  // membuat setup yang menunggu zona > maxGapSeconds salah dilabel unavailable,
+  // walau candle fill tercatat dan coverage setelah fill rapat. Untuk pending,
+  // `scanFromMs` tetap sama dengan waktu keputusan/level terakhir.
+  if (scanFromMs > 0 && all[0].t * 1000 - scanFromMs > maxGapSeconds * 1000) {
     return { id: record.id, status: 'unavailable', reason: 'initial_gap_candle_coverage_strict' };
   }
 

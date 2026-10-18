@@ -129,6 +129,23 @@ test('replay: kontrak level yang drift dan posisi open tanpa fill coverage ditan
   assert.equal(replayRecord(open, [c(11, 100, 121, 99, 120)]).reason, 'missing_recorded_fill_bar');
 });
 
+test('replay: posisi open memakai filled_t sebagai batas awal gap, bukan waktu keputusan lama', () => {
+  const open = {
+    ...base,
+    status: 'open',
+    ts: 1_000,
+    level_set_at: 1_000,
+    filled_t: 20_000,
+  };
+  const result = replayRecord(open, [
+    c(20_000, 100, 110, 99, 105),
+    c(20_001, 105, 121, 104, 120),
+  ], { maxGapSeconds: 10 });
+  assert.equal(result.status, 'tp');
+  assert.equal(result.filled_t, 20_000);
+  assert.equal(result.closed_t, 20_001);
+});
+
 test('replay: conflicting duplicate candle, expiry dan horizon arah dilaporkan eksplisit', () => {
   const duplicate = replayRecord(base, [c(1, 101, 110, 99, 105), c(1, 101, 111, 99, 106)]);
   assert.equal(duplicate.reason, 'conflicting_duplicate_candles');
