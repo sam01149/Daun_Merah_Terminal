@@ -28,6 +28,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** Uji visual lokal dilakukan pada viewport desktop 1.600 px, tablet 900 px, dan ponsel 390 px untuk Ringkasan serta News. Regresi baru mengunci urutan tiga kolom desktop, fallback tablet/ponsel, reset satu kolom saat cetak, bentuk baris News datar, dan posisi badge/waktu. Suite penuh `npm test` lulus 1.407/1.407. Tidak ada panggilan AI berbayar atau transaksi dalam verifikasi.
 
+**Verifikasi produksi.** Setelah commit `9b32e55` ter-deploy, `index.html` produksi merespons HTTP 200 dengan `APP_VERSION 2026.10.18.4`. HTML live memuat workspace Ringkasan, aturan grid desktop `left main right`, struktur headline News baru, serta style baris datar dengan divider. Dengan demikian build yang dilayani ke pengguna sudah sama dengan hasil uji lokal.
+
 ## Changelog Session 386 (2026-10-18) — Penyelarasan Prime Academy dan revamp Ringkasan
 
 **Dasar keputusan.** Implementasi menutup audit 150/150 transkrip Prime Market Academy (parser error 0) terhadap fitur publik Ringkasan dan Analisa. Prinsip yang dipakai: fundamental/kebijakan menentukan arah, chart menentukan lokasi dan waktu; strong-vs-weak butuh bukti dua kaki; positioning hanya mengubah conviction/timing; momentum, range, dan tactical fade tidak boleh tercampur; trigger Academy menunggu rejection H1 di London/New York; setup aktif wajib RR minimum 1:2. Ini penyelarasan proses, bukan klaim bahwa strategi pasti menguntungkan.
