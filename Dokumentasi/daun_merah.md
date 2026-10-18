@@ -26,6 +26,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** Uji visual pada viewport desktop 1.600 px menunjukkan jarak atas 8 px dan jarak antar kartu kanan tepat 10 px, walau narasi tengah dibuat setinggi 620 px. Pada ponsel 390 px, jarak atas tetap 8 px, urutan lama tetap terjaga, serta tidak ada overflow horizontal. Warna Bullish dan Konfirmasi naik terukur sama-sama memakai `rgb(31, 110, 74)`. Regresi fokus lulus 23/23 dan suite penuh `npm test` lulus 1.419/1.419. `APP_VERSION` dinaikkan menjadi `2026.10.18.9`; tidak ada panggilan AI berbayar atau transaksi selama verifikasi.
 
+**Verifikasi produksi.** Setelah commit `3e5f06c` ter-deploy, halaman produksi merespons HTTP 200 dengan `APP_VERSION 2026.10.18.9` dan memuat ketiga penanda implementasi: area desktop `context main decision`, padding atas 8 px, serta kelas warna `analisa-position-confirm.strong-up`.
+
 ## Changelog Session 390 (2026-10-18) — Perbaikan Analisa dan kalender ekonomi Ringkasan
 
 **Akar masalah layout.** Aturan CSS lama di bagian akhir stylesheet masih memaksa `.analisa-inner` ke `max-width: 680px !important`. Ia mengalahkan batas workspace baru 1.540 px, sementara grid tiga kolom tetap mempertahankan minimum kolomnya; hasilnya konten meluber dari container sempit ke kanan dan meninggalkan ruang kosong besar di kiri. Override lama diganti menjadi `width: 100%` dengan maksimum 1.540 px, sehingga workspace kembali terpusat dan memakai layar desktop secara proporsional.
