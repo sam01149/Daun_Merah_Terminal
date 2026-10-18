@@ -26,6 +26,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Ponsel dan verifikasi.** Grid Ringkasan tetap satu kolom di bawah 768 px dan dua panel samping hanya mulai berdampingan pada tablet; label kategori News yang dipendekkan mengurangi kebutuhan lebar sehingga lebih aman daripada label lama. Regresi frontend fokus lulus 13/13 dan suite penuh `npm test` lulus 1.408/1.408. Tidak ada panggilan AI berbayar atau transaksi dalam verifikasi.
 
+**Verifikasi produksi.** Setelah commit `019076c` ter-deploy, `index.html` produksi merespons HTTP 200 dengan `APP_VERSION 2026.10.18.5` dan memuat peta singkatan lengkap, termasuk `MKT`, `GEO`, dan `CRYP`. Klasifikasi sumber tetap memakai key kanonik lama.
+
 ## Changelog Session 387 (2026-10-18) — Workspace Ringkasan tiga kolom dan daftar News profesional
 
 **Ringkasan.** Tampilan Ringkasan di desktop dilebarkan menjadi satu workspace: CB Bias berada di kolom kiri, narasi ringkasan sebagai fokus utama di tengah, dan Polymarket di kolom kanan. Batas lebar workspace menjadi 1.540 px dengan kolom tengah fleksibel agar ruang tambahan dipakai untuk isi, bukan menjadi margin kosong. Pada tablet, narasi memenuhi baris atas lalu CB Bias dan Polymarket berdampingan di bawahnya; pada ponsel ketiganya turun menjadi satu kolom dengan narasi lebih dulu. Mode cetak sengaja kembali ke alur satu kolom supaya teks dan tabel tidak dipaksa sempit di PDF.
