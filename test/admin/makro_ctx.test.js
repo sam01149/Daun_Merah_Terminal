@@ -33,6 +33,19 @@ test('excerpt XAU: ambil blok XAUUSD:, tag dibuang, bagian FX tidak ikut', () =>
   assert.ok(!out.includes('PMI Jerman'), 'bagian FX tidak boleh ikut');
 });
 
+test('excerpt XAU format terpadu: ambil jangkar + segmen emas relevan tanpa butuh blok khusus', () => {
+  const unified = [
+    'Powell menegaskan suku bunga tetap restriktif sehingga real yield USD bertahan tinggi.',
+    '{{TAG: EUR}} Nagel menilai perang melawan inflasi belum selesai.',
+    '{{TAG: Geopolitik}} Eskalasi Hormuz memperkuat permintaan safe haven pada emas dan CHF.',
+    '{{TAG: Konfirmasi}} USD kuat, EUR rentan.',
+  ].join('\n\n');
+  const out = _extractRingkasanExcerpt(unified, 'XAU/USD', true);
+  assert.ok(out.includes('Powell'), 'jangkar makro tetap ikut');
+  assert.ok(out.includes('emas'), 'segmen emas yang relevan harus ikut');
+  assert.ok(!out.includes('Nagel'), 'segmen EUR yang tidak relevan tidak ikut');
+});
+
 // ── _extractRingkasanExcerpt: FX tertarget ───────────────────────────────────
 
 test('excerpt EUR/USD: jangkar + segmen EUR + Konfirmasi, tanpa JPY/CHF & AUD & XAU', () => {
@@ -144,6 +157,8 @@ test('mirror: _extractRingkasanExcerptJs (index.html) identik dengan versi serve
   for (const [label, isXau] of [['XAU/USD', true], ['EUR/USD', false], ['USD/JPY', false], ['NZD/USD', false], ['AUD/USD', false]]) {
     assert.strictEqual(clientFn(ARTICLE, label, isXau), _extractRingkasanExcerpt(ARTICLE, label, isXau), `hasil beda untuk ${label}`);
   }
+  const unified = 'Powell menahan rate path.\n\n{{TAG: Geopolitik}} Emas dan CHF mendapat permintaan safe haven.\n\n{{TAG: EUR}} Nagel tetap hawkish.';
+  assert.strictEqual(clientFn(unified, 'XAU/USD', true), _extractRingkasanExcerpt(unified, 'XAU/USD', true));
   const plain = 'Satu.\n\nDua.\n\nTiga.\n\nEmpat.';
   assert.strictEqual(clientFn(plain, 'EUR/USD', false), _extractRingkasanExcerpt(plain, 'EUR/USD', false));
 });

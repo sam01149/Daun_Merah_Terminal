@@ -5260,7 +5260,8 @@ function _segmentMentionsLeg(text, leg) {
 }
 
 // Ekstrak konteks makro dari artikel Ringkasan untuk pair tertentu (pure — dites unit).
-// XAU: blok "XAUUSD:" (memang self-contained). Pair FX: bagian FX dipecah per marker
+// XAU: blok "XAUUSD:" lama, atau segmen emas relevan di briefing makro terpadu.
+// Pair FX: bagian FX dipecah per marker
 // {{TAG: NAMA}} yang disisipkan AI digest — ambil jangkar (teks sebelum tag pertama,
 // tema utama hari itu) + segmen yang tag-nya menyebut salah satu leg pair + blok
 // Konfirmasi (penutup currency kuat/lemah). Dulu excerpt FX = "3 paragraf pertama"
@@ -5272,11 +5273,18 @@ function _extractRingkasanExcerpt(article, label, isXau) {
   if (isXau) {
     const clean = article.replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
     const xauIdx = clean.search(/\bXAUUSD:/);
-    const excerpt = xauIdx !== -1 ? clean.slice(xauIdx) : clean.split(/\n\n+/).slice(0, 3).join('\n\n');
-    // Blok XAUUSD self-contained = tertarget, cap longgar 2500 (sama seperti FX tertarget
-    // di bawah) supaya segmen geopolitik di ekor tidak terpotong; fallback non-blok tetap
-    // ikut jalur 3-paragraf yang di-cap ketat.
-    return excerpt ? cap(excerpt, xauIdx !== -1 ? 2500 : 700) : null;
+    if (xauIdx !== -1) return cap(clean.slice(xauIdx), 2500);
+    const parts = article.split(/\{\{TAG:\s*([^}]+)\}\}\s*/);
+    const picked = [];
+    if (parts[0]?.trim()) picked.push(parts[0].trim());
+    for (let i = 1; i < parts.length; i += 2) {
+      const tag = parts[i] || '';
+      const text = (parts[i + 1] || '').trim();
+      if (text && /\b(?:xau(?:\/usd)?|gold|emas|bullion)\b/i.test(`${tag} ${text}`)) picked.push(text);
+    }
+    if (picked.length > 1) return cap(picked.join('\n\n'), 2500);
+    const fallback = clean.split(/\n\n+/).slice(0, 3).join('\n\n');
+    return fallback ? cap(fallback, 700) : null;
   }
   const xauIdx = article.search(/\bXAUUSD:/);
   const fxPart = (xauIdx !== -1 ? article.slice(0, xauIdx) : article).trim();

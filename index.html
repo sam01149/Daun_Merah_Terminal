@@ -466,6 +466,8 @@ body {
 .refresh-btn:active { background:var(--accent); border-color:var(--accent); color:var(--bg); }
 .refresh-btn.spinning svg { animation:spin .7s linear infinite; }
 
+.news-pull-indicator { display:none; }
+
 @keyframes spin { to{transform:rotate(360deg)} }
 
 /* FEED */
@@ -520,7 +522,7 @@ body {
 
 .item-title {
   min-width:0; font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
-  font-size:13px; font-weight:400; line-height:1.45; color:var(--text);
+  font-size:12px; font-weight:400; line-height:1.45; color:var(--text);
 }
 .item-desc {
   max-width:960px; margin-top:8px; font-size:11px; color:var(--muted); line-height:1.55;
@@ -2392,6 +2394,18 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .bot-nav { display: none; }
 
 @media (max-width: 767px) {
+  #refreshBtn { display:none; }
+  .news-pull-indicator {
+    display:flex; flex:0 0 auto; align-items:center; justify-content:center;
+    height:0; overflow:hidden; color:var(--muted); background:var(--bg);
+    transition:height .16s ease, color .16s ease;
+  }
+  .news-pull-indicator svg { transition:transform .16s ease; }
+  .news-pull-indicator.ready { color:var(--accent); }
+  .news-pull-indicator.ready svg { transform:rotate(180deg); }
+  .news-pull-indicator.refreshing { height:42px !important; color:var(--accent); }
+  .news-pull-indicator.refreshing svg { animation:spin .7s linear infinite; }
+  #feedScroll { overscroll-behavior-y:contain; }
   .nav-views { display: none; }
   .bot-nav {
     display: flex;
@@ -3533,10 +3547,16 @@ body:not(.light-theme) .ringkasan-gen-btn {
 </div>
 
 <!-- FEED -->
+<div class="news-pull-indicator" id="newsPullIndicator" aria-hidden="true">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+  </svg>
+</div>
 <div class="feed-scroll" id="feedScroll">
   <div class="state-box">
-    <div class="icon">📡</div>
-    <p>Tap REFRESH untuk load<br>FinancialJuice RSS</p>
+    <div class="icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 17a8 8 0 0 1 16 0"/><path d="M7 17a5 5 0 0 1 10 0"/><path d="M10 17a2 2 0 0 1 4 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></svg></div>
+    <p>Berita akan dimuat otomatis.</p>
   </div>
 </div>
 
@@ -4699,7 +4719,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.18.9';
+const APP_VERSION = '2026.10.19.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5397,20 +5417,20 @@ function sanitizeDescMultiline(html) {
 }
 
 let lastFetchAt = 0;
-async function fetchFeed() {
+async function fetchFeed(force = false) {
   if (isFetching) return;
   // Debounce: pemicu berurutan dari sumber berbeda (load + SW NEW_ITEMS + visibilitychange,
   // dst) sering tiba sebelum isFetching ke-reset, jadi guard di atas tidak cukup.
-  if (Date.now() - lastFetchAt < 3000) return;
+  if (!force && Date.now() - lastFetchAt < 3000) return;
   lastFetchAt = Date.now();
   newsFetchAttempted = true;
   isFetching = true;
   const btn = document.getElementById('refreshBtn');
-  btn.classList.add('spinning');
+  if (btn) btn.classList.add('spinning');
 
   const xml = await fetchRSS();
 
-  btn.classList.remove('spinning');
+  if (btn) btn.classList.remove('spinning');
   if (!xml) {
     isFetching = false;
     if (allItems.length === 0) {
@@ -5423,7 +5443,7 @@ async function fetchFeed() {
             <line x1="12" y1="9" x2="12" y2="13"></line>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
-          <p>Gagal fetch berita dari server.<br>Sumber mungkin sementara tidak tersedia — coba refresh atau tunggu sebentar.</p>
+          <p>Gagal mengambil berita dari server.<br>Tarik ke bawah atau tunggu sebentar.</p>
         </div>`;
     } else if (!newsCacheStaleNotified) {
       // Ada cache/berita lama yang sudah tampil — jangan timpa dengan error,
@@ -5496,6 +5516,58 @@ async function fetchFeed() {
 
   isFetching = false;
 }
+
+// Pull-to-refresh khusus News mobile. Indikator sengaja hanya ikon: toolbar mobile
+// tidak lagi menampilkan tombol "REFRESH", sedangkan desktop tetap punya tombol eksplisit.
+function initNewsPullToRefresh() {
+  const scroll = document.getElementById('feedScroll');
+  const indicator = document.getElementById('newsPullIndicator');
+  if (!scroll || !indicator) return;
+
+  const threshold = 64;
+  let startY = null;
+  let pullDistance = 0;
+
+  const isMobileNews = () => window.matchMedia('(max-width: 767px)').matches && activeView === 'feed';
+  const resetIndicator = () => {
+    startY = null;
+    pullDistance = 0;
+    indicator.classList.remove('ready', 'refreshing');
+    indicator.style.height = '0px';
+    indicator.setAttribute('aria-hidden', 'true');
+  };
+
+  scroll.addEventListener('touchstart', event => {
+    if (!isMobileNews() || isFetching || scroll.scrollTop > 0 || event.touches.length !== 1) return;
+    startY = event.touches[0].clientY;
+  }, { passive: true });
+
+  scroll.addEventListener('touchmove', event => {
+    if (startY === null || event.touches.length !== 1) return;
+    const dy = event.touches[0].clientY - startY;
+    if (dy <= 0 || scroll.scrollTop > 0) { resetIndicator(); return; }
+    event.preventDefault();
+    pullDistance = Math.min(dy, 96);
+    indicator.style.height = `${Math.min(42, pullDistance * 0.55)}px`;
+    indicator.classList.toggle('ready', pullDistance >= threshold);
+    indicator.setAttribute('aria-hidden', 'false');
+  }, { passive: false });
+
+  scroll.addEventListener('touchend', () => {
+    if (startY === null) return;
+    const shouldRefresh = pullDistance >= threshold && !isFetching;
+    if (!shouldRefresh) { resetIndicator(); return; }
+    startY = null;
+    indicator.classList.remove('ready');
+    indicator.classList.add('refreshing');
+    indicator.style.height = '42px';
+    Promise.resolve(fetchFeed(true)).finally(resetIndicator);
+  }, { passive: true });
+
+  scroll.addEventListener('touchcancel', resetIndicator, { passive: true });
+}
+
+initNewsPullToRefresh();
 
 // ── RENDER ───────────────────────────────────────────────
 function sanitizeDesc(html) {
@@ -5616,7 +5688,7 @@ function renderFeed(markNew = false) {
   const combined = _combinedNewsItems();
   let items = activeFilter === 'all' ? combined : combined.filter(i => detectCat(i.title) === activeFilter);
   if (items.length === 0) {
-    scroll.innerHTML = `<div class="state-box"><div class="icon">🔍</div><p>Tidak ada berita untuk kategori ini</p></div>`;
+    scroll.innerHTML = `<div class="state-box"><div class="icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></div><p>Tidak ada berita untuk kategori ini</p></div>`;
     return;
   }
   const itemsHtml = items.map((item, idx) => _feedItemHtml(item, markNew && newGuids.has(item.guid) && idx < 5, idx)).join('');
@@ -5625,7 +5697,7 @@ function renderFeed(markNew = false) {
   // difilter supaya tidak menarik data yang sebagian besar bakal ke-filter lagi.
   const loadMoreHtml = activeFilter !== 'all' ? '' : historyExhausted
     ? `<div class="feed-history-end">— Sudah mencapai ujung arsip berita (36 jam) —</div>`
-    : `<button class="feed-loadmore-btn" id="feedLoadMoreBtn" onclick="loadMoreHistory()" ${historyLoading ? 'disabled' : ''}>${historyLoading ? '⏳ Memuat…' : '⌄ Muat Berita Lebih Lama'}</button>`;
+    : `<button class="feed-loadmore-btn" id="feedLoadMoreBtn" onclick="loadMoreHistory()" ${historyLoading ? 'disabled' : ''}>${historyLoading ? 'Memuat...' : 'Muat Berita Lebih Lama'}</button>`;
   scroll.innerHTML = itemsHtml + loadMoreHtml;
 }
 
@@ -6000,7 +6072,7 @@ function renderRingkasan() {
       d.headlines_sent_total ?? d.headlines_used_total)}
 
     <div class="ringkasan-meta">
-      <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita${d.gold_count ? ' · ' + d.gold_count + ' XAU' : ''} · ${d.cal_count} kalender</div>
+      <div class="ringkasan-meta-left">${tsStr} · ${d.news_count} berita · ${d.cal_count} kalender</div>
     </div>
 
     <div class="print-btn-row">
@@ -6037,7 +6109,7 @@ function _printMeta(bodyClass) {
     const d = ringkasanCache;
     if (!d?.article) return null;
     const meta = `${d.news_count ?? 0} berita · ${d.cal_count ?? 0} event kalender`;
-    return { letterheadId: 'printLetterheadRingkasan', titleText: 'Ringkasan Pasar Forex & Emas', meta };
+    return { letterheadId: 'printLetterheadRingkasan', titleText: 'Ringkasan Pasar Makro', meta };
   }
   if (bodyClass === 'printing-analisa') {
     const symbol = analisaActive.symbol, label = analisaActive.label;
@@ -6418,7 +6490,7 @@ async function downloadRingkasanPdf() {
   if (!d?.article) { showToast('Belum Ada Data', 'Generate ringkasan dulu sebelum download.', 3000); return; }
   if (!_pdfLibReady()) { cetakRingkasan(); return; }
   const b = _pdfBuilder();
-  b.letterhead('Ringkasan Pasar Forex & Emas', [
+  b.letterhead('Ringkasan Pasar Makro', [
     `Ringkasan dibuat: ${fmtCBTime(d.generated_at)}`,
     `Diunduh: ${_printWibNow().display}`,
   ]);
@@ -6432,14 +6504,10 @@ async function downloadRingkasanPdf() {
     });
   }
 
-  const { fx, xau } = splitArticleParts(d.article);
-  if (fx) {
-    b.heading('Analisis Berita · Headline Momentum');
-    _renderArticlePdfBlocks(b, _articleToPdfBlocks(fx));
-  }
-  if (xau) {
-    b.heading('XAUUSD');
-    _renderArticlePdfBlocks(b, _articleToPdfBlocks(xau));
+  const unifiedArticle = unifyDigestArticle(d.article);
+  if (unifiedArticle) {
+    b.heading('Analisis Berita · Makro');
+    _renderArticlePdfBlocks(b, _articleToPdfBlocks(unifiedArticle));
   }
 
   const pdfModelLabel = d.method ? (AI_METHOD_LABELS[d.method] || d.method) : null;
@@ -7612,7 +7680,8 @@ function renderAnalisa() {
 // Ekstrak konteks makro dari artikel Ringkasan untuk pair tertentu — mirror dari
 // _extractRingkasanExcerpt di api/admin.js (server pakai logic yang sama untuk
 // fallback cron/latest_article; kalau ubah di sini, ubah juga di sana).
-// XAU: blok "XAUUSD:". Pair FX: jangkar (sebelum tag pertama) + segmen {{TAG}} yang
+// XAU: blok "XAUUSD:" lama atau segmen emas di briefing terpadu. Pair FX: jangkar
+// (sebelum tag pertama) + segmen {{TAG}} yang
 // menyebut salah satu leg pair + blok Konfirmasi — bukan lagi "3 paragraf pertama"
 // yang bisa sama sekali tidak menyinggung pair yang dianalisa.
 function _extractRingkasanExcerptJs(article, label, isXau) {
@@ -7640,9 +7709,18 @@ function _extractRingkasanExcerptJs(article, label, isXau) {
   if (isXau) {
     const clean = article.replace(/\{\{TAG:[^}]*\}\}/g, '').trim();
     const xauIdx = clean.search(/\bXAUUSD:/);
-    const excerpt = xauIdx !== -1 ? clean.slice(xauIdx) : clean.split(/\n\n+/).slice(0, 3).join('\n\n');
-    // Cap tertarget 2500 / fallback 700 — WAJIB sama dengan _extractRingkasanExcerpt server.
-    return excerpt ? cap(excerpt, xauIdx !== -1 ? 2500 : 700) : null;
+    if (xauIdx !== -1) return cap(clean.slice(xauIdx), 2500);
+    const parts = article.split(/\{\{TAG:\s*([^}]+)\}\}\s*/);
+    const picked = [];
+    if (parts[0]?.trim()) picked.push(parts[0].trim());
+    for (let i = 1; i < parts.length; i += 2) {
+      const tag = parts[i] || '';
+      const text = (parts[i + 1] || '').trim();
+      if (text && /\b(?:xau(?:\/usd)?|gold|emas|bullion)\b/i.test(`${tag} ${text}`)) picked.push(text);
+    }
+    if (picked.length > 1) return cap(picked.join('\n\n'), 2500);
+    const fallback = clean.split(/\n\n+/).slice(0, 3).join('\n\n');
+    return fallback ? cap(fallback, 700) : null;
   }
   const xauIdx = article.search(/\bXAUUSD:/);
   const fxPart = (xauIdx !== -1 ? article.slice(0, xauIdx) : article).trim();
@@ -7814,9 +7892,7 @@ function articleToHtml(text) {
   }).join('');
 }
 
-// Ringkasan article-nya satu blok teks dengan marker "XAUUSD:" yang membagi
-// bagian FX (pair-pair selain gold) dari bagian gold — dipakai baik buat tab
-// RINGKASAN penuh (tampil dua-duanya) maupun preview Dashboard (tampil satu).
+// Parser marker lama dipertahankan agar cache artikel pra-migrasi tetap terbaca.
 function splitArticleParts(article) {
   if (!article) return { fx: '', xau: '' };
   const xauIdx = article.indexOf('XAUUSD:');
@@ -7827,21 +7903,16 @@ function splitArticleParts(article) {
   };
 }
 
+function unifyDigestArticle(article) {
+  const { fx, xau } = splitArticleParts(article);
+  if (!xau) return fx;
+  return `${fx}\n\n{{TAG: XAU/USD}} ${xau}`.trim();
+}
+
 function renderArticleSections(article) {
   if (!article) return '';
-  const { fx: fxPart, xau: xauPart } = splitArticleParts(article);
-  if (!xauPart) {
-    return `<div class="ringkasan-card"><div class="ringkasan-fx-label">ANALISIS BERITA · FX</div><div class="ringkasan-text">${articleToHtml(fxPart)}</div></div>`;
-  }
-  return `
-    <div class="ringkasan-card">
-      <div class="ringkasan-fx-label">ANALISIS BERITA · FX</div>
-      <div class="ringkasan-text">${articleToHtml(fxPart)}</div>
-    </div>
-    <div class="ringkasan-card ringkasan-card-xau">
-      <div class="ringkasan-xau-label">ANALISIS BERITA · XAUUSD</div>
-      <div class="ringkasan-text">${articleToHtml(xauPart)}</div>
-    </div>`;
+  const unifiedArticle = unifyDigestArticle(article);
+  return `<div class="ringkasan-card"><div class="ringkasan-fx-label">ANALISIS BERITA · MAKRO</div><div class="ringkasan-text">${articleToHtml(unifiedArticle)}</div></div>`;
 }
 
 let _lastThesis = (() => {
@@ -8591,7 +8662,7 @@ function fmtCBTime(iso) {
 async function fetchCorrelations() {
   const btn = document.getElementById('corrBtn');
   const panel = document.getElementById('corrPanel');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Memuat...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Memuat...'; }
   if (panel) panel.innerHTML = `<div class="corr-title">CROSS-ASSET CORRELATIONS</div><div style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace">Mengambil data dari server…</div>`;
   try {
     const res = await fetch('/api/correlations', { signal: AbortSignal.timeout(30000) });
@@ -8809,7 +8880,7 @@ function risetSoloSource(soloSrc) {
 async function fetchResearch(force) {
   const list = document.getElementById('risetList');
   const meta = document.getElementById('risetMeta');
-  if (list) list.innerHTML = '<div class="state-box"><div class="icon" style="font-size:24px">⏳</div><p style="font-size:12px">Memuat publikasi...</p></div>';
+  if (list) list.innerHTML = '<div class="state-box"><div class="icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><p style="font-size:12px">Memuat publikasi...</p></div>';
   try {
     const url = force ? '/api/feeds?type=research&force=1' : '/api/feeds?type=research';
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -17024,7 +17095,7 @@ function renderTekNews() {
       html += '<button class="feed-loadmore-btn" onclick="tekLoadMoreNews()">⌄ Tampilkan Lebih Banyak</button>';
     } else if (!historyExhausted) {
       html += '<button class="feed-loadmore-btn" onclick="tekLoadMoreNews()" ' + (historyLoading ? 'disabled' : '') + '>'
-        + (historyLoading ? '⏳ Memuat…' : '⌄ Muat Berita Lebih Lama (36 jam)') + '</button>';
+        + (historyLoading ? 'Memuat...' : 'Muat Berita Lebih Lama (36 jam)') + '</button>';
     } else if (allMatches.length > 0) {
       html += '<div class="feed-history-end">— Sudah mencapai ujung arsip berita (36 jam) —</div>';
     }
@@ -18356,14 +18427,6 @@ async function initDashboard() {
   }, 60000);
 }
 
-let dashDigestSide = localStorage.getItem('dash_digest_side') === 'fx' ? 'fx' : 'xau';
-
-function toggleDashDigestSide() {
-  dashDigestSide = dashDigestSide === 'xau' ? 'fx' : 'xau';
-  localStorage.setItem('dash_digest_side', dashDigestSide);
-  renderDashDigest();
-}
-
 // Sesi cuma label informatif berdasarkan jam WIB saat generate — bukan deteksi
 // jam buka pasar yang presisi, cukup buat ngasih konteks "ini dari sesi mana".
 function fmtWibSession(isoTs) {
@@ -18490,31 +18553,15 @@ function renderDashDigest() {
     if (thesisEl) thesisEl.innerHTML = '<div class="dash-no-data">—</div>';
     return;
   }
-  // Dashboard cuma nampilin SATU sisi (XAU atau FX) biar cepat dibaca, dan
-  // ditampilkan FULL (tidak dipotong 500 char) — karena cuma satu sisi yang
-  // ditampilkan sekaligus, ruang yang dipakai sama dengan preview lama yang
-  // motong dua sisi. Default XAU (sesuai kebiasaan trading user), toggle
-  // lewat panah disimpan ke localStorage biar persist antar visit.
-  const { fx, xau } = splitArticleParts(ringkasanCache.article || '');
-  const hasBoth = !!(fx && xau);
-  const side = hasBoth ? dashDigestSide : (xau ? 'xau' : 'fx');
-  const preview = side === 'xau' ? xau : fx;
-  const lihatSemua = hasBoth
-    ? `<button class="cal-scenario-ck-btn" style="margin:6px 0 4px" onclick="switchView('ringkasan')">→ Lihat semua (FX + XAU)</button>`
-    : '';
+  const preview = unifyDigestArticle(ringkasanCache.article || '');
+  const lihatSemua = `<button class="cal-scenario-ck-btn" style="margin:6px 0 4px" onclick="switchView('ringkasan')">Lihat ringkasan lengkap</button>`;
   const refreshBtn = ringkasanCache.stale
-    ? `<button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin:6px 6px 4px 0">↻ Refresh (data lama)</button>`
+    ? `<button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin:6px 6px 4px 0">Perbarui data lama</button>`
     : '';
   const lastGenCaption = ringkasanCache.generated_at
     ? `<div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:6px">Terakhir diringkas ${fmtWibSession(ringkasanCache.generated_at)}</div>`
     : '';
-  const sideToggle = hasBoth ? `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      <button class="dash-digest-arrow" onclick="toggleDashDigestSide()" title="Ganti tampilan">‹</button>
-      <span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.08em">${side === 'xau' ? 'XAUUSD' : 'FX'}</span>
-      <button class="dash-digest-arrow" onclick="toggleDashDigestSide()" title="Ganti tampilan">›</button>
-    </div>` : '';
-  digestEl.innerHTML = `<div class="dash-digest-section">${sideToggle}<div class="dash-digest-text">${articleToHtml(preview)}</div>${refreshBtn}${lihatSemua}${lastGenCaption}</div>`;
+  digestEl.innerHTML = `<div class="dash-digest-section"><div class="dash-digest-text">${articleToHtml(preview)}</div>${refreshBtn}${lihatSemua}${lastGenCaption}</div>`;
 
   if (thesisEl) {
     let html = '';

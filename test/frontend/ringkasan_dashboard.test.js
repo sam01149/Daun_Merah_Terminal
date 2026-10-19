@@ -48,6 +48,15 @@ test('Ringkasan tidak merender kartu Thesis FX/XAU, tetapi Thesis Alert tetap ad
     'Thesis Alert harus tampil sebelum narasi berita');
 });
 
+test('narasi Ringkasan dan Dashboard memakai satu briefing makro tanpa toggle XAU', () => {
+  const renderSections = between('function renderArticleSections(article)', '\nlet _lastThesis');
+  const dashDigest = between('function renderDashDigest()', '\n  if (thesisEl)');
+  assert.match(renderSections, /ANALISIS BERITA · MAKRO/);
+  assert.doesNotMatch(renderSections, /ANALISIS BERITA · FX|ANALISIS BERITA · XAUUSD/);
+  assert.match(dashDigest, /unifyDigestArticle/);
+  assert.doesNotMatch(dashDigest, /toggleDashDigestSide|dashDigestSide|FX \+ XAU/);
+});
+
 test('Polymarket mengurutkan volume dan menampilkan tiga market utama sebelum detail sisanya', () => {
   const source = between('function renderPolymarket(data)', '\n// ── CB Research');
   const panel = { innerHTML: '' };

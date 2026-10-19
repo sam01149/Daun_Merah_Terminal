@@ -11,12 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-19 (Session 392 — Audit font, kualitas prompt AI, dan integritas PMI USD)
+> **Last updated:** 2026-10-19 (Session 393 — Ringkasan makro terpadu dan pull-to-refresh News)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 393 (2026-10-19) — Ringkasan makro terpadu dan pull-to-refresh News
+
+**Ringkasan tanpa sesi emas khusus.** Call 1 tidak lagi menerima harga XAU live, riwayat XAU, atau blok headline emas terpisah dan tidak lagi diwajibkan menghasilkan marker `XAUUSD:`. Output sekarang satu briefing makro 5–9 kalimat; emas hanya boleh masuk sebagai bagian tema yang memang memiliki headline substantif dan relevan. Prompt override lama sengaja dianggap tidak valid lewat marker baru `RINGKASAN MAKRO TERPADU` + `ATURAN MAKRO TERPADU`, sehingga override Redis format lama tidak dapat diam-diam menghidupkan kembali sesi emas. Riwayat baru hanya disimpan ke `digest_history`; fetch harga XAU tiga-provider dan penulisan `xau_history` yang tidak lagi punya konsumen dihapus. Call 3 tetap membuat thesis XAU internal/downstream dari headline emas relevan, sehingga Analisa XAU dan kompatibilitas sistem tidak dicabut bersama presentasi user-facing.
+
+**Kompatibilitas data lama.** Artikel cache lama yang masih memiliki marker `XAUUSD:` digabung menjadi satu kartu `ANALISIS BERITA · MAKRO`, satu preview Dashboard, dan satu bagian PDF; toggle FX/XAU di Dashboard dihapus. Ekstraksi konteks Ringkasan untuk Analisa XAU tetap menerima format lama, sedangkan format terpadu baru memilih jangkar makro plus segmen bertag yang menyebut XAU/gold/emas/bullion. Dengan demikian penghapusan sesi visual emas tidak memutus konteks internal Analisa per Pair.
+
+**Jumlah headline.** Feed News browser menyimpan maksimum 100 item, sedangkan endpoint Ringkasan dapat melihat maksimum 150 item RSS 36 jam. Call 1 tetap menerima maksimum **80 headline teratas setelah ranking relevansi, dampak, dan kesegaran**; angka ini tidak dinaikkan ke 100 karena tambahan itu berasal dari ekor ranking dan cenderung menambah noise/token, bukan informasi utama. Daftar sumber terlipat di UI dinaikkan moderat dari 25 menjadi **40 dari 80** agar pengguna dapat mengaudit lebih banyak sumber tanpa memenuhi tampilan dengan seluruh input model. Istilah `headlines_sent` tetap dipertahankan karena daftar itu hasil ranking kode, bukan bukti semua headline benar-benar dipakai dalam narasi AI.
+
+**News mobile.** Tombol bertuliskan `REFRESH` disembunyikan hanya pada viewport ponsel. Saat feed berada tepat di atas, tarik ke bawah menampilkan ikon refresh tanpa teks; melewati ambang 64 px lalu melepas memanggil refresh paksa yang melewati debounce otomatis tiga detik. Gestur tidak aktif di view lain, saat feed belum di atas, ketika fetch sedang berjalan, atau pada desktop; `touchcancel` dan tarikan pendek selalu mereset indikator. Tombol desktop tetap tersedia. State News yang disentuh pekerjaan ini juga dibersihkan dari emoji dan pesan gagal sekarang memberi instruksi yang cocok untuk mobile.
+
+**Tipografi News.** Sesuai permintaan lanjutan user, ukuran judul `.item-title` diturunkan dari 13 px menjadi 12 px di seluruh viewport. Keluarga font sistem, weight 400, dan line-height 1,45 tidak berubah, sehingga perubahan ini hanya menguji kepadatan visual tanpa mengubah hierarki komponen lain.
+
+**Verifikasi.** Regresi fokus baru/terkait lulus 82/82 dan suite penuh `npm test` lulus 1.426/1.426: prompt makro terpadu, batas input 80 vs daftar audit 40, kompatibilitas artikel lama, ekstraksi konteks XAU format baru, satu kartu Ringkasan/Dashboard, guard gestur mobile, dan font News 12 px. Uji browser Chromium nyata pada viewport ponsel 390×844 mengonfirmasi tombol `REFRESH` berstatus `display:none`, indikator ikon `display:flex` dengan tinggi awal 0, judul News terhitung 12 px, dan tidak ada overflow horizontal. Simulasi touch 80 px mengaktifkan state siap/refreshing, memanggil `fetchFeed(true)`, lalu mereset indikator ke 0 px setelah selesai. `APP_VERSION` dinaikkan menjadi `2026.10.19.1`.
 
 ## Changelog Session 392 (2026-10-19) — Audit font, kualitas prompt AI, dan integritas PMI USD
 

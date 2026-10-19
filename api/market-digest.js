@@ -2,7 +2,6 @@
 const rateLimit    = require('./_ratelimit');
 const cb           = require('./_circuit_breaker');
 const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund, reconcileFundamentalKeys } = require('./_fundamental_parser');
-const { withSingleFlight } = require('./_fetch_lock');
 const { getLiveCbRates } = require('./_cb_rates');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
 const { configureVapid, sendWebPush } = require('./_webpush');
@@ -10,7 +9,6 @@ const { allowAiCall, providerFromUrl } = require('./_ai_guard');
 const { getDeepSeekApiKey } = require('./_deepseek');
 const { CB_KW, kwTest, isCbHeadline, stripHtml } = require('./_cb_keywords');
 const { isFxMarketOpen } = require('./_market_hours');
-const { fetchDerivLatestPrice, fetchDerivCandles } = require('./_ohlcv_fetch');
 // Session 158: detectCat pindah ke newscat.js (root repo) — single source of truth
 // bersama index.html & sw.js; word-boundary match + scoring, bukan substring polos.
 const { detectCat, normalize: ncNormalize, compileList: ncCompileList, anyMatch: ncAnyMatch, CATS: NC_CATS } = require('../newscat');
@@ -179,98 +177,6 @@ const GOLD_KEYWORDS = [
   // Precious metals family — comex is gold's primary venue
   'comex','silver price','silver rally','silver drop',
 ];
-
-// ── XAU/USD spot price fetch (Deriv frxXAUUSD → Yahoo GC=F → Binance PAXG) ────
-// REVISI 2026-07-30: primary dipindah dari Yahoo GC=F (futures) ke Deriv frxXAUUSD
-// (spot) — sama alasan dengan migrasi OHLCV di _ohlcv_fetch.js (basis blowout
-// futures-vs-spot menjelang expiry kontrak bikin harga acuan di Ringkasan AI beda
-// puluhan dolar dari yang user lihat di MT5/TradingView). Yahoo GC=F diturunkan jadi
-// fallback pertama (tetap dipakai apa adanya kalau Deriv down, sama pola fallback
-// OHLCV lain) — bukan dihapus total, PAXG Binance tetap fallback terakhir.
-async function fetchXauSpot() {
-  try {
-    const cached = await redisCmd('GET', 'xau_spot');
-    if (cached) {
-      const d = JSON.parse(cached);
-      if (Date.now() - new Date(d.fetched_at).getTime() < 5 * 60 * 1000) return d;
-    }
-  } catch(e) {}
-
-  const sf = await withSingleFlight(redisCmd, {
-    lockKey: 'lock:xau_spot',
-    cacheKey: 'xau_spot',
-    isFresh: (raw) => { try { return Date.now() - new Date(JSON.parse(raw).fetched_at).getTime() < 5 * 60 * 1000; } catch(e) { return false; } },
-  });
-  if (!sf.gotLock && sf.fresh) return JSON.parse(sf.fresh);
-
-  // Primary: Deriv frxXAUUSD (broker-grade spot) — tick real-time + candle 1d untuk
-  // basis prev_close (Deriv tidak punya field "previousClose" siap pakai seperti Yahoo).
-  try {
-    const [tick, daily] = await Promise.all([
-      fetchDerivLatestPrice('GC=F'),
-      fetchDerivCandles('GC=F', '1d', 2).catch(() => null),
-    ]);
-    const price = tick.price;
-    const prev  = Array.isArray(daily) && daily.length >= 2 ? daily[daily.length - 2].c : null;
-    if (price > 0) {
-      const changePct = prev ? +((price - prev) / prev * 100).toFixed(2) : null;
-      const wib = new Date(Date.now() + 7 * 3600000);
-      const asOf = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
-      const result = { price, prev_close: prev || null, change_pct: changePct, source: 'Deriv frxXAUUSD', fetched_at: new Date().toISOString(), as_of: asOf };
-      await redisCmd('SET', 'xau_spot', JSON.stringify(result), 'EX', 300);
-      if (sf.gotLock) sf.release();
-      return result;
-    }
-  } catch(e) { console.warn('fetchXauSpot Deriv failed:', e.message); }
-
-  // Fallback 1: Yahoo Finance GC=F (COMEX gold front-month futures) — basis futures,
-  // bisa beda dari spot menjelang expiry, tapi lebih baik dari tidak ada data sama sekali.
-  try {
-    const r = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1d&interval=5m', {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (r.ok) {
-      const json = await r.json();
-      const meta  = json?.chart?.result?.[0]?.meta;
-      const price = meta?.regularMarketPrice;
-      const prev  = meta?.previousClose || meta?.chartPreviousClose;
-      if (price && price > 0) {
-        const changePct = prev ? +((price - prev) / prev * 100).toFixed(2) : null;
-        const wib = new Date(Date.now() + 7 * 3600000);
-        const asOf = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
-        const result = { price, prev_close: prev || null, change_pct: changePct, source: 'Yahoo GC=F (fallback)', fetched_at: new Date().toISOString(), as_of: asOf };
-        await redisCmd('SET', 'xau_spot', JSON.stringify(result), 'EX', 300);
-        if (sf.gotLock) sf.release();
-        return result;
-      }
-    }
-  } catch(e) { console.warn('fetchXauSpot Yahoo failed:', e.message); }
-
-  // Fallback 2: Binance PAXGUSDT (24/7, no auth, tracks spot 1:1)
-  try {
-    const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=PAXGUSDT', {
-      signal: AbortSignal.timeout(6000),
-    });
-    if (r.ok) {
-      const d = await r.json();
-      const price     = parseFloat(d.lastPrice);
-      const changePct = parseFloat(d.priceChangePercent);
-      const prev      = parseFloat(d.openPrice);
-      if (price > 0) {
-        const wib = new Date(Date.now() + 7 * 3600000);
-        const asOf = `${String(wib.getUTCHours()).padStart(2,'0')}:${String(wib.getUTCMinutes()).padStart(2,'0')} WIB`;
-        const result = { price, prev_close: prev || null, change_pct: +changePct.toFixed(2), source: 'Binance PAXG', fetched_at: new Date().toISOString(), as_of: asOf };
-        await redisCmd('SET', 'xau_spot', JSON.stringify(result), 'EX', 300);
-        if (sf.gotLock) sf.release();
-        return result;
-      }
-    }
-  } catch(e) { console.warn('fetchXauSpot Binance failed:', e.message); }
-
-  if (sf.gotLock) sf.release();
-  return null;
-}
 
 // Call 3 (trade thesis) schema constants + validators — pure functions, module scope
 // so they're unit-testable without spinning up the full handler.
@@ -1015,7 +921,7 @@ SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIE
   const marketClosed = !isFxMarketOpen();
   let weekendNote = isMonEarly ? '\nCATATAN KONTEKS: Ini Senin pagi — bagian "12-36 jam lalu" mencakup weekend, volume berita tipis, tidak market-moving.' : '';
   if (marketClosed) {
-    weekendNote += '\nCATATAN KONTEKS: Pasar FX sedang TUTUP saat ini (weekend). Harga XAU/USD di blok data di bawah adalah harga PENUTUPAN JUMAT — WAJIB disebut eksplisit sebagai penutupan Jumat, DILARANG dinarasikan seolah bergerak sekarang ("saat ini bergerak", "hari ini naik/turun"). Fokus output ke headline yang tetap mengalir (kalau ada) dan outlook pembukaan Senin.';
+    weekendNote += '\nCATATAN KONTEKS: Pasar FX sedang TUTUP saat ini (weekend). DILARANG menarasikan pergerakan seolah pasar sedang aktif ("saat ini bergerak", "hari ini naik/turun"). Fokus output ke headline yang tetap mengalir (kalau ada) dan outlook pembukaan Senin.';
   }
   // Peringkat headline: lihat headlineRankScore di module scope (pure, diuji unit).
   const _rankNowMs = Date.now();
@@ -1078,20 +984,14 @@ SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIE
   };
   const calBlock = calEvents.length > 0 ? calEvents.map(e=>`- ${e.date} | ${e.time_wib} | ${e.currency} | ${e.event}${_calFP(e)}${_calEventStatusTag(e)}${_calSesiTag(e)}`).join('\n') : '(Tidak ada event high-impact)';
 
-  // Gold-specific headline filter — split recent vs historical so AI weights correctly
+  // Gold-specific filter tetap dipakai Call 3 (thesis internal/downstream), tetapi Call 1
+  // tidak lagi mendapat blok emas terpisah. Headline emas yang relevan sudah ikut daftar
+  // makro terpadu di atas berdasarkan ranking yang sama dengan berita lain.
   const cutoff12h = Date.now() - 12 * 60 * 60 * 1000;
   const isGold = i => GOLD_KEYWORDS.some(kw => i.title.toLowerCase().includes(kw));
   const goldRecent = recentItems.filter(i => isGold(i) && new Date(i.pubDate).getTime() > cutoff12h).slice(0, 20);
   const goldOlder  = recentItems.filter(i => isGold(i) && new Date(i.pubDate).getTime() <= cutoff12h).slice(0, 15);
   const goldItems  = [...goldRecent, ...goldOlder];
-  const goldBlock  = [
-    goldRecent.length > 0
-      ? `[12 JAM TERAKHIR — ${goldRecent.length} berita]\n${goldRecent.map((i,idx)=>`${idx+1}. ${i.title}`).join('\n')}`
-      : '[12 JAM TERAKHIR] (tidak ada)',
-    goldOlder.length > 0
-      ? `\n[KONTEKS HISTORIS 12-36 JAM LALU — ${goldOlder.length} berita]\n${goldOlder.map((i,idx)=>`${idx+1}. ${i.title}`).join('\n')}`
-      : '\n[KONTEKS HISTORIS 12-36 JAM LALU] (tidak ada)',
-  ].join('');
 
   // Self-healing cache read: if the Redis key is cold (no cron populates these — they're
   // normally warmed by frontend tab visits), fetch the source endpoint directly so the
@@ -1113,24 +1013,22 @@ SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIE
     return null;
   }
 
-  // 3b. Load digest history + xau history + real yields + XAU spot + XAU TA + liquidity + yield curve
+  // 3b. Load digest history + real yields + liquidity + yield curve
   //     + risk regime (VIX/MOVE/HY) + rate path (Fed Funds futures) + cross-asset correlations + FX skew, in parallel
-  let digestHistory = [], xauHistory = [], realYieldsData = null, xauSpot = null, liqData = null, ycData = null, rawPrevThesis = null;
+  let digestHistory = [], realYieldsData = null, liqData = null, ycData = null, rawPrevThesis = null;
   let riskRegimeData = null, ratePathData = null, polymarketData = null;
   try {
     // Promise.all sengaja punya 1 entry lebih banyak (daily_snapshot) daripada nama yang
     // di-destructure — market-digest.js sendiri tidak butuh isinya, cuma memicu warming
     // cache untuk konsumen di admin.js (lihat komentar di entry itu di bawah).
-    const [rawHist, rawXauHist, rawRY, spotResult, rawLiq, rawYc, _rawPrevThesis, rawRisk, rawRate, , , , rawPoly] = await Promise.all([
+    const [rawHist, rawRY, rawLiq, rawYc, _rawPrevThesis, rawRisk, rawRate, , , , rawPoly] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
-      redisCmd('LRANGE', 'xau_history', 0, 3),
       // real_yields dipindah ke fetchOrWarm (2026-07-21, diskusi user soal DXY/WTI/real
       // yield breakdown) — sebelumnya cuma GET pasif (TTL 6h, hanya fresh kalau ada yang
       // buka tab Real Yields duluan). Sekarang aktif di-warm tiap slot digest (3x/hari),
       // supaya breakdown nominal/breakeven yang disuap ke prompt Analisa/Kritikus
       // (_formatFundamentalBlock di admin.js) jarang kosong/basi.
       fetchOrWarm('real_yields', '/api/real-yields'),
-      fetchXauSpot(),
       redisCmd('GET', 'liquidity_usd'),
       redisCmd('GET', 'yield_curve'),
       redisCmd('GET', 'latest_thesis'),
@@ -1153,28 +1051,22 @@ SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIE
     rawPrevThesis = _rawPrevThesis;
     if (rawPoly) { try { polymarketData = JSON.parse(rawPoly); } catch(_) {} }
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
-    if (Array.isArray(rawXauHist)) xauHistory = rawXauHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (rawRY) realYieldsData = JSON.parse(rawRY);
-    xauSpot = spotResult;
     if (rawLiq)  { try { liqData          = JSON.parse(rawLiq);  } catch(_) {} }
     if (rawYc)   { try { ycData           = JSON.parse(rawYc);   } catch(_) {} }
     if (rawRisk) { try { riskRegimeData   = JSON.parse(rawRisk); } catch(_) {} }
     if (rawRate) { try { ratePathData     = JSON.parse(rawRate); } catch(_) {} }
-    console.log('XAU spot:', xauSpot ? `$${xauSpot.price} (${xauSpot.source})` : 'unavailable');
     console.log('Risk regime:', riskRegimeData ? riskRegimeData.regime : 'unavailable (cache cold)');
   } catch(e) {}
   const historyBlock = digestHistory.length > 0
     ? digestHistory.map(h => `[${h.wib}] ${h.summary}`).join('\n')
     : '(Belum ada riwayat — ini sesi pertama)';
-  const xauHistoryBlock = xauHistory.length > 0
-    ? xauHistory.map(h => `[${h.wib}] ${h.xau_summary}`).join('\n')
-    : '(Belum ada riwayat XAU — ini sesi pertama)';
 
   // Build real yield block for Call 1 context
   let realYieldBlock = '(Data real yield tidak tersedia — inferensi dari headline saja)';
   if (realYieldsData?.currencies?.USD) {
     const ry = realYieldsData.currencies.USD;
-    const trendNote = ry.real > 2.0 ? 'ELEVATED — tekanan struktural bearish pada XAU' : ry.real > 1.0 ? 'moderat' : 'rendah/negatif — relatif supportif XAU';
+    const trendNote = ry.real > 2.0 ? 'ELEVATED — mendukung carry USD' : ry.real > 1.0 ? 'moderat' : 'rendah/negatif — mengurangi dukungan carry USD';
     realYieldBlock = `USD 10Y Nominal: ${ry.nominal}% | TIPS Breakeven: ${ry.inflation_exp}% | Real Yield: ${ry.real}% (${trendNote}) | per ${ry.as_of}`;
   }
   if (liqData?.tga_balance_bn != null) {
@@ -1195,14 +1087,6 @@ SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIE
     const spread = ycData.USD.spread_2y10y;
     const curveShape = spread < 0 ? 'INVERTED (recessionary signal)' : spread < 0.3 ? 'flat' : 'normal/steep';
     realYieldBlock += `\nYIELD CURVE USD: 2Y ${ycData.USD['2y'] ?? '?'}% | 10Y ${ycData.USD['10y'] ?? '?'}% | Spread 2Y10Y ${spread}% [${curveShape}]`;
-  }
-
-  // Build XAU spot block
-  let xauSpotBlock = '(Data harga XAU tidak tersedia sesi ini — gunakan tekanan fundamental saja)';
-  if (xauSpot) {
-    const sign  = xauSpot.change_pct > 0 ? '+' : '';
-    const pctStr = xauSpot.change_pct !== null ? ` (${sign}${xauSpot.change_pct}% dari sesi sebelumnya)` : '';
-    xauSpotBlock = `${xauSpot.source}: $${xauSpot.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pctStr} | per ${xauSpot.as_of}`;
   }
 
   // Build risk regime block (VIX/MOVE/HY) — ground-truth for risk-on/off claims instead of inferring from headlines
@@ -1535,23 +1419,23 @@ Pembacanya harus selesai membaca dan tahu: apa yang terjadi di dunia hari ini, k
 
 FORMAT OUTPUT:
 - Prosa mengalir. Tanpa bullet, heading, bold, emoji.
-- Dua bagian: (1) bagian FX, (2) bagian XAUUSD diawali tepat "XAUUSD:" (baris baru, tanpa spasi sebelum tanda titik dua).
+- RINGKASAN MAKRO TERPADU: satu briefing, tanpa sesi XAUUSD yang berdiri sendiri. Emas hanya boleh disebut di dalam tema makro yang sama jika ada headline substantif yang benar-benar relevan; jangan membuat paragraf emas sebagai kewajiban format.
 - Mulai LANGSUNG dengan fakta paling spesifik yang market-moving dari headline. DILARANG KERAS membuka dengan: "Pagi ini", "Hari ini", "Sesi ini", "Flow berita", "Pasar hari ini", "Dalam konteks ini", "Minggu ini", atau kalimat konteks/ringkasan apapun. Kalimat pertama harus menyebut nama pejabat, angka spesifik, atau peristiwa konkret dari headline.
-- Target panjang: bagian FX 4-7 kalimat, bagian XAUUSD 4-6 kalimat (kecuali sinyal tipis, lihat ATURAN XAUUSD). Ini batas lunak untuk menjaga fokus — jangan memotong fakta penting demi memenuhi angka ini, tapi jangan juga menumpuk tema lepas hanya untuk memenuhi panjang.
+- Target panjang: 5-9 kalimat. Ini batas lunak untuk menjaga fokus — jangan memotong fakta penting demi memenuhi angka ini, tapi jangan juga menumpuk tema lepas hanya untuk memenuhi panjang.
 
 DILARANG KERAS DIBAHAS DI SELURUH OUTPUT (ini pemisahan tugas Ringkasan vs Analisa, bukan preferensi gaya):
 - Analisa teknikal apa pun: trend/uptrend/downtrend/sideways, support, resistance, swing high/low, level entry, breakout, retest, konsolidasi, range harga, RSI, SMA/MA, oversold, overbought, moving average, struktur 4H/1H/Daily, pola candle.
 - Positioning: COT, CFTC, leveraged/asset manager net long/short, persentil positioning (P90/P10), skew opsi, risk reversal, put-skewed/call-skewed, retail sentiment, rasio long/short retail, crowded/squeeze positioning.
 - Korelasi antar-aset dan angka korelasi (r20/r60).
-Data untuk semua itu SENGAJA tidak dikirim ke kamu. Kalau kamu menuliskannya, artinya kamu mengarang — dan itu kesalahan paling berat di tugas ini. Harga XAU/USD yang diberikan HANYA level dan persentase perubahan sesi; boleh disebut sebagai fakta pasar, tapi DILARANG dikembangkan jadi analisa arah teknikal.
+Data untuk semua itu SENGAJA tidak dikirim ke kamu. Kalau kamu menuliskannya, artinya kamu mengarang — dan itu kesalahan paling berat di tugas ini.
 
 FRASA TERLARANG — periksa output sebelum kirim, tidak ada pengecualian:
 dapat mempengaruhi · dapat memberikan · dapat berdampak · perlu dicermati · patut dicermati · patut diwaspadai · perlu diwaspadai · layak dicermati · tergantung data · masih akan volatile · menjadi fokus · trader harus berhati-hati · sentimen mixed · berpotensi menggerakkan · berpotensi mempengaruhi · dapat menekan · memberikan tekanan · memberikan dorongan · perlu diperhatikan · akan terus dipantau · seiring dengan · sejalan dengan · di tengah · memberikan gambaran · masih dalam ketidakpastian · mencermati · dicermati · cukup padat · perkembangan ini · hal ini · dalam beberapa jam ke depan (tanpa spesifik) · berdampak pada pasar
 
 TES WAJIB TIAP KALIMAT: Bisakah kalimat ini ditulis tanpa membaca headlines hari ini? Kalau ya → hapus.
 
-ATURAN FX:
-PENTING: Bagian FX adalah KHUSUS untuk mata uang dan USD. DILARANG membahas harga emas, XAU, bullion di bagian ini — semua pembahasan emas masuk ke bagian XAUUSD. TAPI PERHATIKAN: berita geopolitik (perang, serangan, sanksi, Selat Hormuz), minyak/komoditas, tarif dan perang dagang, serta data ekonomi negara non-major (misal PMI China) BUKAN "konten emas" — itu berita makro penuh yang WAJIB dibahas di bagian FX kalau menggerakkan mata uang, lewat jalur transmisinya (safe haven ke JPY/CHF/USD, terms of trade ke CAD/AUD/NZD, risk sentiment global). Jangan mengoper berita itu ke paragraf emas lalu meninggalkan bagian FX kosong dari berita.
+ATURAN MAKRO TERPADU:
+PENTING: Prioritas utama tetap mata uang dan USD. Berita geopolitik (perang, serangan, sanksi, Selat Hormuz), minyak/komoditas, tarif dan perang dagang, serta data ekonomi negara non-major (misal PMI China) adalah berita makro penuh yang WAJIB dibahas jika menggerakkan mata uang, lewat jalur transmisinya (safe haven ke JPY/CHF/USD, terms of trade ke CAD/AUD/NZD, risk sentiment global). Emas bukan tema wajib: sebut hanya jika headline yang sama memberi informasi tambahan yang material dan spesifik, lalu rajut di tema itu—jangan membuat label atau bagian "XAUUSD:" tersendiri.
 ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim baru yang tidak ada di headline aslinya. Jika headline A menyebut X dan headline B menyebut Y, jangan tulis "X berkoordinasi dengan Y" kecuali kalimat itu memang ada di salah satu headline.
 ANTI-HALLUCINATION KEPUTUSAN CB: JANGAN PERNAH menulis bahwa sebuah keputusan bank sentral (FOMC/Fed, ECB, BOE, BOJ, RBA, dll — rate decision, hold, hike, cut) SUDAH terjadi ("tadi malam", "kemarin", "baru saja mempertahankan/menaikkan/menurunkan suku bunga") kecuali ada headline yang eksplisit melaporkan hasilnya ATAU event itu bertag "[SUDAH RILIS ... lalu]" di blok KALENDER EKONOMI. Event yang masih bertag "[AKAN RILIS dalam X]" atau tidak ada di kalender sama sekali = keputusannya BELUM ada, titik. Angka "Fed Rate: X%" di blok FUNDAMENTALS adalah level SAAT INI/SEBELUM keputusan berikutnya, bukan hasil keputusan yang baru terjadi — jangan narasikan seolah baru diputuskan. Data RATE PATH ("X bps cut priced dalam 3 bulan") adalah ekspektasi pasar ke depan (forward-looking), BUKAN konfirmasi bahwa keputusan sudah keluar — jangan campur dua data ini jadi satu klaim "Fed baru saja menahan suku bunga".
 
@@ -1594,42 +1478,23 @@ Kalau TIDAK ADA satu pun berita substantif untuk mata uang sesi itu, tulis SATU 
    Ingat, post rutin bertajuk "Interest Rate Probabilities" dan "Currency Strength Chart" BUKAN berita substantif — itu boilerplate wire dan ranking turunan harga, dua-duanya pernah menyebabkan kesalahan nyata di sistem ini; keberadaannya TIDAK membatalkan kalimat "tanpa katalis domestik".
 Penutup FX: Satu kalimat menyimpulkan kekuatan mata uang hari ini (HANYA pilih dari 8 majors: USD, EUR, GBP, JPY, CAD, AUD, NZD, CHF). Kalau ada SATU currency yang jelas paling kuat dan SATU yang paling lemah tanpa kontradiksi — sebut TEPAT SATU di tiap sisi, dengan alasan spesifik dari headline. Kalau buktinya genuinely campuran (misal USD kuat vs satu currency tapi lemah vs currency lain) — JANGAN dipaksa pilih satu pemenang palsu, sebut eksplisit sebagai "sinyal campuran" dan jelaskan singkat kenapa (kuat vs siapa, lemah vs siapa). Currency paling lemah/rentan tetap WAJIB disebut kalau buktinya jelas, dengan alasan spesifik dari headline — jangan jatuh ke "pasar volatile" generik tanpa alasan, baik di skenario satu pemenang maupun campuran. Kesimpulan ini WAJIB berdasar berita/kebijakan, bukan pergerakan harga semata.
 
-ATURAN XAUUSD (paragraf baru, mulai tepat "XAUUSD:"):
-Trader gold baca ini standalone — harus self-contained, dan tetap MAKRO: kenapa emas bergerak, bukan ke level berapa emas akan pergi.
-Gunakan HANYA headline dari blok HEADLINE RELEVAN XAUUSD di bawah.
-< 3 headline substantif → buka "Sinyal gold tipis" dan persingkat ke 2-3 kalimat saja.
-ANTI-HALLUCINATION: Jangan gabungkan dua headline berbeda menjadi satu klaim baru yang tidak ada di headline aslinya. Jika headline A menyebut X dan headline B menyebut Y, jangan tulis "X berkoordinasi dengan Y" kecuali kalimat itu memang ada di salah satu headline.
-
-PENDEKATAN BENANG MERAH — ikuti urutan ini:
-1. JANGKAR HARGA: Jika blok HARGA XAU/USD LIVE tersedia, buka dengan harga dan pergerakan hari ini (naik/turun berapa persen). Itu SATU-SATUNYA data harga yang kamu punya — dilarang menambah level support/resistance, swing, posisi dalam range, atau indikator apa pun. Ini titik awal narasi — semua fakta berikutnya menjelaskan MENGAPA harga bergerak begitu.
-2. RAJUT FAKTA: Hubungkan harga → headline → real yield → geopolitik secara natural, seperti analis yang bercerita. Tidak perlu rantai kausal formal. Cukup: "kenaikan ini didukung oleh X, meski dibatasi oleh Y." Fakta yang saling memperkuat → gabungkan. Fakta yang berlawanan → sebut keduanya, putuskan mana lebih berat dalam satu kalimat.
-3. REAL YIELD sebagai pembatas: Jika real yield > 2%, emas mahal secara struktural — wajib disebut sebagai rem, bukan diabaikan. Tapi jika harga tetap naik meski yield tinggi, artinya tekanan bullish cukup kuat untuk offset — nyatakan ini secara eksplisit. Kalau harga emas naik/bertahan tinggi PADAHAL real yield juga tinggi (hubungan invers normal melemah), sebut eksplisit sebagai sinyal regime: driver emas sedang BUKAN real yield (kemungkinan CB buying / debasement / safe-haven struktural). Jangan cuma sebut "dibatasi yield" lalu lanjut.
-4. TIDAK ADA RANTAI KAUSAL WAJIB: Untuk geopolitik minyak (Iran, Hormuz, OPEC) — tidak perlu trace oil→inflasi→Fed→yield secara kaku. Cukup: apakah ada bukti di headline bahwa ini mempengaruhi XAU? Jika ya, sebut. Jika tidak, skip.
-5. RISK REGIME sebagai konfirmasi safe-haven: Jika blok RISK REGIME tersedia, gunakan VIX/MOVE sebagai bukti konkret bahwa demand safe-haven nyata (bukan cuma narasi geopolitik tanpa data). Regime "risk_off" + harga naik = haven demand terkonfirmasi data. Regime "risk_on" tapi harga tetap naik = driver bukan safe-haven, harus dijelaskan via mekanisme lain (real yield turun, CB buying, dst).
-6. Driver sama dengan sesi sebelumnya → nyatakan eksplisit, itu informasi valid.
-7. LABEL TOPIK (navigasi visual, BUKAN pengganti rangkaian fakta di poin 2 — keduanya WAJIB ada bersamaan): setiap kali masuk ke sub-angle baru di luar JANGKAR HARGA awal, sisipkan tag PERSIS sebelum kalimat itu dengan format {{TAG: NAMA}}. Geopolitik dan Rate Differential di sini cuma CONTOH FORMAT, BUKAN daftar lengkap — sub-angle lain (Risk Regime, ETF Flow, CB Buying, dst, apa pun yang punya klaim/mekanisme sendiri dari headline) WAJIB dapat tag sendiri juga dengan nama yang sesuai. Jangan beri tag pada kalimat jangkar harga (pembuka). Tag ini beda dari format trigger kalender "[EVENT] [TIME WIB]" di bawah — jangan tertukar formatnya.
-
-TRIGGER TERDEKAT 24 JAM: Pilih event dari kalender dengan PRIORITAS TERTINGGI: (1) FOMC/Fed — Minutes, pidato Powell, rate decision; (2) US data — CPI, NFP, GDP; (3) event major currency lain. Format wajib: "[EVENT] [TIME WIB] — jika [outcome]: tekanan [bullish/bearish] XAU karena [mekanisme]; jika [outcome berlawanan]: tekanan [bullish/bearish] XAU karena [mekanisme]." Harus ada DUA skenario. Jika tidak ada event kalender relevan untuk XAU dalam 24 jam, tulis "Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan."
-
-CEK AKHIR SEBELUM KIRIM: (1) Ganti semua "dapat mempengaruhi/berpotensi/mungkin/dalam beberapa jam ke depan" dengan pernyataan tegas berbasis data. (2) Scan ulang seluruh output untuk kata teknikal (support, resistance, trend, swing, RSI, SMA, oversold, overbought, breakout, level) dan kata positioning/korelasi (COT, net long, net short, skew, put-skewed, call-skewed, persentil, retail sentiment, korelasi) — kalau ada, HAPUS kalimatnya, itu bukan tugas Ringkasan dan datanya memang tidak kamu punya. (3) Tiap tema yang tersisa: pastikan ada nama pejabat / angka rilis / peristiwa dari headline atau kalender. Tidak ada → buang temanya. (4) Penutup FX: tepat satu currency kuat + tepat satu lemah — ATAU nyatakan eksplisit "sinyal campuran" dengan menjelaskan kuat-vs-siapa dan lemah-vs-siapa. Baris "dan X juga" tanpa penjelasan campuran = salah. (5) Scan ulang tiap klaim yang menyebut keputusan bank sentral sebagai FAKTA SUDAH TERJADI ("tadi malam", "kemarin", "baru saja menahan/menaikkan/menurunkan") — pastikan ada headline eksplisit atau tag "[SUDAH RILIS]" yang mendukungnya. Kalau cuma berasal dari angka rate saat ini atau rate path market-implied tanpa konfirmasi itu, HAPUS/tulis ulang sebagai forward-looking ("pasar menanti keputusan Fed pada [tanggal/jam]..."), jangan sebagai hasil yang sudah terjadi.`;
+CEK AKHIR SEBELUM KIRIM: (1) Ganti semua "dapat mempengaruhi/berpotensi/mungkin/dalam beberapa jam ke depan" dengan pernyataan tegas berbasis data. (2) Scan ulang seluruh output untuk kata teknikal (support, resistance, trend, swing, RSI, SMA, oversold, overbought, breakout, level) dan kata positioning/korelasi (COT, net long, net short, skew, put-skewed, call-skewed, persentil, retail sentiment, korelasi) — kalau ada, HAPUS kalimatnya, itu bukan tugas Ringkasan dan datanya memang tidak kamu punya. (3) Tiap tema yang tersisa: pastikan ada nama pejabat / angka rilis / peristiwa dari headline atau kalender. Tidak ada → buang temanya. (4) Penutup FX: tepat satu currency kuat + tepat satu lemah — ATAU nyatakan eksplisit "sinyal campuran" dengan menjelaskan kuat-vs-siapa dan lemah-vs-siapa. Baris "dan X juga" tanpa penjelasan campuran = salah. (5) Jangan membuat label/bagian "XAUUSD:"; emas hanya boleh menjadi satu klausa relevan di tema makro yang memang berjangkar headline. (6) Scan ulang tiap klaim yang menyebut keputusan bank sentral sebagai FAKTA SUDAH TERJADI ("tadi malam", "kemarin", "baru saja menahan/menaikkan/menurunkan") — pastikan ada headline eksplisit atau tag "[SUDAH RILIS]" yang mendukungnya. Kalau cuma berasal dari angka rate saat ini atau rate path market-implied tanpa konfirmasi itu, HAPUS/tulis ulang sebagai forward-looking ("pasar menanti keputusan Fed pada [tanggal/jam]..."), jangan sebagai hasil yang sudah terjadi.`;
 
     function isValidDigestPrompt(p) {
       if (typeof p !== 'string') return false;
       const t = p.trim();
       if (t.length < 1000) return false;
-      if (!t.includes('XAUUSD')) return false;
-      if (!t.includes('ATURAN FX')) return false;
+      if (!t.includes('RINGKASAN MAKRO TERPADU')) return false;
+      if (!t.includes('ATURAN MAKRO TERPADU')) return false;
+      if (t.includes('ATURAN XAUUSD')) return false;
       return true;
     }
     if (promptDigestInstr && !isValidDigestPrompt(promptDigestInstr)) {
-      console.warn('prompt_digest override invalid (too short / missing markers) — using DIGEST_SYSTEM_DEFAULT');
+      console.warn('prompt_digest override invalid (too short / stale format / missing markers) — using DIGEST_SYSTEM_DEFAULT');
     }
     const digestSystemMsg = isValidDigestPrompt(promptDigestInstr) ? promptDigestInstr : DIGEST_SYSTEM_DEFAULT;
     const digestUserMsg = `PENTING: TULIS SELURUH OUTPUT DALAM BAHASA INDONESIA. JANGAN GUNAKAN BAHASA INGGRIS SAMA SEKALI.
 WAKTU: ${dayStr}, ${dateStr}, ${timeStr}${sesiNote}${weekendNote}
-
-=== HARGA XAU/USD LIVE (fakta pasar: HANYA level harga & persentase perubahan sesi — TIDAK ADA data trend/support/resistance/swing/RSI/SMA di prompt ini, dan kamu DILARANG mengarangnya) ===
-${xauSpotBlock}
 
 === DATA REAL YIELD USD (LIVE — gunakan ini, jangan inferensi dari headline) ===
 ${realYieldBlock}
@@ -1652,20 +1517,13 @@ CATATAN STALENESS: Blok REAL YIELD/RISK REGIME/RATE PATH di atas di-cache (TTL m
 (Sebagian headline diikuti baris berindentasi [SEVERITAS: ...] — dihitung dari angka actual-vs-forecast yang sudah rilis, bukan bagian dari headline itu sendiri. Data lemah historis menggerakkan harga lebih besar — beri bobot lebih ke headline bertag ini, tapi JANGAN menyalin tag mentah ke narasi.)
 ${headlinesBlock}
 
-=== HEADLINE RELEVAN XAUUSD (${goldItems.length} dari ${recentItems.length} berita, 36 jam, difilter) ===
-${goldBlock}
-
 === EVENT KALENDER EKONOMI HIGH-IMPACT (3 hari ke depan) ===
 (Tag [F: x | P: y] = konsensus Forecast & angka Previous — gunakan untuk menilai asymmetri beat/miss secara konkret: seberapa jauh konsensus dari previous menentukan skenario mana yang lebih mengejutkan market. Tag [JATUH DI DALAM SESI ...] = event itu rilis di dalam jam sesi yang sedang dibuka, jadi paling relevan untuk pembaca briefing ini — dahulukan event bertag itu daripada yang masih besok/lusa. Kalau TIDAK ADA satu pun event bertag itu, jangan mengarang urgensi: sesi ini memang tanpa event high-impact, dan itu informasi sah untuk disebut singkat.)
 ${calBlock}
 
-=== RINGKASAN SESI SEBELUMNYA (FX) ===
+=== RINGKASAN SESI SEBELUMNYA (MAKRO) ===
 (PERINGATAN: riwayat ini bisa berisi output format LAMA yang masih memuat angka teknikal/positioning — support, resistance, posisi dalam range, RSI, skew, COT. Data itu SUDAH TIDAK dikirim ke kamu lagi, jadi angka semacam itu di riwayat TIDAK BOLEH disalin, didaur ulang, atau diperbarui sendiri. Ambil hanya TEMA dan DRIVER-nya untuk menilai apakah cerita hari ini lanjutan atau berbalik.)
-${historyBlock}
-
-=== RIWAYAT XAUUSD SESI SEBELUMNYA (4 sesi terakhir) ===
-(Peringatan yang sama berlaku di sini: angka level/range/indikator di riwayat adalah sisa format lama, jangan dikutip ulang.)
-${xauHistoryBlock}`;
+${historyBlock}`;
 
     call1Messages = [
       { role: 'system', content: digestSystemMsg },
@@ -1980,13 +1838,13 @@ ${xauHistoryBlock}`;
     }
   }
 
-  // ── 5a. Safety net: kalimat penutup FX selalu ditag {{TAG: Konfirmasi}} ──────
+  // ── 5a. Safety net: kalimat penutup makro selalu ditag {{TAG: Konfirmasi}} ───
   // AI nggak selalu comply instruksi "WAJIB tag kalimat penutup" (terbukti di test
   // live — kadang nempel tanpa tag di paragraf currency sebelumnya). Daripada cuma
   // gantungin ke prompt compliance, pastikan juga di kode: kalimat penutup FX itu
   // by design SELALU ada (instruksi "Penutup FX" di atas wajib menghasilkan satu
-  // kalimat kuat/lemah currency) dan SELALU jadi kalimat terakhir sebelum marker
-  // "XAUUSD:" — jadi aman ditandai di sini kalau AI lupa nge-tag sendiri.
+  // kalimat kuat/lemah currency) dan menjadi kalimat terakhir briefing. Marker
+  // XAUUSD lama tetap didukung agar cache/output provider lama tidak rusak.
   function _ensureConfirmasiTag(text) {
     if (!text) return text;
     const xauIdx = text.indexOf('XAUUSD:');
@@ -2038,7 +1896,7 @@ ${xauHistoryBlock}`;
     }
   }
 
-  // ── 5b. Save digest + xau history (parallel) ──
+  // ── 5b. Save unified macro digest history ──
   // isIsolatedTest dikecualikan (bug pre-existing: hanya latest_article yang dulu
   // dikecualikan setelah insiden 2026-07-07, digest_history TIDAK — celah ini
   // ditemukan & ditutup sekalian saat menambah diagnostik Hermes, karena kalau
@@ -2049,13 +1907,10 @@ ${xauHistoryBlock}`;
       const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       const wibStr = `${String(wibNow.getUTCDate()).padStart(2,'0')} ${MONTHS[wibNow.getUTCMonth()]} ${String(wibNow.getUTCHours()).padStart(2,'0')}:${String(wibNow.getUTCMinutes()).padStart(2,'0')} WIB`;
 
-      // FX digest history — first 700 chars (FX section)
-      const xauIdx = article.indexOf('XAUUSD:');
-      const fxSummary = (xauIdx > 0 ? article.slice(0, xauIdx) : article).replace(/\n/g, ' ').slice(0, 700);
-      const fxEntry = JSON.stringify({ at: new Date().toISOString(), wib: wibStr, summary: fxSummary });
-
-      // XAU-specific history — extract XAUUSD paragraph only
-      const xauParagraph = xauIdx !== -1 ? article.slice(xauIdx, xauIdx + 600).replace(/\n/g, ' ') : null;
+      // Satu riwayat makro terpadu; output format lama yang masih memiliki marker XAUUSD
+      // tetap aman karena hanya disimpan sebagai teks, tanpa meneruskan key xau_history.
+      const macroSummary = article.replace(/\n/g, ' ').slice(0, 900);
+      const macroEntry = JSON.stringify({ at: new Date().toISOString(), wib: wibStr, summary: macroSummary });
       // Bug lama (ditemukan 2026-08-31): key `digest_history` masih bertipe STRING sisa
       // format pra-migrasi 2026-04-27 (dulu GET → push di memori → SET; diganti jadi
       // LPUSH/LTRIM atomic untuk menutup race). String lamanya tidak pernah dihapus,
@@ -2076,19 +1931,9 @@ ${xauHistoryBlock}`;
         }
       } catch (e) { console.warn('cek tipe digest_history gagal:', e.message); }
 
-      const saves = [
-        redisCmd('LPUSH', 'digest_history', fxEntry).then(() => redisCmd('LTRIM', 'digest_history', 0, 6)),
-      ];
-      // Only save XAU history when gold headlines are substantive — prevents hallucinated
-      // thin-day analysis from polluting future sessions via xauHistoryBlock continuity prompt
-      if (xauParagraph && goldItems.length >= 3) {
-        const xauEntry = JSON.stringify({ at: new Date().toISOString(), wib: wibStr, xau_summary: xauParagraph });
-        saves.push(redisCmd('LPUSH', 'xau_history', xauEntry).then(() => redisCmd('LTRIM', 'xau_history', 0, 3)));
-      } else if (xauParagraph) {
-        console.log(`XAU history skipped — goldItems ${goldItems.length} < 3, output unreliable`);
-      }
-      await Promise.all(saves);
-      console.log('Digest + XAU history saved');
+      await redisCmd('LPUSH', 'digest_history', macroEntry);
+      await redisCmd('LTRIM', 'digest_history', 0, 6);
+      console.log('Unified macro digest history saved');
     } catch(e) { console.warn('Digest history save failed:', e.message); }
   }
 
@@ -2109,9 +1954,7 @@ ${xauHistoryBlock}`;
       if (rawCbBias) cbBiasForThesis = JSON.parse(rawCbBias);
     } catch (e) { console.warn('Call 3: cb_bias read failed:', e.message); }
     const cbSummary = formatCbBiasForThesis(cbBiasForThesis);
-    const xauSectionMatch = article.indexOf('XAUUSD:');
-    const xauSection = xauSectionMatch !== -1 ? article.slice(xauSectionMatch, xauSectionMatch + 700) : '';
-    const briefingForThesis = article.slice(0, 900) + (xauSection && xauSectionMatch > 900 ? '\n\n' + xauSection : '');
+    const briefingForThesis = article.slice(0, 1600);
     const goldHeadlinesForThesis = goldItems.slice(0, 15).map((i, idx) => `${idx + 1}. ${i.title}`).join('\n') || '(none)';
     const rawHeadlinesForThesis = headlinesForBriefing.slice(0, 15).map((h, i) => `${i + 1}. ${h.title}`).join('\n');
 
@@ -2282,7 +2125,9 @@ ${xauHistoryBlock}`;
     // Judul dikirim apa adanya (tanpa link) — headline FinancialJuice memang tidak
     // boleh diklik di luar tab TEK/ActionForex, lihat ATURAN.md.
     headlines_sent_total: headlinesForBriefing.length,
-    headlines_sent: headlinesForBriefing.slice(0, 25).map(h => ({
+    // Daftar ini audit UI yang terlipat, bukan input terpisah. Naik moderat 25 -> 40:
+    // cukup memperlihatkan sumber ranking menengah tanpa membuka seluruh 80 dan noise ekornya.
+    headlines_sent: headlinesForBriefing.slice(0, 40).map(h => ({
       title: h.title,
       at:    h.pubDate ? new Date(h.pubDate).toISOString() : null,
     })),

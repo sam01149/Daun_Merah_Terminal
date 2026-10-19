@@ -129,8 +129,16 @@ test('prompt: fetch cache COT/skew/korelasi TETAP ada (pemanas cache auto-entry,
 test('prompt: jobdesk makro + gerbang tema tertulis eksplisit di system prompt', () => {
   assert.ok(SRC.includes('GERBANG TEMA'), 'aturan tema wajib berjangkar kejadian harus ada');
   assert.ok(SRC.includes('BUKAN analisa teknikal'), 'pemisahan Ringkasan vs Analisa harus eksplisit');
-  assert.ok(SRC.includes('BUKAN "konten emas"'),
-    'geopolitik/minyak/tarif/data China harus dinyatakan bukan konten emas, biar tidak dioper ke paragraf XAU');
+  assert.ok(SRC.includes('ATURAN MAKRO TERPADU'),
+    'geopolitik/minyak/tarif/data China harus tetap dirajut ke dampak mata uang');
+});
+
+test('prompt: tidak lagi memaksa sesi emas terpisah', () => {
+  assert.ok(SRC.includes('RINGKASAN MAKRO TERPADU'));
+  assert.ok(!SRC.includes('=== HEADLINE RELEVAN XAUUSD'));
+  assert.ok(!SRC.includes('=== RIWAYAT XAUUSD SESI SEBELUMNYA'));
+  assert.ok(!SRC.includes('ATURAN XAUUSD (paragraf baru'));
+  assert.ok(SRC.includes('jangan membuat label atau bagian "XAUUSD:" tersendiri'));
 });
 
 test('prompt: tense event kalender dikunci ke tag/tanggal, kata relatif dilarang', () => {
@@ -197,6 +205,10 @@ test('digest_history: self-heal tipe key sebelum LPUSH (bug WRONGTYPE senyap 4 b
 test('payload: daftar headline sumber ikut dikirim ke klien', () => {
   assert.ok(SRC.includes('headlines_sent:'), 'response wajib membawa headline yang dikirim ke AI');
   assert.ok(SRC.includes('headlines_sent_total:'), 'total wajib ikut supaya UI jujur soal "N dari total"');
+  assert.match(SRC, /headlinesForBriefing\.slice\(0, 40\)/,
+    'daftar audit UI menampilkan 40 headline teratas');
+  assert.match(SRC, /\.slice\(0, 80\)/,
+    'input AI tetap dibatasi 80 headline hasil ranking agar ekor feed tidak menambah noise');
 });
 
 test('penamaan: field TIDAK boleh bernama headlines_used (menyesatkan)', () => {

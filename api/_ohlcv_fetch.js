@@ -256,7 +256,7 @@ async function fetchDerivCandles(yahooSymbol, interval, count) {
   });
 }
 
-// Live tick (bukan candle) — dipakai market-digest.js fetchXauSpot() (REVISI 2026-07-30,
+// Live tick (bukan candle) — dipakai correlations.js untuk snapshot harga real-time,
 // migrasi harga acuan XAU/USD dari Yahoo GC=F ke Deriv spot, lihat catatan di atas).
 // style:'ticks' Deriv mengembalikan quote real-time (bukan OHLC candle jam berjalan),
 // paling dekat dengan "harga saat ini" yang ditampilkan Yahoo regularMarketPrice

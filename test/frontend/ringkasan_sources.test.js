@@ -61,9 +61,9 @@ test('tanggal rusak/absen → placeholder, bukan "Invalid Date" atau crash', () 
 });
 
 test('menyebut "N dari total" — daftar cuma sebagian dari yang dibaca AI', () => {
-  const items = Array.from({ length: 25 }, (_, i) => H('Headline ' + i, '2026-08-31T03:00:00Z'));
+  const items = Array.from({ length: 40 }, (_, i) => H('Headline ' + i, '2026-08-31T03:00:00Z'));
   const out = renderRingkasanSources(items, 80);
-  assert.ok(out.includes('25 dari 80'), 'header harus jujur bahwa ini sebagian dari 80');
+  assert.ok(out.includes('40 dari 80'), 'header harus jujur bahwa ini sebagian dari 80');
   assert.ok(out.includes('sisanya tetap dibaca AI'),
     'catatan wajib menjelaskan headline di luar daftar tetap dilihat AI — kalau tidak, user salah menyimpulkan berita itu terlewat');
 });
