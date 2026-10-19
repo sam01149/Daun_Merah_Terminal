@@ -30,6 +30,6 @@ test('state awal dan state kosong News tidak memakai emoji', () => {
   assert.match(html, /Berita akan dimuat otomatis/);
 });
 
-test('judul News memakai ukuran 12px', () => {
-  assert.match(html, /\.item-title\s*\{[\s\S]*?font-size:12px;/);
+test('judul News memakai ukuran 13px', () => {
+  assert.match(html, /\.item-title\s*\{[\s\S]*?font-size:13px;/);
 });

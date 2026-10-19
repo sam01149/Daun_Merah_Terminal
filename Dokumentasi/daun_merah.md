@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-19 (Session 394 — Klarifikasi cache Ringkasan emas lama)
+> **Last updated:** 2026-10-19 (Session 395 — Font News dikembalikan ke 13 px)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 395 (2026-10-19) — Font News dikembalikan ke 13 px
+
+**Perubahan.** Setelah uji tampilan 12 px, ukuran judul `.item-title` pada News dikembalikan ke 13 px di seluruh viewport sesuai keputusan user. Weight 400, line-height 1,45, keluarga font sistem, gestur pull-to-refresh mobile, dan ukuran komponen lain tidak berubah. Regresi frontend ikut diperbarui agar mengunci nilai 13 px. `APP_VERSION` dinaikkan dari `2026.10.19.1` menjadi `2026.10.19.2` supaya PWA mengambil stylesheet terbaru.
+
+**Verifikasi.** Tes fokus News lulus 4/4 dan suite penuh `npm test` lulus 1.426/1.426. Chromium nyata pada viewport 390×844 menghitung judul News tepat `13px`, line-height `18.85px`, lebar dokumen tetap 390 px tanpa overflow horizontal, dan membaca `APP_VERSION 2026.10.19.2`.
 
 ## Changelog Session 394 (2026-10-19) — Klarifikasi cache Ringkasan emas lama
 
