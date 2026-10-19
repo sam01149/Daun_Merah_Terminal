@@ -24,6 +24,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** Tes fokus News lulus 4/4 dan suite penuh `npm test` lulus 1.426/1.426. Chromium nyata pada viewport 390×844 menghitung judul News tepat `13px`, line-height `18.85px`, lebar dokumen tetap 390 px tanpa overflow horizontal, dan membaca `APP_VERSION 2026.10.19.2`.
 
+**Verifikasi produksi.** Setelah commit `4cf16a6` ter-deploy, HTML production menyajikan `APP_VERSION 2026.10.19.2` dan deklarasi `.item-title` 13 px. Dua pemeriksaan pertama masih membaca build lama 12 px; pemeriksaan ketiga membaca build baru, sehingga propagasi deployment turut terverifikasi dan bukan hasil cache lokal.
+
 ## Changelog Session 394 (2026-10-19) — Klarifikasi cache Ringkasan emas lama
 
 **Temuan produksi.** Blok yang masih tampil dengan urutan `XAU/USD` → `Geopolitik` → `Rate Differential` → `Risk Regime` bukan keluaran prompt makro terpadu baru. Pembacaan read-only `mode=cached` menunjukkan artikel itu masih memiliki marker mentah `XAUUSD:` dan dibuat oleh `deepseek-v4-pro` pada `2026-10-19T00:02:19.196Z` (07:02:19 WIB). Isinya cocok persis dengan kontrak prompt lama: pembuka harga XAU, sub-angle bertag, dan kalimat wajib `Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan`.
