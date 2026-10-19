@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-19 (Session 393 — Ringkasan makro terpadu dan pull-to-refresh News)
+> **Last updated:** 2026-10-19 (Session 394 — Klarifikasi cache Ringkasan emas lama)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 394 (2026-10-19) — Klarifikasi cache Ringkasan emas lama
+
+**Temuan produksi.** Blok yang masih tampil dengan urutan `XAU/USD` → `Geopolitik` → `Rate Differential` → `Risk Regime` bukan keluaran prompt makro terpadu baru. Pembacaan read-only `mode=cached` menunjukkan artikel itu masih memiliki marker mentah `XAUUSD:` dan dibuat oleh `deepseek-v4-pro` pada `2026-10-19T00:02:19.196Z` (07:02:19 WIB). Isinya cocok persis dengan kontrak prompt lama: pembuka harga XAU, sub-angle bertag, dan kalimat wajib `Tidak ada trigger kalender untuk XAU dalam 24 jam ke depan`.
+
+**Penyebab dan batas kompatibilitas.** Commit perubahan format tercatat pukul 07:02:06 WIB, tetapi deployment belum selesai saat cron Asia menghasilkan artikel 13 detik kemudian memakai runtime lama. Frontend baru kemudian membaca cache lama ber-TTL 24 jam. Fungsi kompatibilitas `unifyDigestArticle()` hanya menggabungkan kartu FX dan XAU menjadi satu wadah `ANALISIS BERITA · MAKRO`; ia sengaja mempertahankan isi dan tag artikel lama, sehingga secara visual bagian emas masih tampak seperti layout sebelumnya. Jadi pernyataan bahwa artikel lama sudah "digabung" perlu dibaca sebagai penggabungan wadah, bukan penulisan ulang semantik. Tidak ada kode atau AI baru yang menambahkan sesi emas ke output tersebut. Generate manual berikutnya atau cron sukses berikutnya (14:02/19:32 WIB) memakai prompt terpadu dan menimpa cache ini tanpa sesi XAU khusus.
+
+**Verifikasi.** Diagnosis dilakukan tanpa memicu generasi AI dan tanpa mengubah state produksi; endpoint hanya dibaca dalam mode cache. Tidak ada perubahan runtime pada sesi ini.
 
 ## Changelog Session 393 (2026-10-19) — Ringkasan makro terpadu dan pull-to-refresh News
 
