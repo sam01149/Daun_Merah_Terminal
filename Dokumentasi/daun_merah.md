@@ -26,6 +26,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** Regresi baru memastikan tidak ada selector strategi di panel, seluruh mapping Momentum/Range/Tactical Fade/No Trade benar, serta hasil basi dan kosong jatuh ke No Trade. Suite penuh lulus 1.454/1.454. Chromium nyata menguji pergantian empat hasil Analisa: seluruh badge dan ketiga section setup mengikuti hasil otomatis, selector tetap tidak ada, tidak muncul error halaman, dan viewport ponsel 390 px tidak mengalami overflow horizontal. `APP_VERSION` dinaikkan menjadi `2026.10.22.2`.
 
+**Verifikasi produksi.** Setelah push, halaman production merespons HTTP 200 dengan `APP_VERSION 2026.10.22.2`, memuat `ckStrategyStatus` dan teks "Strategi dipilih otomatis", serta tidak lagi memuat `ckPlaybookSelector`.
+
 ## Changelog Session 396 (2026-10-22) — Checklist diganti Rencana Entry Prime
 
 **Keputusan produk.** Tab Checklist lama diganti menjadi **Rencana Entry Prime**. Kotak centang tetap dipakai sebagai bukti bahwa suatu gate sudah dikonfirmasi, tetapi tidak lagi menghasilkan skor kelayakan atau band verdict berbobot. Persentase hanya menunjukkan kelengkapan. Keputusan aktif sekarang deterministik: `TUNGGU` bila satu gate wajib belum lengkap, `SIAP ENTRY` bila seluruh gate wajib lulus, dan `NO TRADE` bila Analisa Prime tidak menghasilkan setup aktif. Konflik COT/retail tetap menjadi konteks tambahan dan tidak mengubah ukuran risiko otomatis.
