@@ -1,12 +1,12 @@
 // test/journal_edge_stats.test.js
-// "Edge per Kondisi Checklist" (session 162) — jawab "kondisi checklist mana yang
-// beneran ngasih edge?" dari data trade closed asli. Dua hal diregresi-test:
+// "Edge per Gate Prime" — jawab "gate mana yang berkaitan dengan hasil?" dari
+// data trade closed asli tanpa mencampur populasi Checklist lama. Tiga hal diuji:
 // 1. sanitizeChecklistSnapshot: whitelist ketat atas payload client (bukan objek/array
 //    liar, cap 40 key, key panjang, coerce ke boolean) — mencegah payload malformed
 //    merusak agregasi atau membengkak storage.
-// 2. GET ?action=edge_stats: win-rate/expectancy per kondisi checklist (tercentang vs
-//    tidak), gate sampel minimum (MIN_TOTAL/MIN_BUCKET), dan urutan hasil (delta
-//    expectancy terbesar dulu).
+// 2. GET ?action=edge_stats&population=prime: win-rate/expectancy per kondisi,
+//    gate sampel minimum, dan urutan hasil (delta expectancy terbesar dulu).
+// 3. Trade dari playbook lama tidak masuk ke populasi Prime.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const journalHandler = require('../../api/journal.js');
@@ -113,11 +113,12 @@ const DEVICE = 'testdevice1';
 
 // Seed a closed journal entry directly into the mock store — bypasses POST/PATCH
 // lifecycle to keep the aggregation test focused on edge_stats math itself.
-function seedClosedEntry(redis, id, { checklistSnapshot, rActual }) {
+function seedClosedEntry(redis, id, { checklistSnapshot, rActual, checklistPlaybook = 'prime_momentum' }) {
   const key = `journal:${DEVICE}:${id}`;
   redis.kv.set(key, JSON.stringify({
     id, device_id: DEVICE, status: 'closed', r_actual: rActual,
     checklist_snapshot: checklistSnapshot,
+    checklist_playbook: checklistPlaybook,
   }));
   const zkey = `journal_index:${DEVICE}`;
   const z = redis.zsets.get(zkey) || [];
@@ -130,7 +131,7 @@ test('edge_stats: kurang dari MIN_TOTAL (5) trade closed+checklist -> insufficie
   seedClosedEntry(redis, '2', { checklistSnapshot: { rc1: false }, rActual: -1 });
 
   const res = mockRes();
-  await journalHandler({ method: 'GET', query: { device_id: DEVICE, action: 'edge_stats' }, headers: {} }, res);
+  await journalHandler({ method: 'GET', query: { device_id: DEVICE, action: 'edge_stats', population: 'prime' }, headers: {} }, res);
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.insufficient_data, true);
   assert.equal(res.body.sample_count, 2);
@@ -147,10 +148,11 @@ test('edge_stats: kondisi dengan sampel cukup di kedua sisi -> win-rate/avg_r/de
   // rc2 tercentang: [2,2,-1] avg 1R | rc2 tidak: [2,-1,-1] avg 0R -> delta kecil dari rc1
 
   const res = mockRes();
-  await journalHandler({ method: 'GET', query: { device_id: DEVICE, action: 'edge_stats' }, headers: {} }, res);
+  await journalHandler({ method: 'GET', query: { device_id: DEVICE, action: 'edge_stats', population: 'prime' }, headers: {} }, res);
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.insufficient_data, false);
   assert.equal(res.body.sample_count, 6);
+  assert.equal(res.body.population, 'prime');
   assert.equal(res.body.conditions.length, 2);
 
   // rc1 harus di urutan pertama (|delta| lebih besar)
@@ -172,7 +174,7 @@ test('edge_stats: kondisi dengan salah satu sisi < MIN_BUCKET (3) -> dikecualika
   seedClosedEntry(redis, '5', { checklistSnapshot: { rc1: false }, rActual: -1 });
 
   const res = mockRes();
-  await journalHandler({ method: 'GET', query: { device_id: DEVICE, action: 'edge_stats' }, headers: {} }, res);
+  await journalHandler({ method: 'GET', query: { device_id: DEVICE, action: 'edge_stats', population: 'prime' }, headers: {} }, res);
   assert.equal(res.body.insufficient_data, false);
   assert.equal(res.body.conditions.length, 0);
 }));
@@ -190,9 +192,22 @@ test('edge_stats: entry closed tanpa checklist_snapshot diabaikan (bukan trade d
   redis.zsets.set(zkey, z);
 
   const res = mockRes();
-  await journalHandler({ method: 'GET', query: { device_id: DEVICE, action: 'edge_stats' }, headers: {} }, res);
+  await journalHandler({ method: 'GET', query: { device_id: DEVICE, action: 'edge_stats', population: 'prime' }, headers: {} }, res);
   // sample_count harus 4 (entri #5 dibuang), bukan 5
   assert.equal(res.body.sample_count, 4);
+}));
+
+test('edge_stats population=prime mengabaikan snapshot Checklist lama', withMockRedis(async (redis) => {
+  seedClosedEntry(redis, '1', { checklistSnapshot: { pm_rr: true }, rActual: 1 });
+  seedClosedEntry(redis, '2', { checklistSnapshot: { pm_rr: false }, rActual: -1 });
+  seedClosedEntry(redis, '3', { checklistSnapshot: { rc1: true }, rActual: 5, checklistPlaybook: 'smc_ict' });
+  seedClosedEntry(redis, '4', { checklistSnapshot: { rc1: false }, rActual: -5, checklistPlaybook: 'macro_momentum' });
+
+  const res = mockRes();
+  await journalHandler({ method: 'GET', query: { device_id: DEVICE, action: 'edge_stats', population: 'prime' }, headers: {} }, res);
+  assert.equal(res.body.insufficient_data, true);
+  assert.equal(res.body.sample_count, 2);
+  assert.equal(res.body.population, 'prime');
 }));
 
 // ── POST: checklist_snapshot ikut tersimpan (sanitized) lewat siklus hidup normal ──

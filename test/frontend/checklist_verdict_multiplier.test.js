@@ -1,13 +1,9 @@
 // test/frontend/checklist_verdict_multiplier.test.js
-// PLAN U-4: verdict bertingkat + risk multiplier di ckGetVerdict().
-// 1. Kelas ARAH (ckAutoConflict) tidak menggagalkan gate/pct (ckState tetap true),
-//    dan (2026-08-21, diskusi user) TIDAK LAGI mengecilkan riskMultiplier — dulu 0.5
-//    ("KONFLIK — HALF SIZE") diam-diam memangkas size di Sizing Calculator tanpa
-//    pernah diminta user, sampai user harus mengakalinya dengan input riskPct 2x
-//    lipat. Sekarang cuma verdict "KONFLIK — REVIEW" (alarm perhatian), riskMultiplier
-//    tetap 1 — size flat, murni keputusan risk% manual user.
-// 2. Kelas WAKTU (ckAutoBlock, mis. rc4) tetap mutlak — riskMultiplier 0 (NO TRADE).
-// 3. pct<50 tanpa gate/conflict tetap NO TRADE murni seperti sebelum U-4.
+// Rencana Entry Prime memakai hard gate, bukan skor berbobot:
+// - persentase hanya kelengkapan tampilan;
+// - semua section gate wajib lengkap sebelum SIAP ENTRY;
+// - konteks positioning boleh berbeda tanpa membatalkan gate;
+// - strategi no_trade selalu NO TRADE.
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -23,9 +19,6 @@ function grab(startMarker, endMarker) {
   return html.slice(s, e);
 }
 
-// Range A: PB_REGIME_CHECK/PLAYBOOKS/ckState-cs/ckGetVerdict (belum termasuk ckBuildUI
-// yang murni DOM). Range B: ckAutoTick/ckAutoBlock/ckAutoConflict (belum termasuk
-// ckAutoTickRegimeCheck yang butuh cbData/cotData/calData live).
 const src = [
   grab('// ── CHECKLIST', '\nfunction ckBuildUI'),
   grab('function ckAutoTick(id, hint)', '\nfunction ckAutoTickRegimeCheck'),
@@ -39,87 +32,140 @@ const api = new Function(`
   return {
     ckGetVerdict, ckAutoTick, ckAutoBlock, ckAutoConflict,
     reset: () => { ckState = {}; ckConflict = {}; ckAutoBlocked = {}; ckOverrideReasons = {}; },
-    setSections: (sections, gates) => { CK_SECTIONS = sections; CK_GATES = gates; },
+    setPlan: (id, sections, gates, isNoTrade = false) => {
+      PLAYBOOKS[id] = { sections, gates, isNoTrade };
+      ckActivePlaybook = id;
+      CK_SECTIONS = sections;
+      CK_GATES = gates;
+    },
   };
 `)();
 
-// Playbook sintetis kecil (bukan smc_ict asli) — cukup 1 gate section berisi item
-// WAKTU (t1, seperti rc4) + item ARAH (t2, seperti rc3/rc6), plus 1 section biasa (t3).
-const GATE_SEC = { id: 'gate_sec', items: [{ id: 't1' }, { id: 't2' }] };
-const PLAIN_SEC = { id: 'plain_sec', items: [{ id: 't3' }] };
+const MACRO = { id: 'macro', title: 'ARAH MAKRO', items: [{ id: 'm1' }, { id: 'm2' }] };
+const TRIGGER = { id: 'trigger', title: 'TRIGGER', items: [{ id: 't1' }] };
+const CONTEXT = { id: 'context', title: 'KONTEKS', items: [{ id: 'c1' }] };
 
 function setup() {
   api.reset();
-  api.setSections([GATE_SEC, PLAIN_SEC], ['gate_sec']);
+  api.setPlan('test_prime', [MACRO, TRIGGER, CONTEXT], ['macro', 'trigger']);
 }
 
-test('clean pass (semua tercentang, tanpa konflik) -> riskMultiplier 1', () => {
+test('semua gate lengkap menghasilkan SIAP ENTRY tanpa pengali risiko otomatis', () => {
   setup();
+  ['m1', 'm2', 't1'].forEach(id => api.ckAutoTick(id, 'ok'));
+  const v = api.ckGetVerdict();
+  assert.equal(v.verdict, 'SIAP ENTRY');
+  assert.equal(v.isReady, true);
+  assert.equal(v.gatesOk, true);
+  assert.equal(v.riskMultiplier, 1);
+  assert.equal(v.pct, 75, 'konteks kosong hanya menurunkan angka kelengkapan, bukan keputusan');
+});
+
+test('gate belum lengkap tetap TUNGGU walau kelengkapan tinggi', () => {
+  setup();
+  api.ckAutoTick('m1', 'ok');
+  api.ckAutoTick('m2', 'ok');
+  api.ckAutoTick('c1', 'ok');
+  const v = api.ckGetVerdict();
+  assert.equal(v.pct, 75);
+  assert.equal(v.verdict, 'TUNGGU');
+  assert.equal(v.isReady, false);
+  assert.equal(v.riskMultiplier, 0);
+  assert.deepEqual(v.incompleteGates.map(s => s.id), ['trigger']);
+});
+
+test('Sizing terbuka setelah semua prasyarat selain pm_risk_pct selesai, tetapi entry masih TUNGGU', () => {
+  api.reset();
+  const macro = { id: 'macro', title: 'ARAH MAKRO', items: [{ id: 'm1' }] };
+  const risk = { id: 'risk', title: 'LEVEL DAN RISIKO', items: [{ id: 'pm_levels' }, { id: 'pm_rr' }, { id: 'pm_stop' }, { id: 'pm_risk_pct' }] };
+  api.setPlan('test_prime_sizing', [macro, risk], ['macro', 'risk']);
+  ['m1', 'pm_levels', 'pm_rr', 'pm_stop'].forEach(id => api.ckAutoTick(id, 'ok'));
+  const before = api.ckGetVerdict();
+  assert.equal(before.canSize, true);
+  assert.equal(before.isReady, false);
+  assert.equal(before.verdict, 'TUNGGU');
+
+  api.ckAutoTick('pm_risk_pct', 'risk 1%');
+  const after = api.ckGetVerdict();
+  assert.equal(after.canSize, true);
+  assert.equal(after.isReady, true);
+  assert.equal(after.verdict, 'SIAP ENTRY');
+});
+
+test('belum ada konfirmasi dimulai dari TUNGGU, bukan NO TRADE karena skor nol', () => {
+  setup();
+  const v = api.ckGetVerdict();
+  assert.equal(v.pct, 0);
+  assert.equal(v.verdict, 'TUNGGU');
+  assert.equal(v.isNoTrade, false);
+});
+
+test('strategi no_trade selalu NO TRADE meski pengakuan sudah dicentang', () => {
+  api.reset();
+  const sec = { id: 'decision', title: 'NO TRADE', items: [{ id: 'ack' }] };
+  api.setPlan('test_no_trade', [sec], [], true);
+  api.ckAutoTick('ack', 'dibaca');
+  const v = api.ckGetVerdict();
+  assert.equal(v.verdict, 'NO TRADE');
+  assert.equal(v.isNoTrade, true);
+  assert.equal(v.isReady, false);
+  assert.equal(v.riskMultiplier, 0);
+});
+
+test('konflik konteks tidak membatalkan gate Prime dan tidak mengubah ukuran risiko', () => {
+  setup();
+  ['m1', 'm2', 't1'].forEach(id => api.ckAutoTick(id, 'ok'));
+  api.ckAutoConflict('c1', 'COT berbeda arah');
+  const v = api.ckGetVerdict();
+  assert.equal(v.verdict, 'SIAP ENTRY');
+  assert.equal(v.cls, 'konflik');
+  assert.equal(v.hasArahConflict, true);
+  assert.equal(v.riskMultiplier, 1);
+});
+
+test('auto-block pada item gate membuat keputusan tetap TUNGGU', () => {
+  setup();
+  api.ckAutoTick('m1', 'ok');
+  api.ckAutoBlock('m2', 'kontrak ditolak');
   api.ckAutoTick('t1', 'ok');
-  api.ckAutoTick('t2', 'ok');
-  api.ckAutoTick('t3', 'ok');
   const v = api.ckGetVerdict();
-  assert.strictEqual(v.riskMultiplier, 1);
-  assert.strictEqual(v.gatesOk, true);
-  assert.strictEqual(v.hasArahConflict, false);
-  assert.notStrictEqual(v.verdict, 'NO TRADE');
+  assert.equal(v.gatesOk, false);
+  assert.equal(v.verdict, 'TUNGGU');
+  assert.equal(v.riskMultiplier, 0);
 });
 
-test('konflik ARAH (ckAutoConflict) -> gate tetap lolos, riskMultiplier TETAP 1 (flat, tidak auto-resize), verdict KONFLIK — REVIEW', () => {
+test('ckAutoTick membersihkan flag konflik atau block lama pada id yang sama', () => {
   setup();
+  api.ckAutoConflict('m1', 'kontra');
+  api.ckAutoBlock('m2', 'basi');
+  api.ckAutoTick('m1', 'sekarang selaras');
+  api.ckAutoTick('m2', 'sekarang valid');
   api.ckAutoTick('t1', 'ok');
-  api.ckAutoConflict('t2', 'COT kontra arah');
-  api.ckAutoTick('t3', 'ok');
   const v = api.ckGetVerdict();
-  assert.strictEqual(v.gatesOk, true, 'item konflik ARAH tidak boleh menggagalkan gate');
-  assert.strictEqual(v.riskMultiplier, 1, 'konflik ARAH cuma alarm perhatian, TIDAK boleh mengecilkan size otomatis');
-  assert.strictEqual(v.verdict, 'KONFLIK — REVIEW');
-  assert.strictEqual(v.cls, 'konflik');
-  assert.strictEqual(v.hasArahConflict, true);
-  assert.strictEqual(v.conflictItems.length, 1);
+  assert.equal(v.hasArahConflict, false);
+  assert.equal(v.verdict, 'SIAP ENTRY');
 });
 
-test('blok WAKTU (ckAutoBlock, mis. rc4) -> gate gagal, riskMultiplier 0, NO TRADE mutlak', () => {
-  setup();
-  api.ckAutoBlock('t1', 'event high-impact <6 jam');
-  api.ckAutoTick('t2', 'ok');
-  api.ckAutoTick('t3', 'ok');
-  const v = api.ckGetVerdict();
-  assert.strictEqual(v.gatesOk, false);
-  assert.strictEqual(v.riskMultiplier, 0);
-  assert.strictEqual(v.verdict, 'NO TRADE');
+test('panel aktif hanya menawarkan empat keputusan strategi Prime dan tidak menampilkan Pre-Entry AI', () => {
+  const panel = grab('<!-- PRIME ENTRY PLAN PANEL -->', '<!-- TOAST -->');
+  for (const id of ['prime_momentum', 'prime_range', 'prime_tactical_fade', 'prime_no_trade']) {
+    assert.match(panel, new RegExp(`value="${id}"`));
+  }
+  for (const legacy of ['value="smc_ict"', 'value="macro_momentum"', 'value="event_driven"', 'value="mean_reversion"']) {
+    assert.doesNotMatch(panel, new RegExp(legacy));
+  }
+  assert.doesNotMatch(panel, /Pre-Entry|Periksa Sebelum Entry|scoring/i);
+  assert.match(panel, /Kotak hanya mencatat konfirmasi, bukan menambah skor\. Semua gate wajib lulus\./);
 });
 
-test('pct<50 (belum cukup dicentang) -> NO TRADE, riskMultiplier 0, walau tidak ada blok/konflik', () => {
-  setup();
-  api.ckAutoTick('t1', 'ok'); // gate section: t1 tercentang tapi t2 belum -> gate juga gagal
-  const v = api.ckGetVerdict();
-  assert.strictEqual(v.riskMultiplier, 0);
-  assert.strictEqual(v.verdict, 'NO TRADE');
+test('skenario kalender kembali ke Analisa Prime, bukan langsung meloloskan rencana', () => {
+  const scenarioFn = grab('function scenarioGoToChecklist(pair)', '\nfunction scenarioGoToSizing');
+  assert.match(scenarioFn, /switchView\('analisa'\)/);
+  assert.match(scenarioFn, /selectAnalisaPair/);
+  assert.doesNotMatch(scenarioFn, /switchView\('checklist'\)/);
 });
 
-test('ckAutoTick membersihkan flag konflik/block lama pada id yang sama (tidak nyangkut basi)', () => {
-  setup();
-  api.ckAutoConflict('t2', 'kontra');
-  let v = api.ckGetVerdict();
-  assert.strictEqual(v.hasArahConflict, true);
-
-  api.ckAutoTick('t1', 'ok');
-  api.ckAutoTick('t2', 'sekarang selaras'); // kondisi berubah jadi selaras
-  api.ckAutoTick('t3', 'ok');
-  v = api.ckGetVerdict();
-  assert.strictEqual(v.hasArahConflict, false, 'ckAutoTick harus membersihkan ckConflict lama');
-  assert.strictEqual(v.riskMultiplier, 1);
-});
-
-test('ckAutoBlock membersihkan flag konflik lama pada id yang sama', () => {
-  setup();
-  api.ckAutoConflict('t2', 'kontra');
-  api.ckAutoTick('t1', 'ok');
-  api.ckAutoBlock('t2', 'berubah jadi blok waktu');
-  api.ckAutoTick('t3', 'ok');
-  const v = api.ckGetVerdict();
-  assert.strictEqual(v.hasArahConflict, false, 'ckAutoBlock harus membersihkan ckConflict lama');
-  assert.strictEqual(v.riskMultiplier, 0);
-  assert.strictEqual(v.gatesOk, false);
+test('statistik edge UI meminta populasi Prime secara eksplisit', () => {
+  const edgeFn = grab('async function jnRunEdgeStats()', '\n// Journal Bias Analyzer');
+  assert.match(edgeFn, /action=edge_stats&population=prime/);
 });

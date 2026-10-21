@@ -107,7 +107,6 @@ const PUBLIC_ACTION_LIMITS = {
   ohlcv_chart:          30,
   ohlcv_analyze:         5,
   ohlcv_critic:          3,
-  pre_entry_check:       3,
   ohlcv_dashboard:      30,
   setup_stats:          20,
   polymarket:           30,
@@ -145,7 +144,6 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_chart')        return ohlcvChartHandler(req, res);
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
   if (action === 'ohlcv_critic')       return ohlcvCriticHandler(req, res);
-  if (action === 'pre_entry_check')    return preEntryCheckHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
   if (action === 'setup_stats')        return setupStatsHandler(req, res);
   if (action === 'setup_override')     return setupOverrideHandler(req, res);
@@ -154,7 +152,7 @@ module.exports = async function handler(req, res) {
   if (action === 'polymarket')         return polymarketHandler(req, res);
   if (action === 'push_subscribe_dev') return pushSubscribeDevHandler(req, res);
   if (action === 'setup_log_archive')  return setupLogArchiveHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, pre_entry_check, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, push_subscribe_dev, or setup_log_archive' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, push_subscribe_dev, or setup_log_archive' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────

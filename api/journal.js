@@ -566,13 +566,24 @@ module.exports = async function handler(req, res) {
     return res.status(200).json(payload);
   }
 
-  // ── GET ?action=edge_stats — win-rate/expectancy split by checklist condition ──
-  // Answers "does this checklist condition actually predict a win?" using the
+  // ── GET ?action=edge_stats — win-rate/expectancy split by recorded condition ──
+  // Answers "does this recorded condition actually predict a win?" using the
   // trader's own closed trades — not a backtest, an aggregation of real outcomes
-  // segmented by which items were ticked at entry (see checklist_snapshot above).
+  // segmented by which items were confirmed at entry. population=prime keeps the
+  // new Prime gates separate from legacy Checklist playbooks so their statistics
+  // cannot be mixed into one misleading sample.
   if (req.method === 'GET' && req.query.action === 'edge_stats') {
     const MIN_TOTAL  = 5; // same floor as ?action=analyze
     const MIN_BUCKET = 3; // per-side minimum so one lucky/unlucky trade can't swing a %
+    const population = ['prime', 'legacy', 'all'].includes(req.query.population)
+      ? req.query.population
+      : 'all';
+    const inPopulation = (entry) => {
+      const isPrime = typeof entry.checklist_playbook === 'string' && entry.checklist_playbook.startsWith('prime_');
+      if (population === 'prime') return isPrime;
+      if (population === 'legacy') return !isPrime;
+      return true;
+    };
 
     let entries = [];
     try {
@@ -582,7 +593,7 @@ module.exports = async function handler(req, res) {
         const rawEntries = await redisCmd('MGET', ...keys);
         entries = (Array.isArray(rawEntries) ? rawEntries : [])
           .map(raw => { try { return raw ? JSON.parse(raw) : null; } catch(_) { return null; } })
-          .filter(e => e && e.status === 'closed' && e.r_actual != null && e.checklist_snapshot);
+          .filter(e => e && e.status === 'closed' && e.r_actual != null && e.checklist_snapshot && inPopulation(e));
       }
     } catch(e) {
       console.error('journal edge_stats: Redis fetch failed:', e.message);
@@ -590,9 +601,10 @@ module.exports = async function handler(req, res) {
     }
 
     if (entries.length < MIN_TOTAL) {
+      const populationLabel = population === 'prime' ? 'Rencana Prime' : population === 'legacy' ? 'Checklist lama' : 'rencana entry';
       return res.status(200).json({
-        conditions: [], insufficient_data: true, sample_count: entries.length,
-        message: `Butuh minimal ${MIN_TOTAL} trade closed dengan checklist tercatat. Saat ini baru ada ${entries.length}.`,
+        conditions: [], insufficient_data: true, sample_count: entries.length, population,
+        message: `Butuh minimal ${MIN_TOTAL} trade closed dengan ${populationLabel} tercatat. Saat ini baru ada ${entries.length}.`,
       });
     }
 
@@ -627,7 +639,7 @@ module.exports = async function handler(req, res) {
     // Most predictive first — biggest absolute swing in expectancy between ticked/not
     conditions.sort((a, b) => Math.abs(b.avg_r_delta) - Math.abs(a.avg_r_delta));
 
-    return res.status(200).json({ conditions, insufficient_data: false, sample_count: entries.length });
+    return res.status(200).json({ conditions, insufficient_data: false, sample_count: entries.length, population });
   }
 
   // ── GET ?action=bias_diagnosis — Journal Bias Analyzer (Plan I item 5) ────

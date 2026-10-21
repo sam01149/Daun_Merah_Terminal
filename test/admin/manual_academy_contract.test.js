@@ -1,5 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -10,6 +12,13 @@ const {
   MANUAL_ANALYSIS_POLICY_VERSION,
   MANUAL_MIN_RR,
 } = require('../../api/admin.js');
+
+const adminSource = fs.readFileSync(path.join(__dirname, '..', '..', 'api', 'admin.js'), 'utf8');
+
+test('Pre-Entry AI lama tidak lagi punya route publik atau bucket rate-limit aktif', () => {
+  assert.doesNotMatch(adminSource, /pre_entry_check:\s*\d+/);
+  assert.doesNotMatch(adminSource, /action === 'pre_entry_check'/);
+});
 
 test('manual Prime direction: butuh dua tingkat, confidence Medium+, dan data tidak disputed', () => {
   const cb = {

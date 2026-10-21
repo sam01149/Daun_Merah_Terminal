@@ -92,7 +92,7 @@ test('hasil Analisa lama tetap terlihat tetapi tidak dianggap setup aktif', () =
   assert.match(html, /const ANALISA_ACTIONABLE_MS = 8 \* 60 \* 60 \* 1000/);
   assert.match(html, /const statusLabel = stale \? 'HASIL LAMA'/);
   assert.match(html, /Level dipertahankan sebagai riwayat\. Jalankan analisa ulang sebelum dipakai/);
-  assert.match(html, /if \(_analisaResultIsStale\(ai\)\)[\s\S]*?sebelum mengirim level ke Checklist/);
+  assert.match(html, /if \(_analisaResultIsStale\(ai\)\)[\s\S]*?sebelum membuat Rencana Entry/);
 });
 
 test('umur setup memakai waktu analisa asli, bukan waktu cache lama dimuat ulang', () => {

@@ -11,12 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-19 (Session 395 — Font News dikembalikan ke 13 px)
+> **Last updated:** 2026-10-22 (Session 396 — Checklist diganti Rencana Entry Prime)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 396 (2026-10-22) — Checklist diganti Rencana Entry Prime
+
+**Keputusan produk.** Tab Checklist lama diganti menjadi **Rencana Entry Prime**. Kotak centang tetap dipakai sebagai bukti bahwa suatu gate sudah dikonfirmasi, tetapi tidak lagi menghasilkan skor kelayakan atau band verdict berbobot. Persentase hanya menunjukkan kelengkapan. Keputusan aktif sekarang deterministik: `TUNGGU` bila satu gate wajib belum lengkap, `SIAP ENTRY` bila seluruh gate wajib lulus, dan `NO TRADE` bila Analisa Prime tidak menghasilkan setup aktif. Konflik COT/retail tetap menjadi konteks tambahan dan tidak mengubah ukuran risiko otomatis.
+
+**Alur Prime.** Strategi baru hanya `Momentum`, `Range`, `Tactical Fade`, atau `No Trade`, selaras dengan kontrak Analisa manual `prime-v1`. Gate dibagi menjadi arah makro, syarat strategi, trigger rejection H1 London/New York tanpa breakout, level dan risiko, serta pengaman kesegaran/kalender/kontrak. Hasil Analisa terbaru otomatis memilih strategi yang cocok; hasil lama atau tidak tersedia dikunci ke No Trade. Tombol Sizing muncul setelah seluruh prasyarat selain `pm_risk_pct` selesai; hasil kalkulator risk ≤2% kemudian mengisi konfirmasi itu otomatis, sehingga tidak ada ketergantungan melingkar antara Rencana dan Sizing. Tombol skenario Kalender sekarang membuka Analisa Prime lebih dulu, bukan langsung masuk rencana dari rekomendasi event. State disimpan terpisah per pair dan strategi dengan namespace `daunmerah_prime_v1_*`, sehingga state Checklist lama tidak ikut meloloskan gate baru.
+
+**Pembersihan jalur lama.** Selector SMC/ICT, Macro Momentum, Event-Driven, dan Mean Reversion dicabut dari UI aktif, tetapi definisi labelnya dipertahankan agar jurnal lama tetap terbaca. Widget Pre-Entry Check AI dihapus dari UI dan route publik `action=pre_entry_check` dinonaktifkan karena membuat verdict kedua yang menduplikasi kontrak Prime. Petunjuk, drawer, shortcut, Sizing, Kalender, CSV jurnal, dan label statistik diperbarui ke istilah Rencana Prime. `APP_VERSION` dinaikkan menjadi `2026.10.22.1`.
+
+**Integritas jurnal.** Snapshot yang disimpan oleh alur MT5 sekarang ikut mencatat strategi, kelengkapan, dan state gate—sebelumnya jalur MT5 kehilangan tiga field ini. Endpoint edge stats menerima filter populasi; UI selalu meminta `population=prime`, sehingga hasil Rencana Prime tidak tercampur dengan Checklist lama atau entry manual. Format penyimpanan `checklist_*` dipertahankan untuk kompatibilitas data/API lama, tetapi `checklist_pct` pada record Prime berarti kelengkapan, bukan skor kualitas.
+
+**Verifikasi.** Regresi khusus Rencana Prime dan jurnal lulus 28/28. Suite penuh kemudian lulus 1.452/1.452 setelah satu ekspektasi teks lama diperbarui dari Checklist ke Rencana Entry. Pemeriksaan browser lokal sempat dicoba, tetapi browser menolak alamat loopback dengan `ERR_BLOCKED_BY_CLIENT`; verifikasi UI ditutup oleh tes DOM/kontrak statis yang memastikan empat strategi Prime saja yang tampil, Pre-Entry tidak ada di panel, Kalender kembali ke Analisa, urutan Rencana→Sizing tidak melingkar, dan request statistik selalu memakai populasi Prime.
 
 ## Changelog Session 395 (2026-10-19) — Font News dikembalikan ke 13 px
 
