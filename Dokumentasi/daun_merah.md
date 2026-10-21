@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-22 (Session 398 — Empty state dan lebar pair Rencana Prime)
+> **Last updated:** 2026-10-22 (Session 399 — Rencana Entry mandiri dan layout final)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 399 (2026-10-22) — Rencana Entry mandiri dan layout final
+
+**Keputusan produk final.** Rencana Entry sekarang berdiri sendiri dan tidak mensyaratkan hasil Analisa AI. Pengguna memilih pair serta satu setup manual—Momentum, Range, atau Tactical Fade—lalu mengonfirmasi gate berdasarkan analisanya sendiri. Pilihan setup disimpan per pair. No Trade tetap merupakan hasil keputusan, bukan pilihan setup. Hasil Analisa AI tidak memilih setup, tidak mencentang gate manual, dan tidak dapat menolak pandangan pengguna; otomatisasi yang tersisa hanya fakta deterministik yang relevan seperti kalender dan hasil risk dari Sizing.
+
+**Antarmuka final.** Teks `Analisa Prime diperlukan`, badge status otomatis, dan kalimat penjelas horizontal dihapus. Pair dibatasi 260 px dan setup 200 px. Struktur panel diperbaiki menjadi satu kolom utama plus sidebar kanan 260 px, sehingga toolbar dan daftar gate tidak lagi menjadi kolom terpisah. Catatan Analisa dibuat setinggi 72 px agar tidak mengambil seluruh halaman. Empty state langsung menunjukkan `PILIH PAIR` lalu `PILIH SETUP`.
+
+**Verifikasi lokal.** Regresi Rencana lulus 15/15. Suite penuh lulus 1.456/1.456. Chromium nyata pada viewport 1.365×768 membuktikan kolom utama 1.041 px dan sidebar 260 px, pair 260 px, setup 200 px, catatan 72 px, pilihan Momentum tersimpan, serta gate manual dapat dicentang tanpa hasil AI. Viewport 390×844 menampilkan sidebar mobile tersembunyi, setup Range yang benar, dan tidak memiliki overflow horizontal. Tidak ada error halaman. `APP_VERSION` dinaikkan menjadi `2026.10.22.4`.
 
 ## Changelog Session 398 (2026-10-22) — Empty state dan lebar pair Rencana Prime
 

@@ -2130,10 +2130,12 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .ck-mobile-pb-bg { flex: 1; height: 2px; background: var(--border); }
 .ck-mobile-pb { height: 100%; background: var(--green); transition: width .4s; }
 .ck-wrap { flex: 1; display: flex; overflow: hidden; }
+.ck-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ck-toolbar { padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
 .ck-sections { flex: 1; overflow-y: auto; padding: 10px 12px 20px; scrollbar-width: none; }
 .ck-sections::-webkit-scrollbar { display: none; }
 .ck-sidebar {
-  width: 232px; flex-shrink: 0; border-left: 1px solid var(--border);
+  width: 260px; flex-shrink: 0; border-left: 1px solid var(--border);
   overflow-y: auto; padding: 10px 10px 20px; scrollbar-width: none;
   display: flex; flex-direction: column; gap: 8px;
 }
@@ -2165,16 +2167,11 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .ck-sec-body.open { display: block; }
 .ck-stop { font-size: 9px; color: var(--accent); letter-spacing: .4px; padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
 .ck-empty {
-  min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 10px; padding: 28px; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  min-height: 110px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 8px; padding: 20px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
 }
-.ck-empty-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; letter-spacing: 1px; color: var(--text); }
+.ck-empty-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; letter-spacing: .7px; color: var(--text); }
 .ck-empty-body { max-width: 460px; font-size: 10px; line-height: 1.6; color: var(--muted); }
-.ck-empty-btn {
-  padding: 8px 14px; border: 1px solid var(--green-dim); border-radius: 4px; background: rgba(48,209,88,.08);
-  color: var(--green); font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
-}
-.ck-empty-btn:hover { border-color: var(--green); background: rgba(48,209,88,.14); }
 
 .ck-item {
   display: flex; align-items: center; gap: 9px; padding: 5px 0;
@@ -2210,8 +2207,8 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .ck-w { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .ck-w-ttl { font-size: 9px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; display: flex; justify-content: space-between; }
 .ck-verdict-val {
-  font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
-  letter-spacing: -1px; text-align: center; padding: 6px 0 2px; transition: color .3s;
+  font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800;
+  letter-spacing: -.4px; line-height: 1.15; text-align: center; padding: 6px 0 2px; transition: color .3s; overflow-wrap: anywhere;
 }
 .ck-verdict-val.pass    { color: var(--green); }
 .ck-verdict-val.ready   { color: #7dba84; }
@@ -2473,6 +2470,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
 
   /* Checklist: stack vertically, hide desktop sidebar */
   .ck-wrap { flex-direction: column; }
+  .ck-main { flex: 1; }
   .ck-sidebar { display: none; }
   .ck-sections { flex: 1; }
 }
@@ -2596,11 +2594,9 @@ body.light-theme .cal-date-input { color-scheme: light; }
   font: 12px 'DM Mono',monospace; resize: vertical; outline: none; transition: border-color .15s;
 }
 .tek-note-wrap textarea:focus { border-color: #38bdf8; }
-/* Catatan analisa di CHECKLIST (#ckTekNoteWrap) mengisi penuh sisa tinggi
-   kolom kiri ke bawah, bukan kotak pendek — kolom itu sendiri sudah stretch
-   penuh tinggi panel lewat align-items:stretch default punya .ck-wrap. */
-#ckTekNoteWrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-#ckTekNoteWrap textarea { flex: 1 1 auto; min-height: 120px; height: auto; }
+/* Catatan analisa dibuat ringkas agar daftar gate tetap menjadi fokus. */
+#ckTekNoteWrap { flex: none; min-height: 0; display: flex; flex-direction: column; }
+#ckTekNoteWrap textarea { flex: none; min-height: 72px; height: 72px; max-height: 160px; }
 /* ── TA Indicator Panel ── */
 .tek-ta-panel { padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
 .tek-ta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
@@ -4140,7 +4136,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div class="pt-rules">
       <div class="pt-rule">
         <div class="pt-rule-icon" style="color:var(--accent)">✗</div>
-        <div class="pt-rule-text"><strong>Jangan lewati gate Prime</strong>Kalau satu gate wajib belum lulus, status tetap TUNGGU. Keputusan No Trade tidak boleh diubah hanya dengan mencentang kondisi lain.</div>
+        <div class="pt-rule-text"><strong>Jangan lewati gate</strong>Kalau satu gate wajib belum lulus, status tetap TUNGGU. Keputusan No Trade tidak boleh diubah hanya dengan mencentang kondisi lain.</div>
       </div>
       <div class="pt-rule">
         <div class="pt-rule-icon" style="color:var(--accent)">✗</div>
@@ -4480,11 +4476,10 @@ body:not(.light-theme) .ringkasan-gen-btn {
 
 <!-- PRIME ENTRY PLAN PANEL -->
 <div id="checklistPanel" class="ck-wrap" style="display:none">
-  <div style="padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:6px">
+  <div class="ck-main">
+  <div class="ck-toolbar">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.05em">RENCANA ENTRY PRIME</span>
-      <span id="ckStrategyStatus" role="status" style="border:1px solid var(--border);color:var(--muted);background:var(--surface);padding:3px 8px;font-family:'DM Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.04em">MENUNGGU ANALISA</span>
-      <span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">Strategi dipilih otomatis</span>
+      <span style="font-size:10px;color:var(--text);font-family:'DM Mono',monospace;font-weight:700;letter-spacing:.08em">RENCANA ENTRY</span>
       <div class="ck-pb-info-wrap">
         <button class="ck-pb-info-btn" id="ckPbInfoBtn" onclick="ckTogglePbInfo()" aria-label="Informasi strategi">i</button>
         <div class="ck-pb-info-tip" id="ckPbInfoBox">
@@ -4493,19 +4488,25 @@ body:not(.light-theme) .ringkasan-gen-btn {
         </div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <select id="ckPairSelector" onchange="ckOnPairChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;width:min(100%,360px);flex:0 1 360px">
-        <option value="">— Pilih pair untuk auto-tick —</option>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <select id="ckPairSelector" onchange="ckOnPairChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;width:min(100%,260px);flex:0 1 260px">
+        <option value="">— Pilih pair —</option>
+      </select>
+      <select id="ckStrategySelector" onchange="ckOnStrategyChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;width:min(100%,200px);flex:0 1 200px">
+        <option value="">— Pilih setup —</option>
+        <option value="prime_momentum">Momentum</option>
+        <option value="prime_range">Range</option>
+        <option value="prime_tactical_fade">Tactical Fade</option>
       </select>
       <span id="ckPairHint" style="font-size:9px;color:var(--muted);white-space:nowrap;cursor:default"></span>
     </div>
-    <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;line-height:1.45">Momentum, Range, atau Tactical Fade dimuat otomatis dari Analisa Prime. Kotak hanya mencatat konfirmasi, bukan menambah skor. Semua gate wajib lulus.</div>
     <div class="tek-note-wrap" id="ckTekNoteWrap" style="display:none">
-      <div class="tek-note-label">Catatan analisa (manual, dari TEKNIKAL)</div>
+      <div class="tek-note-label">Catatan Analisa</div>
       <textarea id="ckTekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="ckSaveTekNote()"></textarea>
     </div>
   </div>
   <div class="ck-sections" id="ckSectionsContainer"></div>
+  </div>
   <div class="ck-sidebar">
     <div class="ck-w">
       <div class="ck-w-ttl">Keputusan</div>
@@ -4722,7 +4723,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.22.3';
+const APP_VERSION = '2026.10.22.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -7324,9 +7325,7 @@ function analisaGoToChecklist(symbol) {
         }
       }
     }
-    const primeId = ckPrimePlaybookId(ai?.structured?.strategy_id);
-    if (primeId !== ckActivePlaybook) ckSwitchPlaybook(primeId);
-    showToast('Rencana Entry Prime', `${targetLabel} dibuka dengan setup ${ckPrimeStrategyLabel(primeId)}. Lengkapi gate sebelum Sizing.`, 4000);
+    showToast('Rencana Entry', `${targetLabel} dibuka. Pilih setup lalu lengkapi gate.`, 3500);
   }, 200);
 }
 
@@ -8018,12 +8017,7 @@ function thesisGoToChecklist(pair, direction) {
         }
       }
     }
-    const primeId = ckPrimePlaybookId(freshStruct?.strategy_id);
-    if (primeId !== ckActivePlaybook) ckSwitchPlaybook(primeId);
-    const note = freshStruct
-      ? `Setup ${ckPrimeStrategyLabel(primeId)} dimuat otomatis dari Analisa terbaru.`
-      : 'Belum ada Analisa Prime terbaru; keputusan dikunci ke No Trade sampai analisa diperbarui.';
-    showToast('Rencana Entry Prime', `${pair} ${(direction||'').toUpperCase()} — ${note}`, 4500);
+    showToast('Rencana Entry', `${pair} ${(direction||'').toUpperCase()} dibuka. Pilih setup lalu lengkapi gate.`, 3500);
   }, 200);
 }
 
@@ -11578,7 +11572,7 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
         <div class="cal-scenario-pair-dir ${p.dir}">${p.dir.toUpperCase()}</div>
         <div class="scen-conf">${conf.rows.join('')}${taRow}</div>
         <div class="scen-pair-actions">
-          <button class="cal-scenario-ck-btn" onclick="scenarioGoToChecklist('${p.pair}')">Buka Analisa Prime</button>
+          <button class="cal-scenario-ck-btn" onclick="scenarioGoToChecklist('${p.pair}')">Buka Analisa</button>
           <button class="cal-scenario-ck-btn" onclick="scenarioGoToSizing('${p.pair}','${p.dir}')"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-1px;margin-right:2px"><path d="M12 3v18M5 7l-3 6a4 4 0 0 0 6 0Z"/><path d="M19 7l-3 6a4 4 0 0 0 6 0Z"/><path d="M5 7h14M5 21h14"/></svg>Hitung Lot · SIZING</button>
         </div>
       </div>
@@ -11590,7 +11584,7 @@ function scenarioRenderResults(pairs, eventCur, direction, eventName, evId) {
     <div class="scen-conf-caption">Dasar bertumpu — tiap pair diuji terhadap 5 faktor pendukung: bias bank sentral · fundamental makro · flow COT · korelasi antar-leg · teknikal (dimuat menyusul, tidak mengubah urutan). Makin banyak ✓ makin kuat alasan trade selain kejutan data itu sendiri — tapi faktor-faktor ini saling berkaitan, dan ranking mengukur konteks latar, bukan seberapa besar pair biasanya bereaksi ke rilis ini.</div>
     ${pairsHtml}
     <div class="cal-scenario-warn">
-      Ini rekomendasi awal, bukan sinyal entry — besaran deviasi actual vs forecast ikut menentukan kekuatan reaksi (beat/miss tipis sering diabaikan pasar). Jalankan Analisa Prime untuk menentukan strategi atau No Trade, selesaikan Rencana, lalu hitung ukuran lot via SIZING sebelum eksekusi.
+      Ini rekomendasi awal, bukan sinyal entry — besaran deviasi actual vs forecast menentukan kekuatan reaksi. Selesaikan analisa, buat Rencana, lalu hitung ukuran lot sebelum eksekusi.
     </div>`;
 }
 
@@ -11846,7 +11840,7 @@ function scenarioGoToChecklist(pair) {
   setTimeout(() => {
     const symbol = pair.replace('/', '').toUpperCase();
     if (typeof selectAnalisaPair === 'function') selectAnalisaPair(symbol);
-    showToast('Analisa Prime', `${pair} dibuka. Jalankan Analisa Pair Ini sebelum membuat Rencana Entry.`, 4000);
+    showToast('Analisa', `${pair} dibuka. Selesaikan analisa sebelum membuat Rencana Entry.`, 3500);
   }, 200);
 }
 
@@ -12759,22 +12753,22 @@ PLAYBOOKS.smc_ict.sections = [
 // playbooks above stay defined only so old journal snapshots keep their human
 // labels; they are no longer selectable or used to decide a new trade.
 const PRIME_MACRO_SECTION = {
-  id:'prime_macro', num:'01', title:'ARAH MAKRO', badge:'GATE',
-  stopNote:'Tentukan arah dari kebijakan bank sentral dan data inti sebelum melihat chart. Chart tidak boleh membalik arah momentum.',
+  id:'prime_macro', num:'01', title:'ARAH DAN ALASAN', badge:'GATE',
+  stopNote:'Keputusan berasal dari analisamu sendiri. Data aplikasi hanya pendukung.',
   items:[
-    {id:'pm_policy', label:'Analisa terbaru memakai policy Prime dan kontraknya lulus', auto:true},
-    {id:'pm_direction', label:'Arah makro tegas: bullish atau bearish untuk pair ini', auto:true},
-    {id:'pm_reason', label:'Alasan arah berasal dari kebijakan atau data ekonomi inti', auto:true},
+    {id:'pm_policy', label:'Analisa sudah selesai sebelum menyusun entry'},
+    {id:'pm_direction', label:'Arah trade sudah tegas: bullish atau bearish'},
+    {id:'pm_reason', label:'Alasan entry didukung data atau struktur harga'},
   ]
 };
 
 const PRIME_TRIGGER_SECTION = {
   id:'prime_trigger', num:'03', title:'TRIGGER EKSEKUSI', badge:'GATE',
-  stopNote:'Trigger wajib berupa rejection H1 di sesi London atau New York. Breakout bukan trigger Prime.',
+  stopNote:'Trigger wajib berupa rejection H1 di sesi London atau New York. Jangan mengejar breakout.',
   items:[
-    {id:'pm_h1_rejection', label:'Ada rejection H1 yang spesifik pada level rencana', auto:true},
-    {id:'pm_session', label:'Trigger hanya berlaku pada sesi London atau New York', auto:true},
-    {id:'pm_no_breakout', label:'Entry bukan breakout dan bukan mengejar candle impuls', auto:true},
+    {id:'pm_h1_rejection', label:'Ada rejection H1 yang spesifik pada level rencana'},
+    {id:'pm_session', label:'Trigger hanya berlaku pada sesi London atau New York'},
+    {id:'pm_no_breakout', label:'Entry bukan breakout dan bukan mengejar candle impuls'},
   ]
 };
 
@@ -12782,8 +12776,8 @@ const PRIME_RISK_SECTION = {
   id:'prime_risk', num:'04', title:'LEVEL DAN RISIKO', badge:'GATE',
   stopNote:'Setup aktif wajib memiliki entry, stop loss, take profit, dan RR minimal 1:2.',
   items:[
-    {id:'pm_levels', label:'Entry, stop loss, dan take profit lengkap', auto:true},
-    {id:'pm_rr', label:'Risk/Reward minimal 1:2', auto:true},
+    {id:'pm_levels', label:'Entry, stop loss, dan take profit lengkap'},
+    {id:'pm_rr', label:'Risk/Reward minimal 1:2'},
     {id:'pm_stop', label:'Stop berada di balik wick rejection atau struktur invalidasi'},
     {id:'pm_risk_pct', label:'Risk akun sudah ditentukan dan tidak lebih dari 2%', auto:true},
   ]
@@ -12791,11 +12785,11 @@ const PRIME_RISK_SECTION = {
 
 const PRIME_GUARD_SECTION = {
   id:'prime_guard', num:'05', title:'PENGAMAN TERAKHIR', badge:'GATE',
-  stopNote:'Data basi, kontrak Prime yang ditolak, atau event High dalam enam jam berarti tunggu. Jangan dipaksa menjadi setup.',
+  stopNote:'Jika informasi sudah basi atau ada event High dalam enam jam, tunggu.',
   items:[
-    {id:'pm_fresh', label:'Analisa masih berlaku dan bukan hasil lama', auto:true},
+    {id:'pm_fresh', label:'Analisa dan level yang dipakai masih relevan'},
     {id:'rc4', label:'Tidak ada event High relevan dalam 6 jam ke depan', auto:true},
-    {id:'pm_contract', label:'Tidak ada penolakan kontrak Prime atau konflik waktu', auto:true},
+    {id:'pm_contract', label:'Tidak ada konflik dengan rencana utama atau waktu entry'},
   ]
 };
 
@@ -12815,8 +12809,7 @@ const PRIME_STRATEGY_SECTIONS = {
     id:'prime_strategy_momentum', num:'02', title:'STRATEGI MOMENTUM', badge:'GATE',
     stopNote:'Momentum hanya sah bila arah trade sama dengan arah makro dan entry menunggu pullback.',
     items:[
-      {id:'pm_strategy_momentum', label:'Analisa Prime memilih strategi momentum', auto:true},
-      {id:'pm_momentum_same_direction', label:'Bias trade sama dengan arah makro', auto:true},
+      {id:'pm_momentum_same_direction', label:'Bias trade sama dengan arah utama'},
       {id:'pm_momentum_pullback', label:'Entry berada pada pullback, bukan mengejar harga'},
       {id:'pm_momentum_body', label:'Body rejection H1 searah berada di kisaran 0,5 sampai 1 ATR'},
     ]
@@ -12825,7 +12818,6 @@ const PRIME_STRATEGY_SECTIONS = {
     id:'prime_strategy_range', num:'02', title:'STRATEGI RANGE', badge:'GATE',
     stopNote:'Range hanya sah ketika pasar objektif ranging atau makro campuran dan entry berada di tepi range.',
     items:[
-      {id:'pm_strategy_range', label:'Analisa Prime memilih strategi range', auto:true},
       {id:'pm_range_context', label:'Kondisi objektif ranging atau makro campuran sudah terkonfirmasi'},
       {id:'pm_range_edge', label:'Entry berada di tepi range, bukan di tengah'},
       {id:'pm_range_atr', label:'Jika ATR 6H tersedia: SL 1 ATR dan TP 2 ATR; jika tidak, gunakan struktur dengan RR minimal 1:2'},
@@ -12835,7 +12827,6 @@ const PRIME_STRATEGY_SECTIONS = {
     id:'prime_strategy_tactical_fade', num:'02', title:'STRATEGI TACTICAL FADE', badge:'GATE',
     stopNote:'Tactical Fade hanya untuk overreaction jangka pendek dengan cerita tipis atau belum terkonfirmasi.',
     items:[
-      {id:'pm_strategy_tactical_fade', label:'Analisa Prime memilih strategi tactical fade', auto:true},
       {id:'pm_fade_overreaction', label:'Pergerakan yang dilawan benar-benar overreaction'},
       {id:'pm_fade_story', label:'Cerita pemicu masih tipis atau belum terkonfirmasi'},
       {id:'pm_fade_horizon', label:'Horizon tetap jangka pendek dan pandangan makro besar tidak diubah'},
@@ -12846,11 +12837,11 @@ const PRIME_STRATEGY_SECTIONS = {
 const PRIME_GATES = ['prime_macro','prime_trigger','prime_risk','prime_guard'];
 Object.assign(PLAYBOOKS, {
   prime_pending: {
-    name:'Rencana Entry Prime', strategyId:null, isPending:true, color:'var(--muted)',
+    name:'Rencana Entry', strategyId:null, isPending:true, color:'var(--muted)',
     quick:[], gates:[], sections:[],
   },
   prime_momentum: {
-    name:'Prime — Momentum', strategyId:'momentum', color:'var(--green)',
+    name:'Momentum', strategyId:'momentum', color:'var(--green)',
     quick:[
       {id:'pmq1', label:'Arah makro lulus', sid:'prime_macro'},
       {id:'pmq2', label:'Momentum valid', sid:'prime_strategy_momentum'},
@@ -12862,7 +12853,7 @@ Object.assign(PLAYBOOKS, {
     sections:[PRIME_MACRO_SECTION, PRIME_STRATEGY_SECTIONS.momentum, PRIME_TRIGGER_SECTION, PRIME_RISK_SECTION, PRIME_GUARD_SECTION, PRIME_CONTEXT_SECTION],
   },
   prime_range: {
-    name:'Prime — Range', strategyId:'range', color:'var(--purple)',
+    name:'Range', strategyId:'range', color:'var(--purple)',
     quick:[
       {id:'prq1', label:'Arah makro lulus', sid:'prime_macro'},
       {id:'prq2', label:'Range valid', sid:'prime_strategy_range'},
@@ -12874,7 +12865,7 @@ Object.assign(PLAYBOOKS, {
     sections:[PRIME_MACRO_SECTION, PRIME_STRATEGY_SECTIONS.range, PRIME_TRIGGER_SECTION, PRIME_RISK_SECTION, PRIME_GUARD_SECTION, PRIME_CONTEXT_SECTION],
   },
   prime_tactical_fade: {
-    name:'Prime — Tactical Fade', strategyId:'tactical_fade', color:'var(--orange)',
+    name:'Tactical Fade', strategyId:'tactical_fade', color:'var(--orange)',
     quick:[
       {id:'ptfq1', label:'Arah makro lulus', sid:'prime_macro'},
       {id:'ptfq2', label:'Fade valid', sid:'prime_strategy_tactical_fade'},
@@ -12886,28 +12877,19 @@ Object.assign(PLAYBOOKS, {
     sections:[PRIME_MACRO_SECTION, PRIME_STRATEGY_SECTIONS.tactical_fade, PRIME_TRIGGER_SECTION, PRIME_RISK_SECTION, PRIME_GUARD_SECTION, PRIME_CONTEXT_SECTION],
   },
   prime_no_trade: {
-    name:'Prime — No Trade', strategyId:'no_trade', isNoTrade:true, color:'var(--accent)',
+    name:'No Trade', strategyId:'no_trade', isNoTrade:true, color:'var(--accent)',
     quick:[{id:'pntq1', label:'Keputusan diterima', sid:'prime_no_trade'}],
     gates:[],
     sections:[{
       id:'prime_no_trade', num:'01', title:'NO TRADE', badge:'KEPUTUSAN',
-      stopNote:'Tidak ada setup yang memenuhi kontrak Prime. Tunggu analisa baru; jangan mengubah keputusan ini dengan centang tambahan.',
+      stopNote:'Tidak ada setup aktif. Tunggu kondisi berikutnya.',
       items:[{id:'pm_no_trade_ack', label:'Keputusan No Trade sudah dibaca dan diterima'}],
     }],
   },
 });
 
 const PRIME_PLAYBOOK_IDS = new Set(['prime_pending','prime_momentum','prime_range','prime_tactical_fade','prime_no_trade']);
-const PRIME_STRATEGY_PLAYBOOK = Object.freeze({
-  momentum:'prime_momentum',
-  range:'prime_range',
-  tactical_fade:'prime_tactical_fade',
-  no_trade:'prime_no_trade',
-});
-
-function ckPrimePlaybookId(strategyId) {
-  return PRIME_STRATEGY_PLAYBOOK[strategyId] || 'prime_pending';
-}
+const PRIME_MANUAL_SETUP_IDS = new Set(['prime_momentum','prime_range','prime_tactical_fade']);
 
 function ckPrimeStrategyLabel(playbookId = ckActivePlaybook) {
   return {
@@ -12915,38 +12897,26 @@ function ckPrimeStrategyLabel(playbookId = ckActivePlaybook) {
     prime_range:'RANGE',
     prime_tactical_fade:'TACTICAL FADE',
     prime_no_trade:'NO TRADE',
-    prime_pending:'MENUNGGU ANALISA',
-  }[playbookId] || 'MENUNGGU ANALISA';
+    prime_pending:'PILIH SETUP',
+  }[playbookId] || 'PILIH SETUP';
 }
 
 function ckPrimePlaybookForPair(pair) {
-  if (!pair || typeof analisaAiCache === 'undefined') return 'prime_pending';
-  const expectedSymbol = pair === 'XAU/USD' ? 'GC=F' : pair.replace('/', '').toUpperCase() + '=X';
-  for (const [symbol, result] of Object.entries(analisaAiCache)) {
-    if (symbol.toUpperCase() !== expectedSymbol) continue;
-    if (!result?.structured || _analisaResultIsStale(result)) return 'prime_pending';
-    return ckPrimePlaybookId(result.structured.strategy_id);
-  }
-  return 'prime_pending';
+  if (!pair) return 'prime_pending';
+  try {
+    const selected = localStorage.getItem(`daunmerah_entry_setup_${pair.replace('/', '')}`);
+    return PRIME_MANUAL_SETUP_IDS.has(selected) ? selected : 'prime_pending';
+  } catch(e) { return 'prime_pending'; }
 }
 
 function ckUpdatePrimeStrategyStatus() {
-  const el = document.getElementById('ckStrategyStatus');
-  if (!el) return;
-  const isPending = ckActivePlaybook === 'prime_pending';
-  const isNoTrade = ckActivePlaybook === 'prime_no_trade';
-  el.textContent = isPending && !ckCurrentPair ? 'PILIH PAIR' : ckPrimeStrategyLabel();
-  el.style.color = isNoTrade ? 'var(--accent)' : isPending ? 'var(--muted)' : PLAYBOOKS[ckActivePlaybook]?.color || 'var(--text)';
-  el.style.borderColor = isNoTrade ? 'var(--accent)' : isPending ? 'var(--border)' : PLAYBOOKS[ckActivePlaybook]?.color || 'var(--border)';
-  el.title = isNoTrade
-    ? 'Analisa Prime terbaru memutuskan tidak ada setup aktif.'
-    : isPending
-      ? 'Pilih pair dan jalankan Analisa Prime terlebih dahulu.'
-      : 'Setup ini dipilih otomatis dari Analisa Prime terbaru.';
+  const selector = document.getElementById('ckStrategySelector');
+  if (selector && selector.value !== (PRIME_MANUAL_SETUP_IDS.has(ckActivePlaybook) ? ckActivePlaybook : '')) {
+    selector.value = PRIME_MANUAL_SETUP_IDS.has(ckActivePlaybook) ? ckActivePlaybook : '';
+  }
 }
 
-// Satu planner, dengan section strategi yang dimuat otomatis dari hasil Analisa.
-// Tidak ada pilihan manual: tanpa pair/hasil segar, planner berada pada status menunggu.
+// Satu planner mandiri. Setup dipilih user; data AI tidak menentukan keputusan.
 let ckActivePlaybook = 'prime_pending';
 
 let CK_SECTIONS = PLAYBOOKS[ckActivePlaybook].sections;
@@ -13131,7 +13101,7 @@ function ckToggleItem(id) {
   // consciously acknowledge they're going against the auto-signal).
   if (turningOn && ckAutoBlocked[id]) {
     if (CK_PRIME_HARD_BLOCK_IDS.has(id)) {
-      showToast('Gate Prime Diblokir', ckAutoBlockHints[id] || 'Perbarui data atau analisa sebelum melanjutkan.', 4500);
+      showToast('Gate Diblokir', ckAutoBlockHints[id] || 'Perbarui data atau analisa sebelum melanjutkan.', 4500);
       return;
     }
     ckRequestOverride(id);
@@ -13155,8 +13125,7 @@ const CK_CONFLICT_DESCRIPTIONS = {
 };
 
 const CK_PRIME_HARD_BLOCK_IDS = new Set([
-  'pm_policy','pm_direction','pm_fresh','pm_contract','pm_levels','pm_rr','rc4',
-  'pm_strategy_momentum','pm_strategy_range','pm_strategy_tactical_fade',
+  'pm_risk_pct','rc4',
 ]);
 
 function ckFormatConflictLabel(it) {
@@ -13266,7 +13235,7 @@ function ckGateComplete(sec) { return sec.items.every(it => ckState[it.id]); }
 
 function ckGetVerdict() {
   // Persentase hanya menunjukkan kelengkapan rencana, bukan skor kualitas dan
-  // bukan sumber keputusan. Prime memakai urutan gate yang semuanya wajib lulus.
+  // bukan sumber keputusan. Semua gate wajib lulus.
   let ws = 0, tw = 0;
   CK_SECTIONS.forEach(sec => sec.items.forEach(it => {
     tw += 1;
@@ -13295,10 +13264,10 @@ function ckGetVerdict() {
   let verdict, cls, sub, riskMultiplier;
   if (isPending) {
     verdict = 'MENUNGGU'; cls = 'pending';
-    sub = ckCurrentPair ? 'Jalankan Analisa Prime terbaru' : 'Pilih pair untuk memulai';
+    sub = ckCurrentPair ? 'Pilih setup untuk memulai' : 'Pilih pair untuk memulai';
     riskMultiplier = 0;
   } else if (isNoTrade) {
-    verdict = 'NO TRADE'; cls = 'fail'; sub = 'Keputusan Prime: tidak ada setup aktif'; riskMultiplier = 0;
+    verdict = 'NO TRADE'; cls = 'fail'; sub = 'Tidak ada setup aktif'; riskMultiplier = 0;
   } else if (!anyChecked) {
     verdict = 'TUNGGU'; cls = 'pending'; sub = 'Mulai dari arah makro'; riskMultiplier = 0;
   } else if (!gatesOk) {
@@ -13306,8 +13275,8 @@ function ckGetVerdict() {
   } else {
     verdict = 'SIAP ENTRY'; cls = hasArahConflict ? 'konflik' : 'pass';
     sub = hasArahConflict
-      ? 'Gate Prime lulus; positioning berbeda hanya menjadi konteks tambahan'
-      : 'Seluruh gate Prime lulus';
+      ? 'Semua gate lulus; positioning berbeda hanya menjadi konteks'
+      : 'Seluruh gate lulus';
     riskMultiplier = 1;
   }
   return { pct, verdict, cls, sub, ws, tw, gatesOk, incompleteGates, incompletePreSizingGates, riskMultiplier, hasArahConflict, conflictItems, isPending, isNoTrade, isReady, canSize };
@@ -13351,11 +13320,10 @@ function ckBuildUI() {
     empty.className = 'ck-empty';
     const hasPair = !!ckCurrentPair;
     empty.innerHTML = `
-      <div class="ck-empty-title">${hasPair ? 'ANALISA PRIME DIPERLUKAN' : 'PILIH PAIR UNTUK MEMULAI'}</div>
+      <div class="ck-empty-title">${hasPair ? 'PILIH SETUP' : 'PILIH PAIR'}</div>
       <div class="ck-empty-body">${hasPair
-        ? `${ckCurrentPair} belum memiliki hasil Analisa Prime terbaru. Jalankan analisa terlebih dahulu; setup yang sesuai akan dimuat otomatis di sini.`
-        : 'Pilih pair pada kolom di atas. Setelah itu jalankan Analisa Prime agar sistem dapat menentukan setup yang sesuai.'}</div>
-      <button type="button" class="ck-empty-btn" onclick="ckOpenAnalisaPrime()">BUKA ANALISA PRIME</button>`;
+        ? 'Pilih Momentum, Range, atau Tactical Fade pada kolom di atas.'
+        : 'Pilih pair pada kolom di atas.'}</div>`;
     container.appendChild(empty);
   }
 
@@ -13401,7 +13369,7 @@ function ckBuildUI() {
         <span class="ck-qk-lbl" id="ckql_${q.id}">${q.label}</span>
       </div>`).join('');
   document.getElementById('ckSecProg').innerHTML = pending
-    ? '<div class="ck-qk-lbl">Menunggu Analisa Prime</div>'
+    ? '<div class="ck-qk-lbl">Belum dimulai</div>'
     : CK_SECTIONS.map(s =>
       `<div class="ck-sp-row">
         <span class="ck-sp-name" title="${s.title}">${s.title}</span>
@@ -13499,7 +13467,7 @@ function ckRender() {
 }
 
 function ckResetAll() {
-  if (!confirm(`Reset seluruh rencana Prime? Setelah reset, konfirmasi tidak bisa diisi ulang selama ${CK_RESET_COOLDOWN_MS / 1000} detik.`)) return;
+  if (!confirm(`Reset seluruh rencana? Setelah reset, konfirmasi tidak bisa diisi ulang selama ${CK_RESET_COOLDOWN_MS / 1000} detik.`)) return;
   ckState = {};
   ckSave();
   try {
@@ -13514,24 +13482,24 @@ function ckResetAll() {
 
 const PB_INFO = {
   prime_pending: {
-    title: 'Rencana Entry Prime',
-    body: 'Pilih pair dan jalankan Analisa Prime. Jenis setup akan dimuat otomatis setelah hasil terbaru tersedia.'
+    title: 'Rencana Entry',
+    body: 'Pilih pair dan setup untuk mulai.'
   },
   prime_momentum: {
-    title: 'Prime — Momentum',
+    title: 'Momentum',
     body: 'Arah makro harus tegas dan arah trade wajib sama. Chart hanya menentukan lokasi pullback dan waktu rejection H1; breakout atau mengejar impuls tidak diterima.'
   },
   prime_range: {
-    title: 'Prime — Range',
+    title: 'Range',
     body: 'Dipakai saat pasar objektif ranging atau makro campuran. Entry hanya di tepi range dengan rejection H1; RSI divergence bersifat tambahan, bukan syarat utama.'
   },
   prime_tactical_fade: {
-    title: 'Prime — Tactical Fade',
+    title: 'Tactical Fade',
     body: 'Fade jangka pendek hanya untuk overreaction dengan cerita tipis atau belum terkonfirmasi. Pandangan makro besar tidak boleh diam-diam diubah.'
   },
   prime_no_trade: {
-    title: 'Prime — No Trade',
-    body: 'Tidak ada setup yang memenuhi kontrak Prime. Ini keputusan aktif untuk menunggu, bukan kekurangan centang yang boleh dipaksa sampai lolos.'
+    title: 'No Trade',
+    body: 'Tidak ada setup aktif. Tunggu kondisi berikutnya.'
   },
   smc_ict: {
     title: 'SMC/ICT — Smart Money Concept',
@@ -13581,19 +13549,6 @@ function _syncChecklistForPair(pair) {
   }
 }
 
-function ckOpenAnalisaPrime() {
-  const pair = document.getElementById('ckPairSelector')?.value || '';
-  switchView('analisa');
-  setTimeout(() => {
-    if (pair && typeof selectAnalisaPair === 'function') {
-      selectAnalisaPair(pair.replace('/', '').toUpperCase());
-      showToast('Analisa Prime', `${pair} dibuka. Jalankan Analisa Pair Ini untuk membentuk Rencana Entry.`, 4000);
-    } else {
-      showToast('Analisa Prime', 'Pilih pair yang ingin dianalisa terlebih dahulu.', 3500);
-    }
-  }, 200);
-}
-
 function ckPrefillJurnal() {
   const targetPair = (document.getElementById('szPair') && document.getElementById('szPair').value) ||
                      (document.getElementById('ckPairSelector') && document.getElementById('ckPairSelector').value);
@@ -13602,7 +13557,7 @@ function ckPrefillJurnal() {
   const { pct, verdict, isReady, isNoTrade, incompleteGates } = ckGetVerdict();
   if (!isReady) {
     const detail = isNoTrade
-      ? 'Analisa Prime menetapkan No Trade.'
+      ? 'Rencana berstatus No Trade.'
       : `Tahap yang belum lulus: ${incompleteGates.map(s => s.title).join(', ') || 'rencana belum dimulai'}.`;
     showToast('Rencana Belum Siap', detail, 5000);
     return;
@@ -13719,7 +13674,7 @@ function ckGoToSizing() {
   const { canSize, isNoTrade, incompletePreSizingGates } = ckGetVerdict();
   if (!canSize) {
     const detail = isNoTrade
-      ? 'Analisa Prime menetapkan No Trade.'
+      ? 'Rencana berstatus No Trade.'
       : `Selesaikan dulu: ${incompletePreSizingGates.map(s => s.title).join(', ') || 'prasyarat rencana'}.`;
     showToast('Belum Bisa ke Sizing', detail, 4500);
     return;
@@ -14408,74 +14363,6 @@ function ckAutoTickRegimeCheck(pair) {
 function _ckAutoPrime(pair) {
   const pb = PLAYBOOKS[ckActivePlaybook];
   if (!pb || pb.isPending || pb.isNoTrade) return;
-  const symbol = pair === 'XAU/USD' ? 'GC=F' : pair.replace('/', '') + '=X';
-  const ai = (typeof analisaAiCache !== 'undefined') ? analisaAiCache[symbol] : null;
-  const stale = !ai || _analisaResultIsStale(ai);
-  const s = stale ? null : ai.structured;
-
-  if (stale) ckAutoBlock('pm_fresh', 'Analisa belum ada atau sudah melewati masa berlaku 8 jam. Jalankan Analisa Pair Ini ulang.');
-  else ckAutoTick('pm_fresh', 'Analisa pair masih berada dalam masa berlaku 8 jam.');
-
-  if (!s) {
-    ckAutoBlock('pm_policy', 'Hasil Analisa Prime aktif belum tersedia.');
-    ckAutoBlock('pm_direction', 'Arah makro Prime belum tersedia.');
-    ckAutoBlock('pm_contract', 'Kontrak Prime belum bisa diverifikasi.');
-    return;
-  }
-
-  if (s.analysis_policy_v === 'prime-v1' && s.academy_contract_status === 'passed') {
-    ckAutoTick('pm_policy', `Policy ${s.analysis_policy_v}; kontrak Academy lulus.`);
-  } else {
-    ckAutoBlock('pm_policy', s.academy_reject_reason || 'Hasil belum memakai policy prime-v1 atau kontraknya ditolak.');
-  }
-
-  if (s.macro_direction === 'bullish' || s.macro_direction === 'bearish') {
-    ckAutoTick('pm_direction', `Arah makro: ${s.macro_direction.toUpperCase()}.`);
-  } else {
-    ckAutoBlock('pm_direction', `Arah makro belum tegas (${s.macro_direction || 'tidak tersedia'}).`);
-  }
-  if (typeof s.macro_reason === 'string' && s.macro_reason.trim()) {
-    ckAutoTick('pm_reason', s.macro_reason.trim());
-  }
-
-  const expectedStrategy = pb.strategyId;
-  const strategyItemId = `pm_strategy_${expectedStrategy}`;
-  if (s.strategy_id === expectedStrategy) {
-    ckAutoTick(strategyItemId, `Analisa Prime memilih ${expectedStrategy}.`);
-  } else {
-    ckAutoBlock(strategyItemId, `Strategi Analisa adalah ${s.strategy_id || 'no_trade'}, bukan ${expectedStrategy}.`);
-  }
-  if (expectedStrategy === 'momentum' && (s.bias === 'bullish' || s.bias === 'bearish')) {
-    if (s.bias === s.macro_direction) ckAutoTick('pm_momentum_same_direction', `Bias ${s.bias} sama dengan arah makro.`);
-    else ckAutoBlock('pm_momentum_same_direction', `Bias ${s.bias || 'tidak tersedia'} tidak sama dengan arah makro ${s.macro_direction || 'tidak tersedia'}.`);
-  }
-
-  const trigger = String(s.trigger || '');
-  const triggerLower = trigger.toLowerCase();
-  const hasRejection = /reject|rejection|penolakan|pin bar|engulf/.test(triggerLower);
-  const hasH1 = /\bh1\b|\b1h\b|1 jam/.test(triggerLower);
-  const hasSession = /london|new york|\bny\b/.test(triggerLower);
-  const saysBreakout = /\bbreakout\b|mengejar (?:harga|candle|impuls)/.test(triggerLower);
-  if (trigger && hasRejection && hasH1) ckAutoTick('pm_h1_rejection', trigger);
-  if (trigger && hasSession) ckAutoTick('pm_session', trigger);
-  if (trigger && hasRejection && !saysBreakout) ckAutoTick('pm_no_breakout', trigger);
-
-  const levelsComplete = [s.entry_zone, s.sl, s.tp].every(v => v !== null && v !== undefined && String(v).trim());
-  if (levelsComplete) ckAutoTick('pm_levels', `Entry ${s.entry_zone}; SL ${s.sl}; TP ${s.tp}.`);
-  else ckAutoBlock('pm_levels', 'Entry, stop loss, atau take profit belum lengkap.');
-  if (Number(s.risk_reward) >= 2) ckAutoTick('pm_rr', `RR 1:${Number(s.risk_reward).toFixed(2)}.`);
-  else ckAutoBlock('pm_rr', `RR ${s.risk_reward == null ? 'tidak tersedia' : `1:${s.risk_reward}`} belum memenuhi minimal 1:2.`);
-
-  if (s.academy_contract_status !== 'passed') {
-    ckAutoBlock('pm_contract', s.academy_reject_reason || 'Kontrak Prime ditolak.');
-  } else if (s.conflict === 'waktu') {
-    ckAutoBlock('pm_contract', s.conflict_note || 'Ada konflik waktu dengan event relevan.');
-  } else {
-    ckAutoTick('pm_contract', s.conflict === 'arah'
-      ? 'Kontrak lulus; konflik arah dilaporkan sebagai konteks dan tidak boleh membalik aturan strategi.'
-      : 'Kontrak Prime lulus tanpa konflik waktu.');
-  }
-
   const sizing = window._lastSizing;
   if (sizing && sizing.pair === pair && Number(sizing.riskPct) > 0) {
     if (Number(sizing.riskPct) <= 2) ckAutoTick('pm_risk_pct', `Sizing menetapkan risk ${sizing.riskPct}% ≤ 2%.`);
@@ -14984,8 +14871,7 @@ async function ckRunPreEntryCheck() {
 
 function ckOnPairChange() {
   const pair = document.getElementById('ckPairSelector').value;
-  // Simpan pair lama, lalu pilih section strategi hanya dari Analisa Prime segar.
-  // Pengguna tidak dapat mengganti strategi secara manual.
+  // Simpan pair lama, lalu muat setup yang sebelumnya dipilih untuk pair ini.
   ckSave();
   ckCurrentPair = pair;
   ckConfigurePrimePlaybook(ckPrimePlaybookForPair(pair));
@@ -14998,6 +14884,29 @@ function ckOnPairChange() {
   // cache per-pair tetap tersimpan (dipakai lagi kalau user balik ke pair yang sama).
   const pecBox = document.getElementById('ckPecBox');
   if (pecBox) pecBox.style.display = 'none';
+}
+
+function ckOnStrategyChange() {
+  const selector = document.getElementById('ckStrategySelector');
+  const pair = document.getElementById('ckPairSelector')?.value || '';
+  if (!selector) return;
+  if (!pair) {
+    selector.value = '';
+    showToast('Pilih Pair', 'Pilih pair sebelum menentukan setup.', 2500);
+    return;
+  }
+  const next = PRIME_MANUAL_SETUP_IDS.has(selector.value) ? selector.value : 'prime_pending';
+  ckSave();
+  try {
+    const key = `daunmerah_entry_setup_${pair.replace('/', '')}`;
+    if (next === 'prime_pending') localStorage.removeItem(key);
+    else localStorage.setItem(key, next);
+  } catch(e) {}
+  ckConfigurePrimePlaybook(next);
+  ckLoad(pair);
+  ckBuildUI();
+  ckRender();
+  ckAutoTickRegimeCheck(pair);
 }
 
 // Catatan analisa di Checklist itu bukan field terpisah — ia menampilkan &
@@ -15036,8 +14945,7 @@ function ckSaveTekNote() {
 
 function ckSwitchPlaybook(id) {
   if (!PRIME_PLAYBOOK_IDS.has(id) || id === ckActivePlaybook) return;
-  // Fungsi internal untuk merespons hasil Analisa. Tidak dipanggil dari kontrol UI.
-  // State tetap dipisahkan per pair+strategi agar konfirmasi setup lama tidak bocor.
+  // State dipisahkan per pair dan setup agar konfirmasi lama tidak bocor.
   ckSave();
   ckConfigurePrimePlaybook(id);
   // Close info box on playbook switch
@@ -15580,7 +15488,7 @@ function calcSizing() {
       })() : ''}
       <button onclick="szShowMt5Modal()" style="margin-top:10px;width:100%;padding:9px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.4);color:var(--green);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em;font-weight:700">Entry MT5</button>
       <button onclick="ckPrefillJurnal()" style="margin-top:8px;width:100%;padding:9px;background:rgba(236,72,153,0.12);border:1px solid rgba(236,72,153,0.4);color:var(--pink);font-family:'DM Mono',monospace;font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.05em;font-weight:700">→ Buat Jurnal</button>
-      <button onclick="szGoToChecklist()" style="margin-top:6px;width:100%;padding:6px;background:transparent;border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer">Tinjau Rencana Prime</button>
+      <button onclick="szGoToChecklist()" style="margin-top:6px;width:100%;padding:6px;background:transparent;border:none;color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer">Tinjau Rencana</button>
     </div>`;
 
   // Store last sizing for journal bridge — lots/dollarRisk sudah pakai risk EFEKTIF
@@ -15603,7 +15511,7 @@ function szShowMt5Modal() {
   const { isReady, isNoTrade, incompleteGates } = ckGetVerdict();
   if (!isReady) {
     const detail = isNoTrade
-      ? 'Analisa Prime menetapkan No Trade.'
+      ? 'Rencana berstatus No Trade.'
       : `Tahap yang belum lulus: ${incompleteGates.map(s => s.title).join(', ') || 'rencana belum dimulai'}.`;
     showToast('Rencana Belum Siap', detail, 5000);
     return;
@@ -15629,7 +15537,7 @@ function szGoToChecklist() {
         if (opt.value === s.pair) { sel.value = s.pair; ckOnPairChange(); break; }
       }
     }
-    showToast('Sizing siap dipakai', `${s.pair} ${s.direction.toUpperCase()} ${s.lots} lots — selesaikan gate Prime sebelum entry.`);
+    showToast('Sizing siap dipakai', `${s.pair} ${s.direction.toUpperCase()} ${s.lots} lots — selesaikan semua gate sebelum entry.`);
   }, 200);
 }
 
@@ -16864,7 +16772,7 @@ async function jnRunEdgeStats() {
     }
 
     if (data.conditions.length === 0) {
-      panel.innerHTML = `<div style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:16px">Belum ada gate Prime dengan cukup sampel di kedua sisi (terpenuhi vs belum) — minimal 3 trade masing-masing. Sampel saat ini: ${data.sample_count} trade.</div>`;
+      panel.innerHTML = `<div style="color:var(--muted);font-family:'DM Mono',monospace;font-size:11px;text-align:center;padding:16px">Belum ada gate dengan cukup sampel di kedua sisi (terpenuhi vs belum) — minimal 3 trade masing-masing. Sampel saat ini: ${data.sample_count} trade.</div>`;
       return;
     }
 
