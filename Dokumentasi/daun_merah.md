@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-22 (Session 396 — Checklist diganti Rencana Entry Prime)
+> **Last updated:** 2026-10-22 (Session 397 — Rencana Prime disatukan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 397 (2026-10-22) — Rencana Prime disatukan
+
+**Perubahan antarmuka.** Selector Momentum, Range, Tactical Fade, dan No Trade dihapus dari panel. Pengguna sekarang hanya melihat satu **Rencana Entry Prime** dengan badge setup aktif. Momentum, Range, dan Tactical Fade tetap dipertahankan sebagai aturan internal karena syarat validasinya berbeda, tetapi jenis setup dipilih otomatis dari hasil Analisa Prime terbaru. No Trade menjadi status keputusan, bukan opsi strategi yang bisa dipilih manual.
+
+**Konsistensi keputusan.** Mengganti pair langsung memuat section setup yang sesuai dengan Analisa pair tersebut. Hasil yang kosong, tidak dikenal, atau sudah basi selalu kembali ke No Trade. Pemeriksaan ulang data juga dapat memindahkan panel ke setup baru atau No Trade secara otomatis, sehingga strategi lama tidak tertinggal setelah analisa kedaluwarsa. State konfirmasi tetap dipisahkan per pair dan setup di penyimpanan internal agar centang dari setup lama tidak bocor ke setup baru.
+
+**Verifikasi.** Regresi baru memastikan tidak ada selector strategi di panel, seluruh mapping Momentum/Range/Tactical Fade/No Trade benar, serta hasil basi dan kosong jatuh ke No Trade. Suite penuh lulus 1.454/1.454. Chromium nyata menguji pergantian empat hasil Analisa: seluruh badge dan ketiga section setup mengikuti hasil otomatis, selector tetap tidak ada, tidak muncul error halaman, dan viewport ponsel 390 px tidak mengalami overflow horizontal. `APP_VERSION` dinaikkan menjadi `2026.10.22.2`.
 
 ## Changelog Session 396 (2026-10-22) — Checklist diganti Rencana Entry Prime
 

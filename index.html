@@ -4471,13 +4471,9 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <div id="checklistPanel" class="ck-wrap" style="display:none">
   <div style="padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:6px">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.05em">STRATEGI PRIME:</span>
-      <select id="ckPlaybookSelector" onchange="ckSwitchPlaybook(this.value)" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:3px 8px;font-family:'DM Mono',monospace;font-size:10px;flex:1;min-width:140px">
-        <option value="prime_momentum">Momentum</option>
-        <option value="prime_range">Range</option>
-        <option value="prime_tactical_fade">Tactical Fade</option>
-        <option value="prime_no_trade">No Trade</option>
-      </select>
+      <span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.05em">RENCANA ENTRY PRIME</span>
+      <span id="ckStrategyStatus" role="status" style="border:1px solid var(--border);color:var(--muted);background:var(--surface);padding:3px 8px;font-family:'DM Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.04em">MENUNGGU ANALISA</span>
+      <span style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">Strategi dipilih otomatis</span>
       <div class="ck-pb-info-wrap">
         <button class="ck-pb-info-btn" id="ckPbInfoBtn" onclick="ckTogglePbInfo()" aria-label="Informasi strategi">i</button>
         <div class="ck-pb-info-tip" id="ckPbInfoBox">
@@ -4492,7 +4488,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </select>
       <span id="ckPairHint" style="font-size:9px;color:var(--muted);white-space:nowrap;cursor:default"></span>
     </div>
-    <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;line-height:1.45">Kotak hanya mencatat konfirmasi, bukan menambah skor. Semua gate wajib lulus.</div>
+    <div style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;line-height:1.45">Momentum, Range, atau Tactical Fade dimuat otomatis dari Analisa Prime. Kotak hanya mencatat konfirmasi, bukan menambah skor. Semua gate wajib lulus.</div>
     <div class="tek-note-wrap" id="ckTekNoteWrap" style="display:none">
       <div class="tek-note-label">Catatan analisa (manual, dari TEKNIKAL)</div>
       <textarea id="ckTekNote" placeholder="Key levels, setup yang dipantau, atau catatan sesi..." oninput="ckSaveTekNote()"></textarea>
@@ -4715,7 +4711,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.22.1';
+const APP_VERSION = '2026.10.22.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -7317,14 +7313,9 @@ function analisaGoToChecklist(symbol) {
         }
       }
     }
-    const strategyMap = {
-      momentum:'prime_momentum', range:'prime_range', tactical_fade:'prime_tactical_fade', no_trade:'prime_no_trade'
-    };
-    const primeId = strategyMap[ai?.structured?.strategy_id] || 'prime_no_trade';
-    const pbSel = document.getElementById('ckPlaybookSelector');
-    if (pbSel) pbSel.value = primeId;
+    const primeId = ckPrimePlaybookId(ai?.structured?.strategy_id);
     if (primeId !== ckActivePlaybook) ckSwitchPlaybook(primeId);
-    showToast('Rencana Entry Prime', `${targetLabel} dibuka dengan strategi ${PLAYBOOKS[primeId].name}. Lengkapi gate sebelum Sizing.`, 4000);
+    showToast('Rencana Entry Prime', `${targetLabel} dibuka dengan setup ${ckPrimeStrategyLabel(primeId)}. Lengkapi gate sebelum Sizing.`, 4000);
   }, 200);
 }
 
@@ -8016,15 +8007,10 @@ function thesisGoToChecklist(pair, direction) {
         }
       }
     }
-    const strategyMap = {
-      momentum:'prime_momentum', range:'prime_range', tactical_fade:'prime_tactical_fade', no_trade:'prime_no_trade'
-    };
-    const primeId = strategyMap[freshStruct?.strategy_id] || 'prime_no_trade';
-    const pbSel = document.getElementById('ckPlaybookSelector');
-    if (pbSel) pbSel.value = primeId;
+    const primeId = ckPrimePlaybookId(freshStruct?.strategy_id);
     if (primeId !== ckActivePlaybook) ckSwitchPlaybook(primeId);
     const note = freshStruct
-      ? `Strategi ${PLAYBOOKS[primeId].name} dimuat dari Analisa terbaru.`
+      ? `Setup ${ckPrimeStrategyLabel(primeId)} dimuat otomatis dari Analisa terbaru.`
       : 'Belum ada Analisa Prime terbaru; keputusan dikunci ke No Trade sampai analisa diperbarui.';
     showToast('Rencana Entry Prime', `${pair} ${(direction||'').toUpperCase()} — ${note}`, 4500);
   }, 200);
@@ -12897,16 +12883,65 @@ Object.assign(PLAYBOOKS, {
 });
 
 const PRIME_PLAYBOOK_IDS = new Set(['prime_momentum','prime_range','prime_tactical_fade','prime_no_trade']);
+const PRIME_STRATEGY_PLAYBOOK = Object.freeze({
+  momentum:'prime_momentum',
+  range:'prime_range',
+  tactical_fade:'prime_tactical_fade',
+  no_trade:'prime_no_trade',
+});
 
-// Dynamic variables — updated by ckSwitchPlaybook()
-const CK_PB_KEY = 'daun_merah_prime_strategy';
-const CK_LEGACY_TO_PRIME = { smc_ict:'prime_momentum', macro_momentum:'prime_momentum', mean_reversion:'prime_range', event_driven:'prime_no_trade' };
-let ckActivePlaybook = localStorage.getItem(CK_PB_KEY) || CK_LEGACY_TO_PRIME[localStorage.getItem('daun_merah_playbook')] || 'prime_no_trade';
-if (!PRIME_PLAYBOOK_IDS.has(ckActivePlaybook)) ckActivePlaybook = 'prime_no_trade';
+function ckPrimePlaybookId(strategyId) {
+  return PRIME_STRATEGY_PLAYBOOK[strategyId] || 'prime_no_trade';
+}
+
+function ckPrimeStrategyLabel(playbookId = ckActivePlaybook) {
+  return {
+    prime_momentum:'MOMENTUM',
+    prime_range:'RANGE',
+    prime_tactical_fade:'TACTICAL FADE',
+    prime_no_trade:'NO TRADE',
+  }[playbookId] || 'NO TRADE';
+}
+
+function ckPrimePlaybookForPair(pair) {
+  if (!pair || typeof analisaAiCache === 'undefined') return 'prime_no_trade';
+  const expectedSymbol = pair === 'XAU/USD' ? 'GC=F' : pair.replace('/', '').toUpperCase() + '=X';
+  for (const [symbol, result] of Object.entries(analisaAiCache)) {
+    if (symbol.toUpperCase() !== expectedSymbol) continue;
+    if (!result?.structured || _analisaResultIsStale(result)) return 'prime_no_trade';
+    return ckPrimePlaybookId(result.structured.strategy_id);
+  }
+  return 'prime_no_trade';
+}
+
+function ckUpdatePrimeStrategyStatus() {
+  const el = document.getElementById('ckStrategyStatus');
+  if (!el) return;
+  const isNoTrade = ckActivePlaybook === 'prime_no_trade';
+  el.textContent = ckPrimeStrategyLabel();
+  el.style.color = isNoTrade ? 'var(--accent)' : PLAYBOOKS[ckActivePlaybook]?.color || 'var(--text)';
+  el.style.borderColor = isNoTrade ? 'var(--accent)' : PLAYBOOKS[ckActivePlaybook]?.color || 'var(--border)';
+  el.title = isNoTrade
+    ? 'Belum ada setup aktif dari Analisa Prime terbaru.'
+    : 'Setup ini dipilih otomatis dari Analisa Prime terbaru.';
+}
+
+// Satu planner, dengan section strategi yang dimuat otomatis dari hasil Analisa.
+// Tidak ada pilihan manual: tanpa hasil segar, status selalu kembali ke No Trade.
+let ckActivePlaybook = 'prime_no_trade';
 
 let CK_SECTIONS = PLAYBOOKS[ckActivePlaybook].sections;
 let CK_QUICK    = PLAYBOOKS[ckActivePlaybook].quick;
 let CK_GATES    = PLAYBOOKS[ckActivePlaybook].gates;
+
+function ckConfigurePrimePlaybook(id) {
+  const safeId = PRIME_PLAYBOOK_IDS.has(id) ? id : 'prime_no_trade';
+  ckActivePlaybook = safeId;
+  CK_SECTIONS = PLAYBOOKS[safeId].sections;
+  CK_QUICK = PLAYBOOKS[safeId].quick;
+  CK_GATES = PLAYBOOKS[safeId].gates;
+  return safeId;
+}
 
 let ckState = {}, ckInitialized = false, ckClockInterval = null;
 let ckCurrentPair = ''; // tracks current pair for per-pair localStorage key
@@ -13335,6 +13370,7 @@ function ckBuildUI() {
 }
 
 function ckRender() {
+  ckUpdatePrimeStrategyStatus();
   for (const sec of CK_SECTIONS) {
     ckGetItems(sec).forEach(id => {
       const el = document.getElementById('ckbox_' + id);
@@ -13470,8 +13506,7 @@ const PB_INFO = {
 function ckTogglePbInfo() {
   const box = document.getElementById('ckPbInfoBox');
   const btn = document.getElementById('ckPbInfoBtn');
-  const pb  = document.getElementById('ckPlaybookSelector')?.value || ckActivePlaybook;
-  const info = PB_INFO[pb];
+  const info = PB_INFO[ckActivePlaybook];
   if (!box || !info) return;
   const isOpen = box.classList.contains('open');
   if (!isOpen) {
@@ -14174,6 +14209,11 @@ const EVENT_LOOKAHEAD_MS = 24 * 3600 * 1000;
 
 function ckAutoTickRegimeCheck(pair) {
   if (!pair) return;
+  const resolvedPlaybook = ckPrimePlaybookForPair(pair);
+  if (resolvedPlaybook !== ckActivePlaybook) {
+    ckSwitchPlaybook(resolvedPlaybook);
+    return;
+  }
   const [base, quote] = pair.split('/');
   const now = Date.now();
 
@@ -14883,10 +14923,11 @@ async function ckRunPreEntryCheck() {
 
 function ckOnPairChange() {
   const pair = document.getElementById('ckPairSelector').value;
-  // Save state for old pair before switching
+  // Simpan pair lama, lalu pilih section strategi hanya dari Analisa Prime segar.
+  // Pengguna tidak dapat mengganti strategi secara manual.
   ckSave();
-  // Load state for new pair
   ckCurrentPair = pair;
+  ckConfigurePrimePlaybook(ckPrimePlaybookForPair(pair));
   ckLoad(pair);
   ckBuildUI();
   ckRender();
@@ -14934,14 +14975,10 @@ function ckSaveTekNote() {
 
 function ckSwitchPlaybook(id) {
   if (!PRIME_PLAYBOOK_IDS.has(id) || id === ckActivePlaybook) return;
-  // State dipisahkan per pair+strategi. Memilih strategi lain tidak bisa meloloskan
-  // setup yang salah karena item strategy_id dikunci ke hasil Analisa Prime.
+  // Fungsi internal untuk merespons hasil Analisa. Tidak dipanggil dari kontrol UI.
+  // State tetap dipisahkan per pair+strategi agar konfirmasi setup lama tidak bocor.
   ckSave();
-  ckActivePlaybook = id;
-  localStorage.setItem(CK_PB_KEY, id);
-  CK_SECTIONS = PLAYBOOKS[id].sections;
-  CK_QUICK    = PLAYBOOKS[id].quick;
-  CK_GATES    = PLAYBOOKS[id].gates;
+  ckConfigurePrimePlaybook(id);
   // Close info box on playbook switch
   const box = document.getElementById('ckPbInfoBox');
   const btn = document.getElementById('ckPbInfoBtn');
@@ -14991,10 +15028,8 @@ function initChecklist() {
     // Set current pair from selector before loading pair-specific state
     const _initSel = document.getElementById('ckPairSelector');
     if (_initSel && _initSel.value) ckCurrentPair = _initSel.value;
+    ckConfigurePrimePlaybook(ckPrimePlaybookForPair(ckCurrentPair));
     ckLoad(ckCurrentPair);
-    // Sync playbook selector with active playbook
-    const pbSel = document.getElementById('ckPlaybookSelector');
-    if (pbSel) pbSel.value = ckActivePlaybook;
     ckBuildUI();
     ckUpdateClock();
     ckSyncTekNoteForPair(ckCurrentPair);

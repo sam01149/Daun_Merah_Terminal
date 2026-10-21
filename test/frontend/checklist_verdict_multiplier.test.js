@@ -27,10 +27,14 @@ const src = [
 const api = new Function(`
   var document = { getElementById: () => null };
   var localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+  var analisaAiCache = {};
+  function _analisaResultIsStale(result) { return !!result.stale; }
   function ckRender() {}
   ${src}
   return {
     ckGetVerdict, ckAutoTick, ckAutoBlock, ckAutoConflict,
+    ckPrimePlaybookForPair,
+    setAnalisaCache: value => { analisaAiCache = value; },
     reset: () => { ckState = {}; ckConflict = {}; ckAutoBlocked = {}; ckOverrideReasons = {}; },
     setPlan: (id, sections, gates, isNoTrade = false) => {
       PLAYBOOKS[id] = { sections, gates, isNoTrade };
@@ -146,16 +150,40 @@ test('ckAutoTick membersihkan flag konflik atau block lama pada id yang sama', (
   assert.equal(v.verdict, 'SIAP ENTRY');
 });
 
-test('panel aktif hanya menawarkan empat keputusan strategi Prime dan tidak menampilkan Pre-Entry AI', () => {
+test('panel aktif berupa satu planner dan strategi hanya ditampilkan sebagai hasil otomatis', () => {
   const panel = grab('<!-- PRIME ENTRY PLAN PANEL -->', '<!-- TOAST -->');
-  for (const id of ['prime_momentum', 'prime_range', 'prime_tactical_fade', 'prime_no_trade']) {
-    assert.match(panel, new RegExp(`value="${id}"`));
-  }
-  for (const legacy of ['value="smc_ict"', 'value="macro_momentum"', 'value="event_driven"', 'value="mean_reversion"']) {
-    assert.doesNotMatch(panel, new RegExp(legacy));
+  assert.match(panel, /id="ckStrategyStatus"/);
+  assert.match(panel, /Strategi dipilih otomatis/);
+  assert.doesNotMatch(panel, /id="ckPlaybookSelector"/);
+  for (const id of ['prime_momentum', 'prime_range', 'prime_tactical_fade', 'prime_no_trade', 'smc_ict', 'macro_momentum', 'event_driven', 'mean_reversion']) {
+    assert.doesNotMatch(panel, new RegExp(`value="${id}"`));
   }
   assert.doesNotMatch(panel, /Pre-Entry|Periksa Sebelum Entry|scoring/i);
   assert.match(panel, /Kotak hanya mencatat konfirmasi, bukan menambah skor\. Semua gate wajib lulus\./);
+});
+
+test('pair yang dipilih memuat strategi dari Analisa Prime tanpa pilihan manual', () => {
+  const pairFn = grab('function ckOnPairChange()', '\n// Catatan analisa');
+  assert.match(pairFn, /ckConfigurePrimePlaybook\(ckPrimePlaybookForPair\(pair\)\)/);
+  const autoFn = grab('function ckAutoTickRegimeCheck(pair)', '\nfunction _ckAutoPrime');
+  assert.match(autoFn, /ckPrimePlaybookForPair\(pair\)/);
+  assert.match(autoFn, /ckSwitchPlaybook\(resolvedPlaybook\)/);
+});
+
+test('resolver strategi memakai hasil Analisa segar dan kembali ke No Trade saat basi atau kosong', () => {
+  for (const [strategyId, expected] of [
+    ['momentum', 'prime_momentum'],
+    ['range', 'prime_range'],
+    ['tactical_fade', 'prime_tactical_fade'],
+    ['no_trade', 'prime_no_trade'],
+  ]) {
+    api.setAnalisaCache({ 'EURUSD=X': { structured: { strategy_id: strategyId }, stale: false } });
+    assert.equal(api.ckPrimePlaybookForPair('EUR/USD'), expected);
+  }
+  api.setAnalisaCache({ 'EURUSD=X': { structured: { strategy_id: 'momentum' }, stale: true } });
+  assert.equal(api.ckPrimePlaybookForPair('EUR/USD'), 'prime_no_trade');
+  api.setAnalisaCache({});
+  assert.equal(api.ckPrimePlaybookForPair('EUR/USD'), 'prime_no_trade');
 });
 
 test('skenario kalender kembali ke Analisa Prime, bukan langsung meloloskan rencana', () => {
