@@ -26,6 +26,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi lokal.** Regresi Rencana lulus 15/15. Suite penuh lulus 1.456/1.456. Chromium nyata pada viewport 1.365×768 membuktikan kolom utama 1.041 px dan sidebar 260 px, pair 260 px, setup 200 px, catatan 72 px, pilihan Momentum tersimpan, serta gate manual dapat dicentang tanpa hasil AI. Viewport 390×844 menampilkan sidebar mobile tersembunyi, setup Range yang benar, dan tidak memiliki overflow horizontal. Tidak ada error halaman. `APP_VERSION` dinaikkan menjadi `2026.10.22.4`.
 
+**Verifikasi produksi.** Setelah push commit `e6d900d`, halaman production merespons HTTP 200 dengan `APP_VERSION 2026.10.22.4`, memuat selector setup manual dan struktur `.ck-main`, serta tidak lagi memuat teks `Strategi dipilih otomatis` maupun `ANALISA PRIME DIPERLUKAN`.
+
 ## Changelog Session 398 (2026-10-22) — Empty state dan lebar pair Rencana Prime
 
 **Koreksi makna status.** Kondisi awal Rencana Prime tidak lagi menampilkan No Trade ketika pair belum dipilih atau belum memiliki Analisa terbaru. Tanpa pair, badge menjadi `PILIH PAIR` dan keputusan `MENUNGGU`; setelah pair dipilih tetapi analisa belum tersedia/segar, badge menjadi `MENUNGGU ANALISA`. Panel utama menampilkan petunjuk dan tombol menuju Analisa Prime. `NO TRADE` sekarang hanya tampil bila hasil Analisa Prime terbaru secara eksplisit memilih `strategy_id: no_trade`. Tombol Reset disembunyikan pada empty state dan No Trade karena tidak ada rencana aktif untuk direset.
