@@ -318,7 +318,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
 
     <div class="card" id="card-entry-shadow">
       <h2>AATAS Entry Optimalization — Shadow</h2>
-      <p class="hint"><b>Tidak memengaruhi entry produksi.</b> Panel ini membandingkan zona dan target AATAS dengan filter environment, sesi, serta rejection H1 Prime. Status produksi tetap menjadi sumber keputusan operasional.</p>
+      <p class="hint"><b>Tidak memengaruhi entry produksi.</b> Panel ini membandingkan zona dan target AATAS dengan filter environment, sesi, serta rejection H1 Prime. Kandidat baru berhenti 3 Desember 2026 07:00 WIB; seluruh evaluasi ditutup paling lambat 16 Desember 2026 21:00 WIB. Status produksi tetap menjadi sumber keputusan operasional.</p>
       <div class="grid" id="entryShadowStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
@@ -1297,6 +1297,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       fldGroup('SHADOW: AATAS Entry Optimalization (tidak memengaruhi produksi)', [
         fld('Mode', opt?.mode === 'shadow_no_entry_effect' ? 'SHADOW — tidak memengaruhi entry produksi' : ''),
         fld('Experiment ID', opt?.experiment_id),
+        fld('Batas Pengumpulan', opt?.collection_window ? jsonLabel(opt.collection_window) : ''),
         fld('Environment', opt?.environment),
         fld('Arah / Kekuatan', opt ? `${opt.direction || '—'} / ${opt.strength || '—'}` : ''),
         fld('State Shadow', opt?.state),

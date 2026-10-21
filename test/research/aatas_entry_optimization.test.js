@@ -4,6 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   EXPERIMENT_ID,
+  EXPERIMENT_FORWARD_END_AT,
+  EXPERIMENT_HARD_END_AT,
   SPREAD_PRICE_ESTIMATE,
   classifyEnvironment,
   buildEntryOptimizationShadow,
@@ -56,12 +58,26 @@ test('builder: range tetap observe-only dan tidak dapat menjadi entry shadow', (
   const shadow = buildEntryOptimizationShadow({
     setup: { label: 'EUR/USD', bias: 'bullish', entry_zone: '99.9-100.1', sl: 99, tp: 103 },
     marketData: { candles1h: h1, candles4h: [], candles1d: [] },
-    decisionMs: 1_800_000_000_000,
+    decisionMs: Date.UTC(2026, 9, 22),
   });
   assert.equal(shadow.experiment_id, EXPERIMENT_ID);
   assert.equal(shadow.environment, 'range');
   assert.equal(shadow.state, 'observe_only');
   assert.equal(shadow.mode, 'shadow_no_entry_effect');
+  assert.equal(shadow.collection_window.new_candidate_cutoff_at, EXPERIMENT_FORWARD_END_AT);
+});
+
+test('builder: cutoff 30 hari pasar menolak kandidat baru secara otomatis', () => {
+  const h1 = series(420, 3600, 100, 0.01, 0.03);
+  const h4 = series(110, 14400, 100, 0.8, 0.05);
+  const d1 = series(220, 86400, 100, 1, 0.1);
+  const shadow = buildEntryOptimizationShadow({
+    setup: { label: 'EUR/USD', bias: 'bullish', entry_zone: '99.9-100.1', sl: 99, tp: 103, technical: { struktur_vs_bias: 'selaras' } },
+    marketData: { candles1h: h1, candles4h: h4, candles1d: d1 },
+    decisionMs: Date.parse(EXPERIMENT_FORWARD_END_AT),
+  });
+  assert.equal(shadow.state, 'not_eligible');
+  assert.equal(shadow.rejection_reason, 'experiment_window_closed');
 });
 
 function liveRecord(overrides = {}) {
@@ -80,14 +96,15 @@ function liveRecord(overrides = {}) {
   };
 }
 
-function lifecycleCandles({ close = 100.175, fill = 100.30, outcome = 'tp' } = {}) {
-  const base = Date.UTC(2026, 9, 19, 8) / 1000;
+function lifecycleCandles({ close = 100.175, fill = 100.30, outcome = 'tp', base = Date.UTC(2026, 9, 19, 8) / 1000 } = {}) {
   const history = Array.from({ length: 96 }, (_, i) => candle(base - (96 - i) * 3600, 100.10, 100.15, 100.06, 100.11));
   const trigger = candle(base, 100.10, Math.max(100.20, close), 100.02, close);
   const fillCandle = candle(base + 3600, fill, fill + 0.10, fill - 0.05, fill + 0.02);
   const resolved = outcome === 'tp'
     ? candle(base + 7200, fill, 101.20, fill - 0.02, 101.00)
-    : candle(base + 7200, fill, fill + 0.02, 99.80, 100.00);
+    : outcome === 'sl'
+      ? candle(base + 7200, fill, fill + 0.02, 99.80, 100.00)
+      : candle(base + 7200, fill, fill + 0.04, fill - 0.02, fill + 0.01);
   return [...history, trigger, fillCandle, resolved];
 }
 
@@ -198,6 +215,19 @@ test('outcome terminal tetap immutable ketika candle lama sudah terpotong dari r
   });
   const out = evaluateEntryOptimizationShadow(terminal, lifecycleCandles().slice(-2), Date.UTC(2026, 10, 20));
   assert.deepEqual(out, terminal.entry_optimization_shadow);
+});
+
+test('hard deadline delapan minggu menutup shadow filled yang belum selesai', () => {
+  const base = Date.UTC(2026, 11, 2, 8) / 1000;
+  const rows = lifecycleCandles({ base, outcome: 'open' });
+  const record = liveRecord({
+    ts: Date.UTC(2026, 11, 2, 0),
+    level_set_at: Date.UTC(2026, 11, 2, 0),
+  });
+  const out = evaluateEntryOptimizationShadow(record, rows, Date.parse(EXPERIMENT_HARD_END_AT) + 86400000);
+  assert.equal(out.state, 'expired');
+  assert.equal(out.no_fill_reason, 'experiment_hard_deadline_reached');
+  assert.equal(out.evaluated_at, EXPERIMENT_HARD_END_AT);
 });
 
 test('estimasi spread shadow sama dengan tabel biaya produksi', () => {

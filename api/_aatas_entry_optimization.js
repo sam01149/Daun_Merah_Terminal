@@ -7,6 +7,14 @@ const FxSessions = require('../fx-sessions');
 
 const EXPERIMENT_ID = 'aatas_entry_optimization_v1';
 const SCHEMA_VERSION = 1;
+const EXPERIMENT_STARTED_AT = '2026-10-21T14:00:00.000Z';
+// 30 hari pasar (weekday) berakhir 2 Desember; setelah cutoff ini tidak ada
+// kandidat baru. Posisi shadow yang sudah filled diberi waktu sampai batas
+// mutlak delapan minggu agar eksperimen tidak berjalan tanpa akhir.
+const EXPERIMENT_FORWARD_END_AT = '2026-12-03T00:00:00.000Z';
+const EXPERIMENT_HARD_END_AT = '2026-12-16T14:00:00.000Z';
+const EXPERIMENT_FORWARD_END_MS = Date.parse(EXPERIMENT_FORWARD_END_AT);
+const EXPERIMENT_HARD_END_MS = Date.parse(EXPERIMENT_HARD_END_AT);
 // `unavailable` bukan terminal: watcher boleh mencoba ulang ketika coverage pulih.
 const TERMINAL_STATES = new Set(['tp', 'sl', 'ambiguous', 'expired', 'no_fill', 'rejected', 'not_eligible']);
 
@@ -257,7 +265,8 @@ function buildEntryOptimizationShadow({ setup, marketData, decisionMs = Date.now
   const eligible = env.environment === 'trend_aligned' && sessions.length > 0 && zone && sl != null && tp != null;
   let state = eligible ? 'waiting_zone' : 'not_eligible';
   let rejectionReason = null;
-  if (env.environment === 'range') { state = 'observe_only'; rejectionReason = 'range_observe_only'; }
+  if (decisionMs >= EXPERIMENT_FORWARD_END_MS) { state = 'not_eligible'; rejectionReason = 'experiment_window_closed'; }
+  else if (env.environment === 'range') { state = 'observe_only'; rejectionReason = 'range_observe_only'; }
   else if (env.environment !== 'trend_aligned') rejectionReason = `environment_${env.environment}`;
   else if (!sessions.length) rejectionReason = 'unsupported_pair_session';
   else if (!zone || sl == null || tp == null) rejectionReason = 'invalid_levels';
@@ -274,6 +283,11 @@ function buildEntryOptimizationShadow({ setup, marketData, decisionMs = Date.now
     experiment_id: EXPERIMENT_ID,
     version: SCHEMA_VERSION,
     mode: 'shadow_no_entry_effect',
+    collection_window: {
+      started_at: EXPERIMENT_STARTED_AT,
+      new_candidate_cutoff_at: EXPERIMENT_FORWARD_END_AT,
+      hard_end_at: EXPERIMENT_HARD_END_AT,
+    },
     decision_as_of: decisionIso,
     input_hash: stableHash(input),
     environment: env.environment,
@@ -319,8 +333,14 @@ function evaluateEntryOptimizationShadow(record, candlesInput, nowMs = Date.now(
   // `unavailable` sengaja tidak dibekukan agar watcher dapat retry saat data pulih.
   if (TERMINAL_STATES.has(previous.state)) return previous;
 
-  const candles = normalizeCandles(candlesInput).filter(c => nowMs >= (c.t + 3600) * 1000);
-  if (!candles.length) return previous;
+  // Candle sesudah hard deadline tidak boleh mengubah hasil eksperimen.
+  const evaluationNowMs = Math.min(nowMs, EXPERIMENT_HARD_END_MS);
+  const candles = normalizeCandles(candlesInput).filter(c => evaluationNowMs >= (c.t + 3600) * 1000);
+  if (!candles.length) {
+    return nowMs >= EXPERIMENT_HARD_END_MS
+      ? { ...previous, state: 'expired', rejection_reason: 'experiment_hard_deadline_reached', evaluated_at: EXPERIMENT_HARD_END_AT }
+      : previous;
+  }
   if (hasConflictingDuplicates(candlesInput)) return { ...previous, state: 'unavailable', rejection_reason: 'conflicting_duplicate_candles', evaluated_at: new Date(nowMs).toISOString() };
   const zone = parseZone(record.entry_zone), sl = finite(record.sl), tp = finite(record.tp);
   const bias = normalizeBias(record.bias);
@@ -328,11 +348,18 @@ function evaluateEntryOptimizationShadow(record, candlesInput, nowMs = Date.now(
 
   const startMs = Math.max(finite(record.level_set_at) || finite(record.ts) || 0, finite(record.entry_wait_until) || 0);
   const rows = candles.filter(c => c.t * 1000 >= startMs);
-  if (!rows.length) return { ...previous, state: 'waiting_zone', evaluated_at: new Date(nowMs).toISOString() };
+  if (!rows.length) {
+    if (nowMs >= EXPERIMENT_HARD_END_MS) return { ...previous, state: 'expired', rejection_reason: 'experiment_hard_deadline_reached', evaluated_at: EXPERIMENT_HARD_END_AT };
+    if (nowMs >= EXPERIMENT_FORWARD_END_MS) return { ...previous, state: 'expired', rejection_reason: 'experiment_forward_window_closed', evaluated_at: EXPERIMENT_FORWARD_END_AT };
+    return { ...previous, state: 'waiting_zone', evaluated_at: new Date(nowMs).toISOString() };
+  }
   if (startMs > 0 && rows[0].t * 1000 > startMs + 86400000) return { ...previous, state: 'unavailable', rejection_reason: 'initial_gap_candle_coverage', evaluated_at: new Date(nowMs).toISOString() };
   if (hasUnexpectedH1Gap(rows)) return { ...previous, state: 'unavailable', rejection_reason: 'gap_candle_coverage', evaluated_at: new Date(nowMs).toISOString() };
-  const touchIndex = rows.findIndex(c => candleTouchesZone(c, zone));
+  // Trigger baru hanya boleh lahir selama 30 hari pasar forward. Outcome posisi
+  // yang sudah terisi tetap diikuti sampai hard deadline delapan minggu.
+  const touchIndex = rows.findIndex(c => (c.t + 3600) * 1000 <= EXPERIMENT_FORWARD_END_MS && candleTouchesZone(c, zone));
   if (touchIndex < 0) {
+    if (nowMs >= EXPERIMENT_FORWARD_END_MS) return { ...previous, state: 'expired', rejection_reason: 'experiment_forward_window_closed', evaluated_at: EXPERIMENT_FORWARD_END_AT };
     const horizonMs = Math.max(1, finite(record.horizon_days) || 7) * 1.5 * 86400000;
     if (nowMs > startMs + horizonMs) return { ...previous, state: 'expired', rejection_reason: 'zone_not_touched_before_expiry', evaluated_at: new Date(nowMs).toISOString() };
     return { ...previous, state: 'waiting_zone', evaluated_at: new Date(nowMs).toISOString() };
@@ -364,6 +391,9 @@ function evaluateEntryOptimizationShadow(record, candlesInput, nowMs = Date.now(
 
   const fillCandle = rows[touchIndex + 1];
   if (!fillCandle) return { ...previous, state: 'confirmed', touch_candle: touch, trigger_candle: touch, trigger_metrics: metrics, rejection_reason: null, evaluated_at: new Date(nowMs).toISOString() };
+  if (fillCandle.t * 1000 >= EXPERIMENT_FORWARD_END_MS) {
+    return { ...previous, state: 'no_fill', touch_candle: touch, trigger_candle: touch, trigger_metrics: metrics, no_fill_reason: 'experiment_forward_window_closed', rejection_reason: null, evaluated_at: EXPERIMENT_FORWARD_END_AT };
+  }
   const fillSession = sessionForCandle(fillCandle);
   if (!previous.eligible_sessions.includes(fillSession)) {
     return { ...previous, state: 'no_fill', touch_candle: touch, trigger_candle: touch, trigger_metrics: metrics, no_fill_reason: 'fill_outside_eligible_session', rejection_reason: null, evaluated_at: new Date(nowMs).toISOString() };
@@ -394,6 +424,7 @@ function evaluateEntryOptimizationShadow(record, candlesInput, nowMs = Date.now(
       break;
     }
   }
+  if (!outcome && nowMs >= EXPERIMENT_HARD_END_MS) state = 'expired';
   const grossR = outcome === 'tp' ? effectiveRr : outcome === 'sl' ? -1 : null;
   const netR = grossR == null || spreadR == null ? null : grossR - spreadR;
   const netRStress = grossR == null || spreadR == null ? null : grossR - spreadR * 2;
@@ -412,9 +443,9 @@ function evaluateEntryOptimizationShadow(record, candlesInput, nowMs = Date.now(
     net_r_stress_2x: round(netRStress, 3),
     mfe_r: round(maxFavorable / risk, 3),
     mae_r: round(maxAdverse / risk, 3),
-    no_fill_reason: null,
+    no_fill_reason: state === 'expired' ? 'experiment_hard_deadline_reached' : null,
     rejection_reason: null,
-    evaluated_at: new Date(nowMs).toISOString(),
+    evaluated_at: new Date(evaluationNowMs).toISOString(),
   };
 }
 
@@ -453,6 +484,9 @@ function mergeEntryOptimizationShadow(previous, next) {
 module.exports = {
   EXPERIMENT_ID,
   SCHEMA_VERSION,
+  EXPERIMENT_STARTED_AT,
+  EXPERIMENT_FORWARD_END_AT,
+  EXPERIMENT_HARD_END_AT,
   TERMINAL_STATES,
   ELIGIBLE_SESSIONS,
   SPREAD_PRICE_ESTIMATE,
