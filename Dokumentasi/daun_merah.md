@@ -26,6 +26,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** Suite penuh lulus 1.455/1.455. Chromium nyata pada viewport 1.365×768 dan 390×844 mengonfirmasi urutan `PILIH PAIR → MENUNGGU ANALISA → NO TRADE eksplisit`, empty state dan tombol Reset yang benar, dropdown terukur 360 px di desktop dan 358 px di ponsel, tanpa overflow horizontal maupun error halaman.
 
+**Verifikasi produksi.** Pemeriksaan pertama sesudah push masih membaca build lama `2026.10.22.2`. Setelah propagasi deployment, production merespons HTTP 200 dengan `APP_VERSION 2026.10.22.3` serta memuat penanda lebar pair maksimum 360 px dan empty state `PILIH PAIR UNTUK MEMULAI`.
+
 ## Changelog Session 397 (2026-10-22) — Rencana Prime disatukan
 
 **Perubahan antarmuka.** Selector Momentum, Range, Tactical Fade, dan No Trade dihapus dari panel. Pengguna sekarang hanya melihat satu **Rencana Entry Prime** dengan badge setup aktif. Momentum, Range, dan Tactical Fade tetap dipertahankan sebagai aturan internal karena syarat validasinya berbeda, tetapi jenis setup dipilih otomatis dari hasil Analisa Prime terbaru. No Trade menjadi status keputusan, bukan opsi strategi yang bisa dipilih manual.
