@@ -1366,6 +1366,9 @@ test('AATAS e2e: field checklist (termasuk reasoning_note) tersimpan ke setup_lo
       assert.equal(st.makro_alignment, null);
       assert.equal(st.confidence, null);
       assert.equal(st.sistem_hakim, null);
+      assert.equal(st.entry_optimization_shadow.experiment_id, 'aatas_entry_optimization_v1');
+      assert.equal(st.entry_optimization_shadow.mode, 'shadow_no_entry_effect');
+      assert.equal(st.entry_optimization_shadow.state, 'not_eligible', 'fixture lama tidak punya depth Prime dan harus fail-closed, bukan mengarang trend');
     } finally { global.fetch = origFetch; }
   });
 });

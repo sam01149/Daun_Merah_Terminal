@@ -3,6 +3,7 @@
 // Tidak mengakses Redis, menulis log produksi, exposure gate, notifikasi, atau broker.
 const { validateStoredExecutionContract } = require('../api/_aatas_execution_contract');
 const { stableHash } = require('../api/_aatas_evidence');
+const { evaluateEntryOptimizationShadow, EXPERIMENT_ID: ENTRY_OPTIMIZATION_EXPERIMENT_ID } = require('../api/_aatas_entry_optimization');
 
 function hash(value) {
   return stableHash(value, 16);
@@ -321,9 +322,60 @@ function runReplay({ records, candlesBySymbol, calendarEvents = [], config = {},
   };
 }
 
+// Matched-universe PLAN AH: baseline dan hybrid selalu berasal dari record serta
+// candle yang sama. Record tanpa envelope forward tidak direkonstruksi secara
+// spekulatif; ia dilaporkan unavailable agar denominator tetap jujur.
+function runMatchedEntryOptimizationReplay({ records, candlesBySymbol, calendarEvents = [], config = {} }) {
+  const input = Array.isArray(records) ? records : [];
+  const evaluationAsOfMs = Number.isFinite(config.evaluationAsOfMs)
+    ? config.evaluationAsOfMs
+    : Math.max(0, ...Object.values(candlesBySymbol || {}).flat().map(c => Number(c?.t || 0) * 1000));
+  const rows = input.map(record => {
+    const baseline = replayRecord(record, candlesBySymbol?.[record?.symbol], { ...config, strategy: 'baseline_touch' }, calendarEvents);
+    if (record?.entry_optimization_shadow?.experiment_id !== ENTRY_OPTIMIZATION_EXPERIMENT_ID) {
+      return { id: record?.id || null, symbol: record?.symbol || null, baseline, hybrid: { status: 'unavailable', reason: 'missing_forward_shadow_envelope' }, matched: false };
+    }
+    const shadow = evaluateEntryOptimizationShadow(record, candlesBySymbol?.[record.symbol], evaluationAsOfMs);
+    const hybrid = {
+      id: record.id,
+      status: shadow?.state || 'unavailable',
+      reason: shadow?.rejection_reason || shadow?.no_fill_reason || null,
+      entry: shadow?.proposed_fill?.price ?? null,
+      filled_t: shadow?.proposed_fill?.t ?? null,
+      closed_t: shadow?.closed_t ?? null,
+      gross_r: shadow?.raw_outcome === 'tp' ? shadow?.effective_rr : shadow?.raw_outcome === 'sl' ? -1 : null,
+      net_r: shadow?.net_r ?? null,
+      mfe_r: shadow?.mfe_r ?? null,
+      mae_r: shadow?.mae_r ?? null,
+    };
+    const terminal = value => ['tp', 'sl', 'ambiguous'].includes(value?.status);
+    return { id: record.id, symbol: record.symbol, baseline, hybrid, matched: terminal(baseline) && terminal(hybrid) };
+  });
+  const matched = rows.filter(row => row.matched);
+  const savedLoss = rows.filter(row => row.baseline.status === 'sl' && ['rejected', 'no_fill', 'expired'].includes(row.hybrid.status)).length;
+  const missedWinner = rows.filter(row => row.baseline.status === 'tp' && ['rejected', 'no_fill', 'expired'].includes(row.hybrid.status)).length;
+  return {
+    experiment_id: ENTRY_OPTIMIZATION_EXPERIMENT_ID,
+    config,
+    config_hash: hash(config),
+    data_hash: hash({ records: input, candlesBySymbol, calendarEvents }),
+    coverage: { candidates: rows.length, matched_terminal: matched.length, missing_shadow: rows.filter(row => row.hybrid.reason === 'missing_forward_shadow_envelope').length },
+    opportunity_cost: { saved_loss: savedLoss, missed_winner: missedWinner },
+    baseline_summary: summarize(rows.map(row => row.baseline)),
+    hybrid_summary: summarize(rows.map(row => row.hybrid)),
+    rows,
+    limitations: [
+      'Hanya record dengan envelope shadow forward yang sah; histori lama tidak di-backfill dengan data masa depan.',
+      'Matched terminal mensyaratkan kedua arm mempunyai outcome TP/SL/ambiguous pada opportunity yang sama.',
+      'OHLCV tidak membuktikan urutan tick intrabar; same-bar TP+SL tetap ambiguous.',
+    ],
+  };
+}
+
 module.exports = {
   inputFromSnapshot, levels, cleanCandlesDetailed, calEventMsWib, eventWaitAt,
-  costAdjustedR, computeExcursion, directionAtHorizon, replayRecord, runReplay, summarize,
+  costAdjustedR, computeExcursion, directionAtHorizon, replayRecord, runReplay,
+  runMatchedEntryOptimizationReplay, summarize,
 };
 
 if (require.main === module) {
@@ -333,5 +385,8 @@ if (require.main === module) {
   const raw = JSON.parse(fs.readFileSync(source, 'utf8'));
   const config = process.argv[3] ? JSON.parse(fs.readFileSync(process.argv[3], 'utf8')) : {};
   const input = inputFromSnapshot(raw);
-  process.stdout.write(JSON.stringify(runReplay({ ...input, config }), null, 2) + '\n');
+  const runner = config.strategy === 'aatas_entry_optimization_v1'
+    ? runMatchedEntryOptimizationReplay({ ...input, config })
+    : runReplay({ ...input, config });
+  process.stdout.write(JSON.stringify(runner, null, 2) + '\n');
 }

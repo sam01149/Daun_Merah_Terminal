@@ -292,6 +292,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     <div class="quicknav">
       <a href="#card-saldo">Saldo DeepSeek</a>
       <a href="#card-gate">Gate Plan U</a>
+      <a href="#card-entry-shadow">Entry Optimalization Shadow</a>
       <a href="#card-global">Ringkasan Global</a>
       <a href="#card-mgmt">Manajemen &amp; Cancel-Flip</a>
       <a href="#card-gateghost">Ghost-Tracking Gate</a>
@@ -313,6 +314,12 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     <div class="card" id="card-ai-health">
       <h2>Status AI AATAS</h2>
       <div id="aatasAiHealth"><div class="empty">Belum dimuat — klik Refresh.</div></div>
+    </div>
+
+    <div class="card" id="card-entry-shadow">
+      <h2>AATAS Entry Optimalization — Shadow</h2>
+      <p class="hint"><b>Tidak memengaruhi entry produksi.</b> Panel ini membandingkan zona dan target AATAS dengan filter environment, sesi, serta rejection H1 Prime. Status produksi tetap menjadi sumber keputusan operasional.</p>
+      <div class="grid" id="entryShadowStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
     <div class="card" id="card-gate">
@@ -837,6 +844,31 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     }).join('');
   }
 
+  function renderEntryOptimization(recent){
+    const el = document.getElementById('entryShadowStats');
+    const rows = (recent || []).filter(s => s && s.entry_optimization_shadow);
+    if (!rows.length) {
+      el.innerHTML = '<div class="empty">Belum ada setup yang membawa hasil shadow versi baru.</div>';
+      return;
+    }
+    const count = key => rows.filter(s => s.entry_optimization_shadow.state === key).length;
+    const outcomes = rows.filter(s => ['tp','sl','ambiguous'].includes(s.entry_optimization_shadow.state));
+    const netKnown = outcomes.map(s => Number(s.entry_optimization_shadow.net_r)).filter(Number.isFinite);
+    const netR = netKnown.length ? netKnown.reduce((sum, n) => sum + n, 0) : null;
+    const baselineDecided = rows.filter(s => ['tp','sl'].includes(s.status)).length;
+    el.innerHTML = [
+      statBlock('Total Shadow', rows.length),
+      statBlock('Menunggu Zona', count('waiting_zone')),
+      statBlock('Terkonfirmasi / Filled', count('confirmed') + count('filled'), 'yellow'),
+      statBlock('TP / SL Shadow', `${count('tp')} / ${count('sl')}`, count('tp') >= count('sl') ? 'green' : 'red'),
+      statBlock('Ditolak Trigger', count('rejected')),
+      statBlock('No Fill', count('no_fill')),
+      statBlock('Observe-only / Tidak Eligible', count('observe_only') + count('not_eligible')),
+      statBlock('Net R Shadow (spread)', netR == null ? '—' : netR.toFixed(2), netR == null ? '' : (netR >= 0 ? 'green' : 'red')),
+      statBlock('Baseline Sudah TP/SL', baselineDecided),
+    ].join('');
+  }
+
   const RECENT_PAGE_SIZE = 10;
   let allRecent = [];
   let recentPage = 1;
@@ -1226,6 +1258,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     return ` <span class="badge canceled" style="font-size:8.5px" title="${esc(INTERVENTION_LABEL[t] || t)}">${esc(txt)}</span>`;
   }
   function buildSetupDetail(s){
+    const opt = s.entry_optimization_shadow;
     const groups = [
       fldGroup('Ringkasan', [
         fld('Ringkasan Eksekutif', buildExecutiveSummary(s)),
@@ -1260,6 +1293,29 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         fld('Status Catatan Penalaran', reasoningNoteStatus(s)),
         fldLong('Catatan Penalaran AI', s.reasoning_note),
         fld('Versi Prompt AATAS', s.aatas_v),
+      ]),
+      fldGroup('SHADOW: AATAS Entry Optimalization (tidak memengaruhi produksi)', [
+        fld('Mode', opt?.mode === 'shadow_no_entry_effect' ? 'SHADOW — tidak memengaruhi entry produksi' : ''),
+        fld('Experiment ID', opt?.experiment_id),
+        fld('Environment', opt?.environment),
+        fld('Arah / Kekuatan', opt ? `${opt.direction || '—'} / ${opt.strength || '—'}` : ''),
+        fld('State Shadow', opt?.state),
+        fld('Status Produksi Pembanding', opt ? s.status : ''),
+        fld('Sesi Eligible', opt?.eligible_sessions?.join(', ')),
+        fld('Alasan / Filter', opt ? ([...(opt.reason_codes || []), opt.rejection_reason, opt.no_fill_reason].filter(Boolean).join(', ')) : ''),
+        fld('Coverage Input', opt ? jsonLabel(opt.input_coverage) : ''),
+        fld('Metrik Environment', opt ? jsonLabel(opt.environment_metrics) : ''),
+        fld('Touch H1', opt?.touch_candle ? jsonLabel(opt.touch_candle) : ''),
+        fld('Trigger H1', opt?.trigger_candle ? jsonLabel(opt.trigger_candle) : ''),
+        fld('Metrik Trigger', opt?.trigger_metrics ? jsonLabel(opt.trigger_metrics) : ''),
+        fld('Fill Shadow', opt?.proposed_fill ? jsonLabel(opt.proposed_fill) : ''),
+        fld('RR Efektif', opt?.effective_rr),
+        fld('Outcome Shadow', opt?.raw_outcome),
+        fld('Pembanding Baseline', opt ? `${opt.baseline_status || s.status || '—'}${opt.missed_winner ? ' — missed winner' : ''}${opt.saved_loss ? ' — saved loss' : ''}` : ''),
+        fld('Net R / Stress 2x', opt && (opt.net_r != null || opt.net_r_stress_2x != null) ? `${opt.net_r ?? '—'} / ${opt.net_r_stress_2x ?? '—'}` : ''),
+        fld('MFE R / MAE R', opt && (opt.mfe_r != null || opt.mae_r != null) ? `${opt.mfe_r ?? '—'} / ${opt.mae_r ?? '—'}` : ''),
+        fld('Estimasi Biaya', opt ? jsonLabel(opt.cost_estimate) : ''),
+        fld('Dievaluasi', opt?.evaluated_at ? fmtTs(opt.evaluated_at) : ''),
       ]),
       fldGroup('Makro & Konflik', [
         fld('Alignment', s.alignment),
@@ -1386,6 +1442,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       document.getElementById('calibStats').innerHTML = '';
       document.getElementById('symbolCards').innerHTML = '';
       document.getElementById('aatasAiHealth').innerHTML = '<div class="empty">Status AI tidak dapat dibaca karena akses ditolak.</div>';
+      document.getElementById('entryShadowStats').innerHTML = '<div class="empty">Shadow tidak dapat dibaca karena akses ditolak.</div>';
       renderRecent([]);
       return;
     }
@@ -1396,6 +1453,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     renderMeta(json.consistency, json.pipeline_latency);
     renderCalibration(json.global && json.global.confidence_calibration);
     renderAatasAiHealth(json.ai_health);
+    renderEntryOptimization(json.recent);
     renderSymbols(json.symbols);
     ACTIVE_FILTER_PAIRS = Object.keys(json.symbols || {});
     POLICY_EPOCHS = Array.isArray(json.policy_epochs) ? json.policy_epochs : [];

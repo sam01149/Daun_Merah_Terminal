@@ -185,6 +185,7 @@ test('PLAN U-7(a): auto=1 + CRON_SECRET valid -> ohlcv_analysis:<symbol> TIDAK d
       assert.equal(autoLog.length, 1);
       assert.equal(autoLog[0].source, 'auto');
       assert.equal(autoLog[0].symbol, 'GBPUSD=X');
+      assert.equal(autoLog[0].entry_optimization_shadow.mode, 'shadow_no_entry_effect');
     } finally { global.fetch = origFetch; }
   });
 });
@@ -204,6 +205,9 @@ test('PLAN U-7(a): call manual (bukan auto) tetap menulis cache & setup_log:v1 s
 
       assert.equal(res.statusCode, 200);
       assert.ok(store.strings['ohlcv_analysis:GBPUSD=X'], 'call manual harus tetap menulis cache seperti sebelum U-7');
+      const manualLog = JSON.parse(store.strings['setup_log:v1']);
+      assert.equal(Object.prototype.hasOwnProperty.call(manualLog[0], 'entry_optimization_shadow'), false,
+        'shadow entry optimization tidak boleh bocor ke setup manual/publik');
       assert.ok(store.strings['setup_log:v1'], 'call manual harus masuk setup_log:v1');
       assert.equal(store.strings['setup_log_auto:v1'], undefined);
     } finally { global.fetch = origFetch; }

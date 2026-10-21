@@ -32,6 +32,11 @@ const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isM
 const { computeLevelCandidates } = require('./_levels');
 const { bindExecutionContract, validateStoredExecutionContract } = require('./_aatas_execution_contract');
 const { buildAcademyShadow, mergeAcademyShadow, applyCompletedEventReactions, rankAcademyCohort } = require('./_aatas_academy');
+const {
+  buildEntryOptimizationShadow,
+  mergeEntryOptimizationShadow,
+  applyEntryOptimizationShadow,
+} = require('./_aatas_entry_optimization');
 
 // Keputusan user 2026-10-02: selama fase pengumpulan data, Gate B tidak boleh
 // menghentikan kandidat baru berdasarkan rolling realized-R. Kode/perhitungannya
@@ -2366,10 +2371,10 @@ const FX_PAIRS_FOR_STRENGTH = Object.entries(OHLCV_PAIR_SYMBOL_MAP)
 // dipakai bersama cb-status.js ?section=shock. Perilaku tidak berubah.
 
 async function fetchYahooOhlcvDaily(symbol) {
-  // range=6mo — daily disimpan 135 bar supaya AI Analisa/Ringkasan punya anchor
+  // range=1y — PLAN AH memerlukan EMA200 Daily; UI lama tetap memakai slice 30/6 bulan.
   // 6 bulan (posisi dalam range, jarak dari puncak) + bahan cluster S/R;
   // konsumen yang butuh window 30D (stat UI, blok "Daily 30D") slice(-30) sendiri.
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=6mo`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1y`;
   const r = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -2479,9 +2484,9 @@ async function ohlcvSyncHandler(req, res) {
       break;
     }
     const entry = { candles1h: null, candles1d: null };
-    try { entry.candles1h = await fetchDerivCandles(symbol, '1h', 250); }
+    try { entry.candles1h = await fetchDerivCandles(symbol, '1h', 420); }
     catch (e) { console.warn(`ohlcv_sync: Deriv 1h ${symbol} gagal (${e.message}), fallback Yahoo`); }
-    try { entry.candles1d = await fetchDerivCandles(symbol, '1d', 140); }
+    try { entry.candles1d = await fetchDerivCandles(symbol, '1d', 220); }
     catch (e) { console.warn(`ohlcv_sync: Deriv 1d ${symbol} gagal (${e.message}), fallback Yahoo`); }
     derivResults.set(symbol, entry);
   }
@@ -2558,17 +2563,17 @@ async function ohlcvSyncHandler(req, res) {
         redisCmd('SET', `ohlcv:${symbol}:source`, JSON.stringify({ '1h': source1h, '1d': source1d }), 'EX', '90000'),
       ];
       if (!skip1h) {
-        writes.push(redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '90000'));
-        writes.push(redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'));
+        writes.push(redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-420)), 'EX', '90000'));
+        writes.push(redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-110)),  'EX', '90000'));
       }
       if (!skip1d) {
-        writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-135)), 'EX', '90000'));
+        writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-220)), 'EX', '90000'));
       }
       await Promise.all(writes);
 
-      const n1h = skip1h ? 0 : Math.min(120, candles1h.length);
-      const n4h = skip1h ? 0 : Math.min(60, candles4h.length);
-      const n1d = skip1d ? 0 : Math.min(135, candles1d.length);
+      const n1h = skip1h ? 0 : Math.min(420, candles1h.length);
+      const n4h = skip1h ? 0 : Math.min(110, candles4h.length);
+      const n1d = skip1d ? 0 : Math.min(220, candles1d.length);
       console.log(`ohlcv_sync: ${label} — 1H:${n1h}(${source1h}) 4H:${n4h} 1D:${n1d}(${source1d})`);
       return { symbol, label, count1h: n1h, count4h: n4h, count1d: n1d, source1h, source1d, skipped: skip1h || skip1d };
     })
@@ -2866,8 +2871,8 @@ async function refreshOhlcvFromYahoo(symbol) {
   let candles1h = null, source1h = null, candles1d = null, source1d = null;
   if (derivEligible) {
     const [rd1h, rd1d] = await Promise.allSettled([
-      fetchDerivCandles(symbol, '1h', 250),
-      fetchDerivCandles(symbol, '1d', 140),
+      fetchDerivCandles(symbol, '1h', 420),
+      fetchDerivCandles(symbol, '1d', 220),
     ]);
     if (rd1h.status === 'fulfilled') { candles1h = rd1h.value; source1h = 'deriv'; }
     else console.warn(`refreshOhlcvFromYahoo: Deriv 1h ${symbol} gagal (${rd1h.reason?.message}), fallback Yahoo`);
@@ -2929,11 +2934,11 @@ async function refreshOhlcvFromYahoo(symbol) {
   const writes = [];
   if (candles1h) {
     const candles4h = resampleTo4h(candles1h);
-    writes.push(redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-120)), 'EX', '90000'));
-    writes.push(redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-60)),  'EX', '90000'));
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:1h`, JSON.stringify(candles1h.slice(-420)), 'EX', '90000'));
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:4h`, JSON.stringify(candles4h.slice(-110)),  'EX', '90000'));
   }
   if (candles1d) {
-    writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-135)), 'EX', '90000'));
+    writes.push(redisCmd('SET', `ohlcv:${symbol}:1d`, JSON.stringify(candles1d.slice(-220)), 'EX', '90000'));
   }
   if (candles1h || candles1d) {
     writes.push(redisCmd('SET', `ohlcv:${symbol}:source`, JSON.stringify({
@@ -3031,6 +3036,17 @@ async function loadOhlcvData(symbol, label) {
       };
     }
   }
+  // Input internal PLAN AH sengaja non-enumerable: handler auto dapat membangun
+  // shadow deterministik dari candle primary, tetapi payload OHLCV publik dan prompt
+  // lama tidak membengkak/berubah. Display fallback lintas-provider tidak masuk sini.
+  Object.defineProperty(data, '_entry_optimization_inputs', {
+    value: {
+      candles1h: input.c1h || [],
+      candles4h: input.c4h || [],
+      candles1d: input.c1dFull || [],
+    },
+    enumerable: false,
+  });
   return data;
 }
 
@@ -3755,7 +3771,7 @@ function _evaluateCanceledGhost(setups, candlesBySymbol, nowMs) {
     // BUG DITEMUKAN & DIFIX (audit AATAS 2026-09-06): evaluator ini dulu SELALU mengulang
     // dari fase 'pending' + scan dari `canceled_t`, walau `ghost_filled_t` sudah tercatat
     // di tick sebelumnya — padahal Redis cuma menyimpan 120 candle H1 terakhir (~5 hari
-    // trading, `ohlcv:<sym>:1h` slice(-120)) sementara horizon ghost 1,5x horizon_days
+    // trading, `ohlcv:<sym>:1h` punya retention terbatas) sementara horizon ghost 1,5x horizon_days
     // (7,5 hari). Begitu candle yang mengisi ghost tergeser keluar jendela, tick
     // berikutnya "membatalkan" fill itu (mulai lagi dari pending pada candle yang
     // tersisa) — kalau harga tidak menyentuh entry lagi, ghost yang sebenarnya sudah
@@ -4524,7 +4540,12 @@ async function _buildAutoScopeStats() {
       && Number.isFinite(eventMs)
       && academyNow >= eventMs + 3 * 3600000;
   }));
-  const candleSymbols = [...new Set([...active, ...academyReactionPending.map(s => s.symbol).filter(Boolean)])];
+  const optimizationPending = log.filter(s => ['waiting_zone', 'confirmed', 'filled', 'unavailable'].includes(s?.entry_optimization_shadow?.state));
+  const candleSymbols = [...new Set([
+    ...active,
+    ...academyReactionPending.map(s => s.symbol).filter(Boolean),
+    ...optimizationPending.map(s => s.symbol).filter(Boolean),
+  ])];
   const candlesBySymbol = {};
   let calendarEvents = [];
   let newsItems = [];
@@ -4579,6 +4600,12 @@ async function _buildAutoScopeStats() {
     const academyApplied = applyCompletedEventReactions(log, candlesBySymbol, calendarEvents, Date.now());
     if (academyApplied.changed) log = academyApplied.records;
   } catch (e) { console.warn('Academy reaction shadow gagal (diabaikan):', e.message); }
+  // PLAN AH: evaluator entry gabungan AATAS+Prime hanya memperbarui envelope shadow.
+  // Status/fill/SL/TP produksi di record induk tidak pernah dibaca balik dari hasil ini.
+  try {
+    const optimizationApplied = applyEntryOptimizationShadow(log, candlesBySymbol, Date.now());
+    if (optimizationApplied.changed) log = optimizationApplied.records;
+  } catch (e) { console.warn('AATAS Entry Optimalization shadow gagal (diabaikan):', e.message); }
   const after = JSON.stringify(log);
   if (after !== before) await redisCmd('SET', setupLogKey, after);
   await _finalizeSetupTransitions(log, statusBeforeById);
@@ -8528,6 +8555,11 @@ async function ohlcvAnalyzeHandler(req, res) {
         setup: { ...structured, symbol, label: data.label }, events: aatasCalendarEvents,
         decisionMs: rejectEntry.ts, slotId: academySlotId,
       });
+      rejectEntry.entry_optimization_shadow = buildEntryOptimizationShadow({
+        setup: { ...structured, symbol, label: data.label, ts: rejectEntry.ts },
+        marketData: data._entry_optimization_inputs,
+        decisionMs: rejectEntry.ts,
+      });
       // Ditunggu agar finalisasi cohort yang dipanggil daemon sesudah seluruh pair tidak
       // mendahului log ini. Error tetap ditelan: pencatatan tidak boleh menggagalkan analisa.
       await redisCmd('LPUSH', 'aatas_reject_log:v1', JSON.stringify(rejectEntry))
@@ -8567,8 +8599,12 @@ async function ohlcvAnalyzeHandler(req, res) {
       const snapshotWithReleases = isAutoCall && fundReleaseBlock
         ? { ...(latestMacroSnapshot || {}), v: 2, releases_as_supplied: fundReleaseBlock }
         : latestMacroSnapshot;
-      const buildNewSetupEntry = () => ({
-        id: `${symbol}:${Date.now()}`,
+      const buildNewSetupEntry = () => {
+        // Satu timestamp untuk ID, parent record, dan cutoff shadow. Ini mencegah
+        // selisih beberapa milidetik yang dapat membuat candle boundary berbeda.
+        const createdAt = Date.now();
+        return {
+        id: `${symbol}:${createdAt}`,
         symbol, label: data.label, bias: structured.bias,
         entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp,
         rr: structured.risk_reward ?? null,
@@ -8590,7 +8626,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         // sudah dibatasi alami oleh instruksi prompt (5 paragraf).
         commentary: commentary || null,
         horizon_days: structured.time_horizon_days ?? null,
-        model, ts: Date.now(), level_set_at: Date.now(), status: 'pending',
+        model, ts: createdAt, level_set_at: createdAt, status: 'pending',
         source: isAutoCall ? 'auto' : 'manual',
         ...(!isAutoCall ? {
           strategy_id: structured.strategy_id ?? 'no_trade',
@@ -8702,6 +8738,11 @@ async function ohlcvAnalyzeHandler(req, res) {
             setup: { ...structured, symbol, label: data.label }, events: aatasCalendarEvents,
             decisionMs: Date.now(), slotId: academySlotId,
           }),
+          entry_optimization_shadow: buildEntryOptimizationShadow({
+            setup: { ...structured, symbol, label: data.label, ts: createdAt, level_set_at: createdAt },
+            marketData: data._entry_optimization_inputs,
+            decisionMs: createdAt,
+          }),
           entry_execution: 'zone_touch_after_calendar',
           selected_sl_id: structured.selected_sl_id ?? null,
           selected_tp_id: structured.selected_tp_id ?? null,
@@ -8722,7 +8763,8 @@ async function ohlcvAnalyzeHandler(req, res) {
           reasoning_note_truncated: structured.reasoning_note_truncated === true,
           aatas_v: AATAS_PROMPT_VERSION,
         } : {}),
-      });
+        };
+      };
       let needsGateA = false;
       // Gate A (Kritikus) juga menimbang refine-in-place (2026-08-18, lihat catatan lengkap di
       // blok "Skenario Refinemen" di bawah) — level baru di-stage di sini dulu, diterapkan di
@@ -8875,6 +8917,11 @@ async function ohlcvAnalyzeHandler(req, res) {
                     academy_shadow: mergeAcademyShadow(stalePending.academy_shadow, buildAcademyShadow({
                       setup: { ...structured, symbol, label: data.label }, events: aatasCalendarEvents,
                       decisionMs: Date.now(), slotId: academySlotId,
+                    })),
+                    entry_optimization_shadow: mergeEntryOptimizationShadow(stalePending.entry_optimization_shadow, buildEntryOptimizationShadow({
+                      setup: { ...structured, symbol, label: data.label, ts: stalePending.ts, level_set_at: Date.now() },
+                      marketData: data._entry_optimization_inputs,
+                      decisionMs: Date.now(),
                     })),
                   },
                 };

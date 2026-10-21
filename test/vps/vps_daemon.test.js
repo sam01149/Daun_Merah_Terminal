@@ -71,12 +71,12 @@ test('mergeClosedCandle: epoch yang sama menimpa (bukan duplikat)', () => {
   assert.equal(out[0].c, 9);
 });
 
-test('mergeClosedCandle: dipotong ke maxLen (default 120), yang terlama dibuang', () => {
-  const existing = Array.from({ length: 120 }, (_, i) => ({ t: i, o: 1, h: 1, l: 1, c: 1, v: 0 }));
-  const out = mergeClosedCandle(existing, { t: 120, o: 2, h: 2, l: 2, c: 2, v: 0 });
-  assert.equal(out.length, 120);
+test('mergeClosedCandle: dipotong ke maxLen (default 420), yang terlama dibuang', () => {
+  const existing = Array.from({ length: 420 }, (_, i) => ({ t: i, o: 1, h: 1, l: 1, c: 1, v: 0 }));
+  const out = mergeClosedCandle(existing, { t: 420, o: 2, h: 2, l: 2, c: 2, v: 0 });
+  assert.equal(out.length, 420);
   assert.equal(out[0].t, 1); // t=0 terbuang
-  assert.equal(out[out.length - 1].t, 120);
+  assert.equal(out[out.length - 1].t, 420);
 });
 
 // ── isHighImpactCategory ─────────────────────────────────────────────────────

@@ -233,7 +233,7 @@ function normalizeDerivCandle(ohlcv) {
 
 // Merge candle yang BARU SAJA close ke array Redis existing — dipakai juga di
 // test (pure function, tidak menyentuh Redis).
-function mergeClosedCandle(existingArr, candle, maxLen = 120) {
+function mergeClosedCandle(existingArr, candle, maxLen = 420) {
   let arr = Array.isArray(existingArr) ? existingArr.slice() : [];
   arr = arr.filter(c => c.t !== candle.t);
   arr.push(candle);

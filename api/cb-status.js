@@ -44,7 +44,7 @@ async function redisCmd(...args) {
 
 const SHOCK_CACHE_KEY = 'cb_shock_cache';
 const SHOCK_CACHE_TTL = 3600;    // 1h — candle 1h toh tidak lebih cepat dari itu
-const SHOCK_WINDOW_DAYS = 8;     // rapat lebih tua dari ini di luar jangkauan data 1h (range=10d)
+const SHOCK_WINDOW_DAYS = 8;     // window event sengaja tetap 8 hari walau cache 1H kini lebih panjang
 
 // Candle 1h per simbol: Redis dulu (sudah disync ohlcv_sync tiap jam via GitHub
 // Actions), fallback fetch Yahoo langsung via modul shared _ohlcv_fetch.

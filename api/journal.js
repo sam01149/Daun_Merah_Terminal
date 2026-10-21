@@ -149,8 +149,8 @@ function uid() {
 
 // ── MFE/MAE (max favorable/adverse excursion) ─────────────────────────────
 // Computed once, at the moment a trade is closed, from OHLCV candles already
-// synced by the ohlcv_sync cron (api/admin.js). This is a rolling cache (~5d
-// at 1H, ~10d at 4H, ~30d at 1D) — NOT a permanent price-path store — so it
+// synced by the ohlcv_sync cron (api/admin.js). This is a rolling cache (~18
+// trading days at 1H/4H, ~10 months at 1D) — NOT a permanent price-path store — so it
 // only works if [entry_time, close_time] still falls inside that window.
 // Older/longer-held trades, or pairs the cron never synced, get an explicit
 // "unavailable" quality flag instead of a fabricated/partial number.

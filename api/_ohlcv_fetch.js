@@ -4,13 +4,13 @@
 // (?section=shock) tanpa duplikasi kode.
 // Underscore prefix = bukan serverless function (limit Vercel Hobby 12/12 penuh).
 //
-// Catatan granularitas: interval=1h&range=10d adalah resolusi TERTINGGI yang
-// tersedia di app ini — jendela reaksi 30-60 menit ala paper akademis tidak bisa
+// Catatan granularitas: interval=1h&range=1mo adalah resolusi TERTINGGI yang
+// dipakai app ini — jendela reaksi 30-60 menit ala paper akademis tidak bisa
 // direplikasi; konsumen harus men-scope analisis ke "reaksi per-jam".
 
 async function fetchYahooOhlcv1h(symbol) {
-  // range=10d — extended for 4H resampling over 10 days; ohlcv_sync stores only last 120 of the 1H result
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1h&range=10d`;
+  // range=1mo — PLAN AH membutuhkan 250 H1 dan >=100 H4 hasil resampling.
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1h&range=1mo`;
   try {
     const r = await fetch(url, {
       headers: {
@@ -117,10 +117,9 @@ async function fetchFallbackCandles(yahooSymbol, interval) {
   const tdSymbol = mapYahooSymbolToTwelveData(yahooSymbol);
   if (!tdSymbol) throw new Error(`fetchFallbackCandles: tidak ada mapping Twelve Data untuk ${yahooSymbol}`);
   const tdInterval = interval === '1d' ? '1day' : interval;
-  // outputsize: 250 (1h) ~ mendekati window Yahoo range=10d (240 jam) untuk resampleTo4h
-  // punya cukup bar; 140 (1d) ~ mendekati Yahoo range=6mo (~130 bar dagang). 1 credit/request
+  // outputsize: 420 (1h) untuk 250 H1 + >=100 H4; 220 (1d) untuk EMA200. 1 credit/request
   // terlepas dari outputsize (docs.twelvedata.com), jadi tidak ada biaya tambahan minta lebih banyak.
-  const outputsize = interval === '1d' ? 140 : 250;
+  const outputsize = interval === '1d' ? 220 : 420;
   const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=${tdInterval}&outputsize=${outputsize}&timezone=UTC&order=asc&apikey=${encodeURIComponent(apiKey)}`;
   const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
   const json = await r.json();
@@ -192,8 +191,7 @@ function mergeVolumeByTimestamp(baseCandles, volumeCandles) {
 }
 
 // interval: '1h' | '1d' (konvensi internal app, sama dengan fetchFallbackCandles).
-// count: jumlah candle diminta — 250 (1h, ~mendekati window Yahoo range=10d untuk
-// resampleTo4h) / 140 (1d, ~mendekati Yahoo range=6mo), sama dengan outputsize
+// count: jumlah candle diminta — 420 (1h) / 220 (1d), sama dengan outputsize
 // Twelve Data supaya konsisten window historis di seluruh fallback chain.
 async function fetchDerivCandles(yahooSymbol, interval, count) {
   const derivSymbol = mapYahooSymbolToDeriv(yahooSymbol);
