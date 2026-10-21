@@ -24,6 +24,25 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-10-21] Perbandingan tab Checklist lama vs metode Prime Market Academy
+
+**Konteks.** Evaluasi ini membandingkan implementasi tab Checklist saat ini di `index.html` dengan prinsip Prime Market Academy yang sudah diterapkan pada Analisa manual melalui policy `prime-v1`. Sumber: sesi user 2026-10-21; `index.html` (`PLAYBOOKS`, `ckGetVerdict`, auto-tick, Pre-Entry Check); `api/admin.js` (`_computePrimeManualDirection`, `_enforceManualAcademyContract`); dan changelog Session 386/392. Tidak ada perubahan runtime dari evaluasi ini.
+
+| Aspek | Checklist saat ini | Prime Market Academy |
+|---|---|---|
+| Bentuk keputusan | Empat playbook terpisah (`smc_ict`, `macro_momentum`, `event_driven`, `mean_reversion`) dengan skor persentase dan gate. | Satu decision tree: tentukan arah makro, pilih tepat satu strategi (`momentum`, `range`, `tactical_fade`, `no_trade`), lalu chart menentukan lokasi/waktu. |
+| Arah trade | Bisa lahir dari pilihan playbook dan centang manual; auto-tick membantu, tetapi pengguna tetap menyusun keputusan kedua setelah Analisa. | Arah ditentukan dulu dari kebijakan/data dua kaki; chart tidak boleh membalik arah momentum. |
+| Trigger | Banyak kondisi generik lintas playbook; SMC/ICT menerima beberapa jenis candle/shift. | Trigger lebih sempit: rejection H1 pada London/New York; momentum body 0,5-1 ATR, bukan breakout; range/fade punya aturan tersendiri. |
+| Penilaian | Persentase kelengkapan menghasilkan `NO TRADE`/`PERTIMBANGKAN`/`SIAP TRADE`/`ENTRY`; gate mencegah skor tinggi menutup bagian wajib yang kosong. | Lulus/gagal kontrak per tahap. Bukti makro, jenis strategi, trigger, level lengkap, dan RR minimal 1:2 menentukan `no_trade` atau setup aktif. |
+| Otomasi | Enam item regime auto-tick/block, evidence, override beralasan, reset cooldown, pemeriksaan klik massal, serta AI Pre-Entry Check. | Kontrak utama sudah ditegakkan server pada hasil Analisa `prime-v1`; banyak pemeriksaan Checklist menjadi duplikasi keputusan yang sudah dibuat. |
+| Hilir | Terhubung ke Sizing, Jurnal, MT5, snapshot kondisi, dan statistik edge per kondisi. | Belum menjadi tab eksekusi tersendiri; saat ini berhenti pada hasil Analisa terstruktur. |
+
+**Temuan utama.** Checklist lama lebih luas, tetapi mencampur metodologi yang tumpang tindih. `SMC/ICT` dan `Macro Momentum` sama-sama dapat menghasilkan setup momentum; `Event-Driven` sebenarnya lebih tepat menjadi konteks waktu/risiko; `Mean Reversion` setara cabang `range`; sedangkan `tactical_fade` Prime belum punya padanan eksplisit. Setelah `prime-v1` hidup, alur pengguna menjadi Analisa Prime -> memilih playbook lagi -> menghitung skor kedua. Dua sumber keputusan ini dapat berbeda walau membaca pair yang sama.
+
+**Rekomendasi.** Penggantian layak dan lebih konsisten daripada mempertahankan Checklist lama, tetapi yang diganti adalah **model keputusannya**, bukan seluruh infrastrukturnya. Tab baru sebaiknya menjadi `RENCANA ENTRY`/`EKSEKUSI` dengan alur: (1) arah dan alasan makro, (2) strategi tunggal, (3) trigger dan sesi, (4) entry/SL/TP/RR, (5) pemeriksaan waktu/data segar, lalu status `TUNGGU`/`SIAP`/`NO TRADE`. Pertahankan auto-block kalender, validasi data segar, RR, override beralasan, sizing, jurnal/MT5, snapshot audit, dan statistik outcome. Pemetaan migrasi: SMC/ICT menjadi bukti struktur di dalam momentum; Macro Momentum menjadi `momentum`; Mean Reversion menjadi `range`; Event-Driven menjadi konteks katalis/timing; tambah `tactical_fade`; buang skor kelengkapan sebagai sumber keputusan utama.
+
+**Batas.** Metode Prime yang lebih konsisten tidak otomatis lebih profitable. Populasi manual `prime-v1` harus tetap dipisahkan dari histori Checklist lama. Pre-Entry Check AI perlu dinilai ulang setelah desain baru karena sebagian tugasnya sudah ditutup validator `prime-v1`; jangan mempertahankannya hanya karena sudah ada bila tidak menambah pemeriksaan independen.
+
 ### [2026-09-28] RBA 29 September — kenaikan 25 bp hampir seluruhnya sudah diprice in
 
 Pengecekan menjelang keputusan RBA besok pukul **11.30 WIB** (14.30 AEST): cash rate saat ini 4,35%. Sumber resmi RBA mengonfirmasi jadwal dan waktu rilis tersebut. Pricing yang dapat diamati memberi arah yang sama: kontrak ASX 30-day interbank cash-rate futures (melalui tracker pihak ketiga yang dihitung dari kontrak ASX) terakhir pada 25 September mengindikasikan peluang kenaikan sekitar 75,38%; pasar prediksi yang diperbarui 28 September menempatkan kenaikan **25 bp** di sekitar **99%** dan hold sekitar 1%. Jadi konsensus trader sudah jelas: rate menuju **4,60%**.
