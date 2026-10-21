@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-22 (Session 397 — Rencana Prime disatukan)
+> **Last updated:** 2026-10-22 (Session 398 — Empty state dan lebar pair Rencana Prime)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 398 (2026-10-22) — Empty state dan lebar pair Rencana Prime
+
+**Koreksi makna status.** Kondisi awal Rencana Prime tidak lagi menampilkan No Trade ketika pair belum dipilih atau belum memiliki Analisa terbaru. Tanpa pair, badge menjadi `PILIH PAIR` dan keputusan `MENUNGGU`; setelah pair dipilih tetapi analisa belum tersedia/segar, badge menjadi `MENUNGGU ANALISA`. Panel utama menampilkan petunjuk dan tombol menuju Analisa Prime. `NO TRADE` sekarang hanya tampil bila hasil Analisa Prime terbaru secara eksplisit memilih `strategy_id: no_trade`. Tombol Reset disembunyikan pada empty state dan No Trade karena tidak ada rencana aktif untuk direset.
+
+**Perbaikan layout.** Dropdown pair tidak lagi membentang sepanjang panel. Lebarnya dibatasi maksimal 360 px di desktop dan tetap responsif mengikuti ruang yang tersedia pada ponsel. `APP_VERSION` dinaikkan menjadi `2026.10.22.3`.
+
+**Verifikasi.** Suite penuh lulus 1.455/1.455. Chromium nyata pada viewport 1.365×768 dan 390×844 mengonfirmasi urutan `PILIH PAIR → MENUNGGU ANALISA → NO TRADE eksplisit`, empty state dan tombol Reset yang benar, dropdown terukur 360 px di desktop dan 358 px di ponsel, tanpa overflow horizontal maupun error halaman.
 
 ## Changelog Session 397 (2026-10-22) — Rencana Prime disatukan
 

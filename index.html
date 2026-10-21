@@ -2164,6 +2164,17 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .ck-sec-body { display: none; padding: 8px 12px 10px; border-top: 1px solid var(--border); }
 .ck-sec-body.open { display: block; }
 .ck-stop { font-size: 9px; color: var(--accent); letter-spacing: .4px; padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+.ck-empty {
+  min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 28px; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+}
+.ck-empty-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; letter-spacing: 1px; color: var(--text); }
+.ck-empty-body { max-width: 460px; font-size: 10px; line-height: 1.6; color: var(--muted); }
+.ck-empty-btn {
+  padding: 8px 14px; border: 1px solid var(--green-dim); border-radius: 4px; background: rgba(48,209,88,.08);
+  color: var(--green); font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+}
+.ck-empty-btn:hover { border-color: var(--green); background: rgba(48,209,88,.14); }
 
 .ck-item {
   display: flex; align-items: center; gap: 9px; padding: 5px 0;
@@ -4483,7 +4494,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
-      <select id="ckPairSelector" onchange="ckOnPairChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;flex:1">
+      <select id="ckPairSelector" onchange="ckOnPairChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;width:min(100%,360px);flex:0 1 360px">
         <option value="">— Pilih pair untuk auto-tick —</option>
       </select>
       <span id="ckPairHint" style="font-size:9px;color:var(--muted);white-space:nowrap;cursor:default"></span>
@@ -4518,7 +4529,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     </div>
     <button class="ck-jurnal-btn" id="ckJurnalBtn" onclick="ckPrefillJurnal()" style="display:none">Buat Jurnal dari Rencana</button>
     <button class="ck-jurnal-btn" id="ckMt5Btn" onclick="ckGoToSizing()" style="display:none">Lanjut ke Sizing</button>
-    <button class="ck-reset" onclick="ckResetAll()">RESET RENCANA</button>
+    <button class="ck-reset" id="ckResetBtn" onclick="ckResetAll()">RESET RENCANA</button>
     <div id="ckResetCooldown" style="display:none;font-size:9px;color:var(--accent);text-align:center;margin-top:4px">Tunggu --s sebelum centang ulang</div>
   </div>
 </div>
@@ -4711,7 +4722,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.22.2';
+const APP_VERSION = '2026.10.22.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -12834,6 +12845,10 @@ const PRIME_STRATEGY_SECTIONS = {
 
 const PRIME_GATES = ['prime_macro','prime_trigger','prime_risk','prime_guard'];
 Object.assign(PLAYBOOKS, {
+  prime_pending: {
+    name:'Rencana Entry Prime', strategyId:null, isPending:true, color:'var(--muted)',
+    quick:[], gates:[], sections:[],
+  },
   prime_momentum: {
     name:'Prime — Momentum', strategyId:'momentum', color:'var(--green)',
     quick:[
@@ -12882,7 +12897,7 @@ Object.assign(PLAYBOOKS, {
   },
 });
 
-const PRIME_PLAYBOOK_IDS = new Set(['prime_momentum','prime_range','prime_tactical_fade','prime_no_trade']);
+const PRIME_PLAYBOOK_IDS = new Set(['prime_pending','prime_momentum','prime_range','prime_tactical_fade','prime_no_trade']);
 const PRIME_STRATEGY_PLAYBOOK = Object.freeze({
   momentum:'prime_momentum',
   range:'prime_range',
@@ -12891,7 +12906,7 @@ const PRIME_STRATEGY_PLAYBOOK = Object.freeze({
 });
 
 function ckPrimePlaybookId(strategyId) {
-  return PRIME_STRATEGY_PLAYBOOK[strategyId] || 'prime_no_trade';
+  return PRIME_STRATEGY_PLAYBOOK[strategyId] || 'prime_pending';
 }
 
 function ckPrimeStrategyLabel(playbookId = ckActivePlaybook) {
@@ -12900,42 +12915,46 @@ function ckPrimeStrategyLabel(playbookId = ckActivePlaybook) {
     prime_range:'RANGE',
     prime_tactical_fade:'TACTICAL FADE',
     prime_no_trade:'NO TRADE',
-  }[playbookId] || 'NO TRADE';
+    prime_pending:'MENUNGGU ANALISA',
+  }[playbookId] || 'MENUNGGU ANALISA';
 }
 
 function ckPrimePlaybookForPair(pair) {
-  if (!pair || typeof analisaAiCache === 'undefined') return 'prime_no_trade';
+  if (!pair || typeof analisaAiCache === 'undefined') return 'prime_pending';
   const expectedSymbol = pair === 'XAU/USD' ? 'GC=F' : pair.replace('/', '').toUpperCase() + '=X';
   for (const [symbol, result] of Object.entries(analisaAiCache)) {
     if (symbol.toUpperCase() !== expectedSymbol) continue;
-    if (!result?.structured || _analisaResultIsStale(result)) return 'prime_no_trade';
+    if (!result?.structured || _analisaResultIsStale(result)) return 'prime_pending';
     return ckPrimePlaybookId(result.structured.strategy_id);
   }
-  return 'prime_no_trade';
+  return 'prime_pending';
 }
 
 function ckUpdatePrimeStrategyStatus() {
   const el = document.getElementById('ckStrategyStatus');
   if (!el) return;
+  const isPending = ckActivePlaybook === 'prime_pending';
   const isNoTrade = ckActivePlaybook === 'prime_no_trade';
-  el.textContent = ckPrimeStrategyLabel();
-  el.style.color = isNoTrade ? 'var(--accent)' : PLAYBOOKS[ckActivePlaybook]?.color || 'var(--text)';
-  el.style.borderColor = isNoTrade ? 'var(--accent)' : PLAYBOOKS[ckActivePlaybook]?.color || 'var(--border)';
+  el.textContent = isPending && !ckCurrentPair ? 'PILIH PAIR' : ckPrimeStrategyLabel();
+  el.style.color = isNoTrade ? 'var(--accent)' : isPending ? 'var(--muted)' : PLAYBOOKS[ckActivePlaybook]?.color || 'var(--text)';
+  el.style.borderColor = isNoTrade ? 'var(--accent)' : isPending ? 'var(--border)' : PLAYBOOKS[ckActivePlaybook]?.color || 'var(--border)';
   el.title = isNoTrade
-    ? 'Belum ada setup aktif dari Analisa Prime terbaru.'
-    : 'Setup ini dipilih otomatis dari Analisa Prime terbaru.';
+    ? 'Analisa Prime terbaru memutuskan tidak ada setup aktif.'
+    : isPending
+      ? 'Pilih pair dan jalankan Analisa Prime terlebih dahulu.'
+      : 'Setup ini dipilih otomatis dari Analisa Prime terbaru.';
 }
 
 // Satu planner, dengan section strategi yang dimuat otomatis dari hasil Analisa.
-// Tidak ada pilihan manual: tanpa hasil segar, status selalu kembali ke No Trade.
-let ckActivePlaybook = 'prime_no_trade';
+// Tidak ada pilihan manual: tanpa pair/hasil segar, planner berada pada status menunggu.
+let ckActivePlaybook = 'prime_pending';
 
 let CK_SECTIONS = PLAYBOOKS[ckActivePlaybook].sections;
 let CK_QUICK    = PLAYBOOKS[ckActivePlaybook].quick;
 let CK_GATES    = PLAYBOOKS[ckActivePlaybook].gates;
 
 function ckConfigurePrimePlaybook(id) {
-  const safeId = PRIME_PLAYBOOK_IDS.has(id) ? id : 'prime_no_trade';
+  const safeId = PRIME_PLAYBOOK_IDS.has(id) ? id : 'prime_pending';
   ckActivePlaybook = safeId;
   CK_SECTIONS = PLAYBOOKS[safeId].sections;
   CK_QUICK = PLAYBOOKS[safeId].quick;
@@ -13268,12 +13287,17 @@ function ckGetVerdict() {
   const conflictItems = [];
   CK_SECTIONS.forEach(sec => sec.items.forEach(it => { if (ckConflict[it.id]) conflictItems.push(it); }));
   const hasArahConflict = conflictItems.length > 0;
+  const isPending = !!PLAYBOOKS[ckActivePlaybook]?.isPending;
   const isNoTrade = !!PLAYBOOKS[ckActivePlaybook]?.isNoTrade;
-  const isReady = !isNoTrade && gatesOk;
-  const canSize = !isNoTrade && incompletePreSizingGates.length === 0;
+  const isReady = !isPending && !isNoTrade && gatesOk;
+  const canSize = !isPending && !isNoTrade && incompletePreSizingGates.length === 0;
 
   let verdict, cls, sub, riskMultiplier;
-  if (isNoTrade) {
+  if (isPending) {
+    verdict = 'MENUNGGU'; cls = 'pending';
+    sub = ckCurrentPair ? 'Jalankan Analisa Prime terbaru' : 'Pilih pair untuk memulai';
+    riskMultiplier = 0;
+  } else if (isNoTrade) {
     verdict = 'NO TRADE'; cls = 'fail'; sub = 'Keputusan Prime: tidak ada setup aktif'; riskMultiplier = 0;
   } else if (!anyChecked) {
     verdict = 'TUNGGU'; cls = 'pending'; sub = 'Mulai dari arah makro'; riskMultiplier = 0;
@@ -13286,7 +13310,7 @@ function ckGetVerdict() {
       : 'Seluruh gate Prime lulus';
     riskMultiplier = 1;
   }
-  return { pct, verdict, cls, sub, ws, tw, gatesOk, incompleteGates, incompletePreSizingGates, riskMultiplier, hasArahConflict, conflictItems, isNoTrade, isReady, canSize };
+  return { pct, verdict, cls, sub, ws, tw, gatesOk, incompleteGates, incompletePreSizingGates, riskMultiplier, hasArahConflict, conflictItems, isPending, isNoTrade, isReady, canSize };
 }
 
 function ckBuildUI() {
@@ -13322,6 +13346,19 @@ function ckBuildUI() {
   limitAlert.style.display = 'none';
   container.appendChild(limitAlert);
 
+  if (PLAYBOOKS[ckActivePlaybook]?.isPending) {
+    const empty = document.createElement('div');
+    empty.className = 'ck-empty';
+    const hasPair = !!ckCurrentPair;
+    empty.innerHTML = `
+      <div class="ck-empty-title">${hasPair ? 'ANALISA PRIME DIPERLUKAN' : 'PILIH PAIR UNTUK MEMULAI'}</div>
+      <div class="ck-empty-body">${hasPair
+        ? `${ckCurrentPair} belum memiliki hasil Analisa Prime terbaru. Jalankan analisa terlebih dahulu; setup yang sesuai akan dimuat otomatis di sini.`
+        : 'Pilih pair pada kolom di atas. Setelah itu jalankan Analisa Prime agar sistem dapat menentukan setup yang sesuai.'}</div>
+      <button type="button" class="ck-empty-btn" onclick="ckOpenAnalisaPrime()">BUKA ANALISA PRIME</button>`;
+    container.appendChild(empty);
+  }
+
   for (const sec of CK_SECTIONS) {
     const div = document.createElement('div');
     div.className = 'ck-sec';
@@ -13355,17 +13392,22 @@ function ckBuildUI() {
       itemsDiv.appendChild(wrap);
     }
   }
-  document.getElementById('ckQuickItems').innerHTML = CK_QUICK.map(q =>
-    `<div class="ck-qk-row">
-      <div class="ck-qk-dot" id="ckqd_${q.id}"></div>
-      <span class="ck-qk-lbl" id="ckql_${q.id}">${q.label}</span>
-    </div>`).join('');
-  document.getElementById('ckSecProg').innerHTML = CK_SECTIONS.map(s =>
-    `<div class="ck-sp-row">
-      <span class="ck-sp-name" title="${s.title}">${s.title}</span>
-      <div class="ck-sp-bg"><div class="ck-sp-bar" id="ckspb_${s.id}" style="width:0%"></div></div>
-      <span class="ck-sp-ct" id="ckspc_${s.id}">0/0</span>
-    </div>`).join('');
+  const pending = PLAYBOOKS[ckActivePlaybook]?.isPending;
+  document.getElementById('ckQuickItems').innerHTML = pending
+    ? '<div class="ck-qk-lbl">Belum ada gate aktif</div>'
+    : CK_QUICK.map(q =>
+      `<div class="ck-qk-row">
+        <div class="ck-qk-dot" id="ckqd_${q.id}"></div>
+        <span class="ck-qk-lbl" id="ckql_${q.id}">${q.label}</span>
+      </div>`).join('');
+  document.getElementById('ckSecProg').innerHTML = pending
+    ? '<div class="ck-qk-lbl">Menunggu Analisa Prime</div>'
+    : CK_SECTIONS.map(s =>
+      `<div class="ck-sp-row">
+        <span class="ck-sp-name" title="${s.title}">${s.title}</span>
+        <div class="ck-sp-bg"><div class="ck-sp-bar" id="ckspb_${s.id}" style="width:0%"></div></div>
+        <span class="ck-sp-ct" id="ckspc_${s.id}">0/0</span>
+      </div>`).join('');
   if (CK_SECTIONS[0]) ckToggleSection(CK_SECTIONS[0].id);
 }
 
@@ -13404,7 +13446,7 @@ function ckRender() {
     if (dot) dot.classList.toggle('on', !!done);
     if (lbl) lbl.classList.toggle('on', !!done);
   });
-  const { pct, verdict, cls, sub, isReady, canSize } = ckGetVerdict();
+  const { pct, verdict, cls, sub, isPending, isNoTrade, isReady, canSize } = ckGetVerdict();
   // Count all items (incl subs) for display counter
   let totalChecked = 0, total = 0;
   CK_SECTIONS.forEach(sec => {
@@ -13418,13 +13460,13 @@ function ckRender() {
   const pb = document.getElementById('ckPbFill');
   const ct = document.getElementById('ckTotalCt');
   if (pb) { pb.style.width = pct + '%'; pb.className = 'ck-pb-fill ' + cls; }
-  if (ct) ct.textContent = `${totalChecked}/${total}`;
+  if (ct) ct.textContent = isPending ? '—' : `${totalChecked}/${total}`;
   if (vv && vs) {
     vv.textContent = verdict; vv.className = 'ck-verdict-val ' + cls;
     vs.textContent = sub;
   }
   if (sp) {
-    sp.textContent = `Kelengkapan: ${pct}%`;
+    sp.textContent = isPending ? 'Belum dimulai' : `Kelengkapan: ${pct}%`;
     sp.style.color = cls === 'pass' ? 'var(--green)' : cls === 'ready' ? '#7dba84' : cls === 'konflik' ? 'var(--orange)' : cls === 'warn' ? 'var(--yellow)' : cls === 'fail' ? 'var(--accent)' : 'var(--muted)';
   }
 
@@ -13433,7 +13475,7 @@ function ckRender() {
   const mc = document.getElementById('ckMobileCt');
   if (mv) { mv.textContent = verdict; mv.className = 'ck-mobile-verdict ' + cls; }
   if (mp) mp.style.width = pct + '%';
-  if (mc) mc.textContent = `${totalChecked}/${total}`;
+  if (mc) mc.textContent = isPending ? '—' : `${totalChecked}/${total}`;
 
   const pair = document.getElementById('ckPairSelector')?.value || '';
   const pairAlerts = getThesisAlertsForPair(pair);
@@ -13447,11 +13489,13 @@ function ckRender() {
   const mjBtn  = document.getElementById('ckMobileJurnalBtn');
   const mt5Btn = document.getElementById('ckMt5Btn');
   const mMt5Btn = document.getElementById('ckMobileMt5Btn');
+  const resetBtn = document.getElementById('ckResetBtn');
   const showJurnal = isReady;
   if (jBtn)    jBtn.style.display = showJurnal ? 'block' : 'none';
   if (mt5Btn)  mt5Btn.style.display = canSize ? 'block' : 'none';
   if (mjBtn)   mjBtn.classList.toggle('visible', showJurnal);
   if (mMt5Btn) mMt5Btn.classList.toggle('visible', canSize);
+  if (resetBtn) resetBtn.style.display = isPending || isNoTrade ? 'none' : 'block';
 }
 
 function ckResetAll() {
@@ -13469,6 +13513,10 @@ function ckResetAll() {
 }
 
 const PB_INFO = {
+  prime_pending: {
+    title: 'Rencana Entry Prime',
+    body: 'Pilih pair dan jalankan Analisa Prime. Jenis setup akan dimuat otomatis setelah hasil terbaru tersedia.'
+  },
   prime_momentum: {
     title: 'Prime — Momentum',
     body: 'Arah makro harus tegas dan arah trade wajib sama. Chart hanya menentukan lokasi pullback dan waktu rejection H1; breakout atau mengejar impuls tidak diterima.'
@@ -13531,6 +13579,19 @@ function _syncChecklistForPair(pair) {
   } else if (typeof ckCurrentPair === 'undefined' || ckCurrentPair !== pair) {
     if (typeof ckOnPairChange === 'function') ckOnPairChange();
   }
+}
+
+function ckOpenAnalisaPrime() {
+  const pair = document.getElementById('ckPairSelector')?.value || '';
+  switchView('analisa');
+  setTimeout(() => {
+    if (pair && typeof selectAnalisaPair === 'function') {
+      selectAnalisaPair(pair.replace('/', '').toUpperCase());
+      showToast('Analisa Prime', `${pair} dibuka. Jalankan Analisa Pair Ini untuk membentuk Rencana Entry.`, 4000);
+    } else {
+      showToast('Analisa Prime', 'Pilih pair yang ingin dianalisa terlebih dahulu.', 3500);
+    }
+  }, 200);
 }
 
 function ckPrefillJurnal() {
@@ -14346,7 +14407,7 @@ function ckAutoTickRegimeCheck(pair) {
 
 function _ckAutoPrime(pair) {
   const pb = PLAYBOOKS[ckActivePlaybook];
-  if (!pb || pb.isNoTrade) return;
+  if (!pb || pb.isPending || pb.isNoTrade) return;
   const symbol = pair === 'XAU/USD' ? 'GC=F' : pair.replace('/', '') + '=X';
   const ai = (typeof analisaAiCache !== 'undefined') ? analisaAiCache[symbol] : null;
   const stale = !ai || _analisaResultIsStale(ai);
