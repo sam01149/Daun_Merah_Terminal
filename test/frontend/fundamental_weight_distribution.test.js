@@ -83,11 +83,13 @@ test('renderer: delapan kontributor teratas terlihat, sisanya dan indikator tak 
   assert.match(out, /<details class="fd-weight-unscored"><summary>Tidak dihitung \(1\)<\/summary>/);
   assert.match(out, /Tanpa Arah/);
   assert.match(out, /Distribusi Poin Data Ekonomi/);
-  assert.match(out, /Smart Bias Academy lengkap juga menilai outlook kebijakan bank sentral/);
+  assert.match(out, /Poin hanya menghitung data ekonomi/);
+  assert.match(out, /Arah kebijakan bank sentral, positioning, sentimen pasar, tren, dan reaksi harga belum masuk hitungan/);
+  assert.doesNotMatch(out, /Academy|Smart Bias|Prime Market/i);
   assert.match(out, /Bobot: inti 2× · standar 1× · minor 0.5×/);
 });
 
-test('label overview membedakan ranking data ekonomi dari Currency Strength Academy', () => {
+test('label overview menyebut isi perhitungan secara langsung', () => {
   assert.match(html, /Ranking Data Ekonomi/);
   assert.match(html, /Poin tertinggi → terendah/);
   assert.doesNotMatch(html, />\s*Currency Strength Ranking\s*</);

@@ -4486,7 +4486,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
         </button>
       </div>
     </div>
-    <!-- Deterministic economic-data ranking; this is not the full Academy Smart Bias. -->
+    <!-- Deterministic economic-data ranking; broader qualitative factors stay separate. -->
     <div class="fund-rank-section" id="fundRankSection" style="display:none">
       <div class="fund-rank-label">
         Ranking Data Ekonomi
@@ -4770,7 +4770,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.22.9';
+const APP_VERSION = '2026.10.22.10';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -9657,7 +9657,7 @@ function renderFundWeightDistribution(distribution) {
       <div class="fd-weight-title">Distribusi Poin Data Ekonomi</div>
       <div class="fd-weight-formula">Skor = poin bullish / total poin<br>Bobot: inti 2× · standar 1× · minor 0.5×<br>Umur: ≤14 hari 1× · 15–45 hari 0.5× · lebih lama 0.25×</div>
     </div>
-    <div class="fd-weight-scope"><strong>Cakupan skor.</strong> Ini hanya lapisan data ekonomi otomatis. Smart Bias Academy lengkap juga menilai outlook kebijakan bank sentral, riset dan positioning, sentimen dan narasi, tren, serta reaksi pasar; semuanya tidak diubah menjadi poin di sini.</div>
+    <div class="fd-weight-scope"><strong>Cakupan skor.</strong> Poin hanya menghitung data ekonomi. Arah kebijakan bank sentral, positioning, sentimen pasar, tren, dan reaksi harga belum masuk hitungan.</div>
     <div class="fd-weight-bar" aria-label="Distribusi ${distribution.bullPct}% bullish dan ${distribution.bearPct}% bearish">
       <div class="fd-weight-bar-bull" style="width:${distribution.bullPct}%"></div>
       <div class="fd-weight-bar-bear" style="width:${distribution.bearPct}%"></div>
