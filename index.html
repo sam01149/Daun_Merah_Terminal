@@ -1328,6 +1328,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .fd-weight-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
 .fd-weight-title { font:700 9px 'DM Mono',monospace; letter-spacing:.1em; text-transform:uppercase; color:var(--text-mid); }
 .fd-weight-formula { font:9px 'DM Mono',monospace; color:var(--muted); text-align:right; line-height:1.4; }
+.fd-weight-scope {
+  margin:0 0 10px; padding:8px 9px; border-left:2px solid var(--yellow);
+  background:rgba(255,211,42,.04); color:var(--muted);
+  font:8px/1.55 'DM Mono',monospace;
+}
+.fd-weight-scope strong { color:var(--text-mid); text-transform:uppercase; letter-spacing:.06em; }
 .fd-weight-bar { display:flex; width:100%; height:8px; overflow:hidden; border-radius:4px; background:rgba(var(--fg-rgb),.07); }
 .fd-weight-bar-bull { background:var(--green); }
 .fd-weight-bar-bear { background:var(--red); }
@@ -4480,11 +4486,11 @@ body:not(.light-theme) .ringkasan-gen-btn {
         </button>
       </div>
     </div>
-    <!-- Strength Ranking Overview -->
+    <!-- Deterministic economic-data ranking; this is not the full Academy Smart Bias. -->
     <div class="fund-rank-section" id="fundRankSection" style="display:none">
       <div class="fund-rank-label">
-        Currency Strength Ranking
-        <span>Strongest → Weakest</span>
+        Ranking Data Ekonomi
+        <span>Poin tertinggi → terendah</span>
       </div>
       <div class="fund-rank-grid" id="fundRankGrid"></div>
     </div>
@@ -4764,7 +4770,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.22.8';
+const APP_VERSION = '2026.10.22.9';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -9648,9 +9654,10 @@ function renderFundWeightDistribution(distribution) {
     : '';
   return `<div class="fd-weight-card">
     <div class="fd-weight-head">
-      <div class="fd-weight-title">Distribusi Poin Indikator</div>
-      <div class="fd-weight-formula">Skor = poin bullish / total poin<br>Umur: ≤14 hari 1× · 15–45 hari 0.5× · lebih lama 0.25×</div>
+      <div class="fd-weight-title">Distribusi Poin Data Ekonomi</div>
+      <div class="fd-weight-formula">Skor = poin bullish / total poin<br>Bobot: inti 2× · standar 1× · minor 0.5×<br>Umur: ≤14 hari 1× · 15–45 hari 0.5× · lebih lama 0.25×</div>
     </div>
+    <div class="fd-weight-scope"><strong>Cakupan skor.</strong> Ini hanya lapisan data ekonomi otomatis. Smart Bias Academy lengkap juga menilai outlook kebijakan bank sentral, riset dan positioning, sentimen dan narasi, tren, serta reaksi pasar; semuanya tidak diubah menjadi poin di sini.</div>
     <div class="fd-weight-bar" aria-label="Distribusi ${distribution.bullPct}% bullish dan ${distribution.bearPct}% bearish">
       <div class="fd-weight-bar-bull" style="width:${distribution.bullPct}%"></div>
       <div class="fd-weight-bar-bear" style="width:${distribution.bearPct}%"></div>

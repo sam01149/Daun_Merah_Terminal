@@ -82,4 +82,13 @@ test('renderer: delapan kontributor teratas terlihat, sisanya dan indikator tak 
   assert.match(out, /Lihat 2 indikator lainnya/);
   assert.match(out, /<details class="fd-weight-unscored"><summary>Tidak dihitung \(1\)<\/summary>/);
   assert.match(out, /Tanpa Arah/);
+  assert.match(out, /Distribusi Poin Data Ekonomi/);
+  assert.match(out, /Smart Bias Academy lengkap juga menilai outlook kebijakan bank sentral/);
+  assert.match(out, /Bobot: inti 2× · standar 1× · minor 0.5×/);
+});
+
+test('label overview membedakan ranking data ekonomi dari Currency Strength Academy', () => {
+  assert.match(html, /Ranking Data Ekonomi/);
+  assert.match(html, /Poin tertinggi → terendah/);
+  assert.doesNotMatch(html, />\s*Currency Strength Ranking\s*</);
 });
