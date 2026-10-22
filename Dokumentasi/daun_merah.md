@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-22 (Session 401 — Rencana Entry tanpa kartu)
+> **Last updated:** 2026-10-22 (Session 402 — Distribusi poin Fundamental)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 402 (2026-10-22) — Distribusi poin indikator Fundamental
+
+**Hasil audit perhitungan.** Skor Currency Strength pada tab Fundamental sudah memakai rumus tertimbang yang benar: arah tiap indikator menghasilkan bullish/bearish, lalu poin efektif dihitung dari bobot kepentingan indikator dikali bobot umur data. Indikator utama seperti GDP, inflasi, NFP, pengangguran, dan pertumbuhan upah berbobot 2; indikator biasa berbobot 1; indikator minor/eksperimental berbobot 0,5. Pengali umur tetap 1 untuk rilis sampai 14 hari, 0,5 untuk 15–45 hari, dan 0,25 untuk data lebih lama atau seed tanpa tanggal. Kekurangannya bukan salah hitung, melainkan hasil akhir sebelumnya tidak memperlihatkan komponen pembentuknya sehingga pengguna tidak dapat mengaudit mengapa suatu currency memperoleh persentase tertentu.
+
+**Perubahan antarmuka.** Detail setiap currency kini menampilkan `Distribusi Poin Indikator`: batang pembagian bullish/bearish, jumlah poin dan persentase kedua sisi, lalu daftar indikator yang diurutkan dari poin efektif terbesar. Setiap baris menjelaskan arah, bobot dasar, pengali umur, porsi dari total, dan poin efektif bertanda positif/negatif. Indikator yang belum bisa dinilai tetap disebutkan namanya sebagai `Tidak dihitung`, bukan disembunyikan. Skor kartu, ranking, dan rincian sekarang mengambil hasil dari satu helper perhitungan yang sama agar tidak dapat berbeda diam-diam. Tidak ada endpoint, provider AI, atau rumus kebijakan yang diubah. `APP_VERSION` dinaikkan menjadi `2026.10.22.7`.
+
+**Verifikasi.** Regresi baru mencakup bobot utama/normal/minor, peluruhan umur, seed tanpa tanggal, indikator tak dikenal, data kosong, total poin, pembagian bullish/bearish, dan pembulatan porsi. Tes fokus lulus 34/34 dan suite penuh lulus 1.460/1.460. Chromium nyata pada viewport 1.365×768 dan 390×844 mengonfirmasi contoh 3 poin bullish versus 2,5 poin bearish menghasilkan skor 55% yang identik pada header dan rincian, empat indikator terskor tampil, indikator tanpa arah dilaporkan, serta tidak ada overflow horizontal.
 
 ## Changelog Session 401 (2026-10-22) — Rencana Entry tanpa kartu
 

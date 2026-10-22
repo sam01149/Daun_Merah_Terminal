@@ -1321,6 +1321,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .fd-score-conf.high { background: rgba(var(--green-rgb),.12); color: var(--green); }
 .fd-score-conf.med  { background: rgba(255,211,42,.10); color: var(--yellow); }
 .fd-score-conf.low  { background: rgba(var(--fg-rgb),.06); color: var(--muted); }
+.fd-weight-card {
+  margin: 14px 0 2px; padding: 13px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.fd-weight-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.fd-weight-title { font:700 9px 'DM Mono',monospace; letter-spacing:.1em; text-transform:uppercase; color:var(--text-mid); }
+.fd-weight-formula { font:9px 'DM Mono',monospace; color:var(--muted); text-align:right; line-height:1.4; }
+.fd-weight-bar { display:flex; width:100%; height:8px; overflow:hidden; border-radius:4px; background:rgba(var(--fg-rgb),.07); }
+.fd-weight-bar-bull { background:var(--green); }
+.fd-weight-bar-bear { background:var(--red); }
+.fd-weight-totals { display:flex; justify-content:space-between; gap:12px; margin:7px 0 10px; font:700 10px 'DM Mono',monospace; }
+.fd-weight-total-bull { color:var(--green); }
+.fd-weight-total-bear { color:var(--red); text-align:right; }
+.fd-weight-list { border-top:1px solid rgba(var(--fg-rgb),.06); }
+.fd-weight-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; padding:8px 0; border-bottom:1px solid rgba(var(--fg-rgb),.04); }
+.fd-weight-row:last-child { border-bottom:0; }
+.fd-weight-name { font:11px 'DM Mono',monospace; color:var(--text); overflow-wrap:anywhere; }
+.fd-weight-meta { margin-top:2px; font:8px 'DM Mono',monospace; color:var(--muted); line-height:1.45; }
+.fd-weight-point { align-self:center; font:700 12px 'DM Mono',monospace; white-space:nowrap; }
+.fd-weight-point.bull { color:var(--green); }
+.fd-weight-point.bear { color:var(--red); }
+.fd-weight-unscored { margin-top:8px; font:8px 'DM Mono',monospace; color:var(--muted); line-height:1.5; }
 .fd-cur-tabs {
   display: flex; gap: 5px; padding: 9px 16px;
   border-bottom: 1px solid var(--border);
@@ -4739,7 +4761,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.22.6';
+const APP_VERSION = '2026.10.22.7';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -9562,6 +9584,78 @@ function scoreInd(key, valStr, prevStr) {
   return (rule.dir === 1 ? n > rule.threshold : n < rule.threshold) ? 1 : -1;
 }
 
+// Satu sumber perhitungan untuk skor akhir DAN rincian distribusi yang tampil di
+// overlay. Poin efektif = bobot kepentingan indikator × bobot umur data. Arah
+// bullish menambah pembilang skor; arah bearish tetap masuk penyebut total.
+function buildFundWeightDistribution(data, rateKey) {
+  let bullWeight = 0, totalWeight = 0, unscoredCount = 0;
+  const unscoredKeys = [];
+  const rows = [];
+  Object.entries(data || {}).forEach(([key, rawValue]) => {
+    if (key === rateKey) return;
+    const value = rawValue && typeof rawValue === 'object' ? rawValue : {};
+    const signal = scoreInd(key, value.actual, value.previous);
+    if (signal === null) {
+      unscoredCount++;
+      unscoredKeys.push(key);
+      return;
+    }
+    const importance = fundIndImportance(key);
+    const recencyWeight = fundRecencyWeight(fundAgeDays(value.date));
+    const effectiveWeight = importance * recencyWeight;
+    totalWeight += effectiveWeight;
+    if (signal > 0) bullWeight += effectiveWeight;
+    rows.push({ key, signal, importance, recencyWeight, effectiveWeight });
+  });
+  const bearWeight = Math.max(0, totalWeight - bullWeight);
+  const bullPct = totalWeight > 0 ? Math.round(bullWeight / totalWeight * 100) : null;
+  const bearPct = bullPct === null ? null : 100 - bullPct;
+  rows.sort((a, b) => b.effectiveWeight - a.effectiveWeight || a.key.localeCompare(b.key));
+  rows.forEach(row => {
+    row.sharePct = totalWeight > 0 ? Math.round(row.effectiveWeight / totalWeight * 1000) / 10 : 0;
+  });
+  return { bullWeight, bearWeight, totalWeight, bullPct, bearPct, unscoredCount, unscoredKeys, rows };
+}
+
+function formatFundWeight(value) {
+  return Number(value || 0).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+}
+
+function renderFundWeightDistribution(distribution) {
+  if (!distribution || distribution.totalWeight <= 0) return '';
+  const rowsHtml = distribution.rows.map(row => {
+    const side = row.signal > 0 ? 'bull' : 'bear';
+    const sideLabel = row.signal > 0 ? 'Bullish' : 'Bearish';
+    const sign = row.signal > 0 ? '+' : '−';
+    return `<div class="fd-weight-row">
+      <div>
+        <div class="fd-weight-name">${escHtml(row.key)}</div>
+        <div class="fd-weight-meta">${sideLabel} · bobot ${formatFundWeight(row.importance)} × umur ${formatFundWeight(row.recencyWeight)} · ${row.sharePct}% dari total</div>
+      </div>
+      <div class="fd-weight-point ${side}">${sign}${formatFundWeight(row.effectiveWeight)} poin</div>
+    </div>`;
+  }).join('');
+  const unscoredHtml = distribution.unscoredCount > 0
+    ? `<div class="fd-weight-unscored">Tidak dihitung (${distribution.unscoredCount}): ${distribution.unscoredKeys.map(escHtml).join(', ')}. Nilai atau arah pembanding belum cukup.</div>`
+    : '';
+  return `<div class="fd-weight-card">
+    <div class="fd-weight-head">
+      <div class="fd-weight-title">Distribusi Poin Indikator</div>
+      <div class="fd-weight-formula">Skor = poin bullish / total poin<br>Umur: ≤14 hari 1× · 15–45 hari 0.5× · lebih lama 0.25×</div>
+    </div>
+    <div class="fd-weight-bar" aria-label="Distribusi ${distribution.bullPct}% bullish dan ${distribution.bearPct}% bearish">
+      <div class="fd-weight-bar-bull" style="width:${distribution.bullPct}%"></div>
+      <div class="fd-weight-bar-bear" style="width:${distribution.bearPct}%"></div>
+    </div>
+    <div class="fd-weight-totals">
+      <span class="fd-weight-total-bull">Bullish ${formatFundWeight(distribution.bullWeight)} poin · ${distribution.bullPct}%</span>
+      <span class="fd-weight-total-bear">Bearish ${formatFundWeight(distribution.bearWeight)} poin · ${distribution.bearPct}%</span>
+    </div>
+    <div class="fd-weight-list">${rowsHtml}</div>
+    ${unscoredHtml}
+  </div>`;
+}
+
 async function fetchFundamental(refresh = false) {
   const grid = document.getElementById('fundGrid');
   const btn  = document.getElementById('fundRefreshBtn');
@@ -9897,22 +9991,12 @@ function renderFundamental() {
     const data    = fundData[cur] || {};
     const rateKey = RATE_KEYS[cur];
     const rateVal = rateKey && data[rateKey] ? data[rateKey].actual : null;
-    // Skor tertimbang (2026-07-19): tiap indikator ±1 dikali bobot kepentingan ×
-    // bobot umur — rilis 2 minggu terakhir mendominasi, data basi/minor memudar.
-    // scoredCt (jumlah mentah) tetap dipakai untuk tampilan "N indikator".
-    let bullW = 0, totW = 0, scoredCt = 0, totalScorable = 0;
-    Object.entries(data).forEach(([k, v]) => {
-      if (k === rateKey) return;
-      totalScorable++;
-      const s = scoreInd(k, v.actual, v.previous);
-      if (s !== null) {
-        scoredCt++;
-        const w = fundIndImportance(k) * fundRecencyWeight(fundAgeDays(v.date));
-        totW += w;
-        if (s > 0) bullW += w;
-      }
-    });
-    const score      = totW > 0 ? Math.round(bullW / totW * 100) : null;
+    // Skor dan distribusi memakai hasil helper yang sama agar rincian UI tidak
+    // mungkin berbeda dari angka ranking/card.
+    const distribution = buildFundWeightDistribution(data, rateKey);
+    const scoredCt = distribution.rows.length;
+    const totalScorable = Object.keys(data).filter(k => k !== rateKey).length;
+    const score      = distribution.bullPct;
     const scoreLabel = score === null ? 'N/A' : score >= 60 ? 'Bull' : score < 40 ? 'Bear' : 'Neut';
     const scoreColor = score === null ? 'var(--muted)' : score >= 60 ? 'var(--green)' : score < 40 ? 'var(--red)' : 'var(--yellow)';
     // Tier keyakinan (2026-07-29): dulu pakai ambang mutlak (scoredCt>=7 utk "High"),
@@ -9925,7 +10009,7 @@ function renderFundamental() {
     // Warna pair sengaja dinetralkan (2026-08-17): dulu tiap currency punya warna beda
     // (CUR_COLORS), sekarang seragam biar tak ada kesan currency tertentu "lebih penting".
     const col        = 'var(--slate)';
-    return { cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, totalScorable, col };
+    return { cur, data, rateKey, rateVal, score, scoreLabel, scoreColor, confTier, confLabel, scoredCt, totalScorable, distribution, col };
   });
 
   fdScores = scores; // expose to detail overlay
@@ -10220,6 +10304,10 @@ function _renderFundDetail() {
   });
 
   let html = '';
+
+  // Transparansi skor: tunjukkan total poin bullish/bearish dan kontribusi tiap
+  // indikator menurut bobot kepentingan × umur data.
+  html += renderFundWeightDistribution(s.distribution);
 
   // CB Rate block at top
   if (rateKey && data[rateKey]) {
