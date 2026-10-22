@@ -24,6 +24,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Responsif dan verifikasi.** Di bawah 900 px, kontrol kembali diletakkan di atas checklist; pada ponsel sidebar kanan tetap disembunyikan dan catatan dibatasi 72 px. Chromium nyata mengukur desktop 1.920 px sebagai kiri 520 px, tengah 1.076 px, kanan 260 px; desktop 1.365 px sebagai kiri 354 px, tengah 687 px, kanan 260 px. Pada ponsel 390 px kontrol dan checklist memakai lebar penuh tanpa overflow. Ketiga viewport tidak menghasilkan error halaman. Regresi Rencana lulus 15/15, suite penuh lulus 1.456/1.456, dan `APP_VERSION` dinaikkan menjadi `2026.10.22.5`.
 
+**Verifikasi produksi.** Pemeriksaan pertama setelah push masih membaca build `2026.10.22.4`. Setelah propagasi deployment, production merespons HTTP 200 dengan `APP_VERSION 2026.10.22.5` serta memuat grid tiga kolom dan container selector baru.
+
 ## Changelog Session 399 (2026-10-22) — Rencana Entry mandiri dan layout final
 
 **Keputusan produk final.** Rencana Entry sekarang berdiri sendiri dan tidak mensyaratkan hasil Analisa AI. Pengguna memilih pair serta satu setup manual—Momentum, Range, atau Tactical Fade—lalu mengonfirmasi gate berdasarkan analisanya sendiri. Pilihan setup disimpan per pair. No Trade tetap merupakan hasil keputusan, bukan pilihan setup. Hasil Analisa AI tidak memilih setup, tidak mencentang gate manual, dan tidak dapat menolak pandangan pengguna; otomatisasi yang tersisa hanya fakta deterministik yang relevan seperti kalender dan hasil risk dari Sizing.
