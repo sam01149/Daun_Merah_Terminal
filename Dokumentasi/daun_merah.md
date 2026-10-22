@@ -24,6 +24,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** Regresi Rencana lulus 15/15 dan suite penuh lulus 1.456/1.456. Chromium nyata pada viewport 1.920×1.080 mengonfirmasi seluruh komponen terkait memiliki background transparan, radius 0 px, tanpa border keliling, tanpa overflow horizontal, dan tanpa error halaman.
 
+**Verifikasi produksi.** Pemeriksaan pertama setelah push masih membaca build `2026.10.22.5`. Setelah propagasi deployment, production merespons HTTP 200 dengan `APP_VERSION 2026.10.22.6` serta memuat aturan flat untuk empty state dan seluruh blok sidebar.
+
 ## Changelog Session 400 (2026-10-22) — Layout tiga kolom Rencana Entry
 
 **Perubahan layout.** Rencana Entry desktop kembali memakai tiga area sesuai preferensi user: pair, setup, dan Catatan Analisa berada di kolom kiri; seluruh gate checklist berada di kolom tengah; keputusan dan progress tetap di sidebar kanan. Kolom kiri responsif memakai lebar 34% dengan batas 300–520 px, checklist memakai sisa ruang, dan sidebar kanan tetap 260 px. Catatan mengisi sisa tinggi kolom kiri agar area tersebut berguna, sedangkan pair tetap 260 px dan setup 200 px.
