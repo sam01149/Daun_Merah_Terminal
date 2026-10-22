@@ -1342,7 +1342,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .fd-weight-point { align-self:center; font:700 12px 'DM Mono',monospace; white-space:nowrap; }
 .fd-weight-point.bull { color:var(--green); }
 .fd-weight-point.bear { color:var(--red); }
-.fd-weight-unscored { margin-top:8px; font:8px 'DM Mono',monospace; color:var(--muted); line-height:1.5; }
+.fd-weight-more, .fd-weight-unscored { margin-top:8px; font:9px 'DM Mono',monospace; color:var(--muted); }
+.fd-weight-more summary, .fd-weight-unscored summary { cursor:pointer; color:var(--text-mid); }
+.fd-weight-more .fd-weight-list { margin-top:7px; }
+.fd-weight-unscored-names { margin-top:6px; font-size:8px; line-height:1.55; overflow-wrap:anywhere; }
 .fd-cur-tabs {
   display: flex; gap: 5px; padding: 9px 16px;
   border-bottom: 1px solid var(--border);
@@ -4761,7 +4764,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.22.7';
+const APP_VERSION = '2026.10.22.8';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -9623,7 +9626,7 @@ function formatFundWeight(value) {
 
 function renderFundWeightDistribution(distribution) {
   if (!distribution || distribution.totalWeight <= 0) return '';
-  const rowsHtml = distribution.rows.map(row => {
+  const renderRows = rows => rows.map(row => {
     const side = row.signal > 0 ? 'bull' : 'bear';
     const sideLabel = row.signal > 0 ? 'Bullish' : 'Bearish';
     const sign = row.signal > 0 ? '+' : '−';
@@ -9635,8 +9638,13 @@ function renderFundWeightDistribution(distribution) {
       <div class="fd-weight-point ${side}">${sign}${formatFundWeight(row.effectiveWeight)} poin</div>
     </div>`;
   }).join('');
+  const visibleRowsHtml = renderRows(distribution.rows.slice(0, 8));
+  const hiddenRows = distribution.rows.slice(8);
+  const moreHtml = hiddenRows.length > 0
+    ? `<details class="fd-weight-more"><summary>Lihat ${hiddenRows.length} indikator lainnya</summary><div class="fd-weight-list">${renderRows(hiddenRows)}</div></details>`
+    : '';
   const unscoredHtml = distribution.unscoredCount > 0
-    ? `<div class="fd-weight-unscored">Tidak dihitung (${distribution.unscoredCount}): ${distribution.unscoredKeys.map(escHtml).join(', ')}. Nilai atau arah pembanding belum cukup.</div>`
+    ? `<details class="fd-weight-unscored"><summary>Tidak dihitung (${distribution.unscoredCount})</summary><div class="fd-weight-unscored-names">${distribution.unscoredKeys.map(escHtml).join(', ')}. Nilai atau arah pembanding belum cukup.</div></details>`
     : '';
   return `<div class="fd-weight-card">
     <div class="fd-weight-head">
@@ -9651,7 +9659,8 @@ function renderFundWeightDistribution(distribution) {
       <span class="fd-weight-total-bull">Bullish ${formatFundWeight(distribution.bullWeight)} poin · ${distribution.bullPct}%</span>
       <span class="fd-weight-total-bear">Bearish ${formatFundWeight(distribution.bearWeight)} poin · ${distribution.bearPct}%</span>
     </div>
-    <div class="fd-weight-list">${rowsHtml}</div>
+    <div class="fd-weight-list">${visibleRowsHtml}</div>
+    ${moreHtml}
     ${unscoredHtml}
   </div>`;
 }

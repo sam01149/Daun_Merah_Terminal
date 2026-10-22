@@ -11,9 +11,9 @@ const start = html.indexOf('const FUND_SCORE_RULES =');
 const end = html.indexOf('\nasync function fetchFundamental', start);
 assert.ok(start !== -1 && end !== -1, 'blok perhitungan fundamental harus ada di index.html');
 
-const context = { result: null };
-vm.runInNewContext(`${html.slice(start, end)}\nresult = { buildFundWeightDistribution, formatFundWeight };`, context);
-const { buildFundWeightDistribution, formatFundWeight } = context.result;
+const context = { result: null, escHtml: value => String(value ?? '') };
+vm.runInNewContext(`${html.slice(start, end)}\nresult = { buildFundWeightDistribution, formatFundWeight, renderFundWeightDistribution };`, context);
+const { buildFundWeightDistribution, formatFundWeight, renderFundWeightDistribution } = context.result;
 
 function isoDaysAgo(days) {
   return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
@@ -64,4 +64,22 @@ test('format poin: presisi ringkas tanpa nol tidak perlu', () => {
   assert.strictEqual(formatFundWeight(2), '2');
   assert.strictEqual(formatFundWeight(0.5), '0.5');
   assert.strictEqual(formatFundWeight(0.25), '0.25');
+});
+
+test('renderer: delapan kontributor teratas terlihat, sisanya dan indikator tak terskor dapat dibuka', () => {
+  const rows = Array.from({ length: 10 }, (_, i) => ({
+    key: `Indikator ${i + 1}`,
+    signal: i % 2 ? -1 : 1,
+    importance: 1,
+    recencyWeight: 1,
+    effectiveWeight: 1,
+    sharePct: 10,
+  }));
+  const out = renderFundWeightDistribution({
+    bullWeight: 5, bearWeight: 5, totalWeight: 10, bullPct: 50, bearPct: 50,
+    unscoredCount: 1, unscoredKeys: ['Tanpa Arah'], rows,
+  });
+  assert.match(out, /Lihat 2 indikator lainnya/);
+  assert.match(out, /<details class="fd-weight-unscored"><summary>Tidak dihitung \(1\)<\/summary>/);
+  assert.match(out, /Tanpa Arah/);
 });
