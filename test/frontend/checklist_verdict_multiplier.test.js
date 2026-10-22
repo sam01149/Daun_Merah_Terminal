@@ -169,12 +169,17 @@ test('ckAutoTick membersihkan flag konflik atau block lama pada id yang sama', (
 
 test('panel aktif berupa satu planner dengan pilihan setup manual yang ringkas', () => {
   const panel = grab('<!-- PRIME ENTRY PLAN PANEL -->', '<!-- TOAST -->');
+  assert.match(panel, /class="ck-main"/);
+  assert.match(panel, /class="ck-toolbar"/);
+  assert.match(panel, /class="ck-selectors"/);
+  assert.match(html, /grid-template-columns: clamp\(300px, 34%, 520px\) minmax\(0, 1fr\)/);
   assert.match(panel, /id="ckStrategySelector"/);
   assert.match(panel, /value="prime_momentum">Momentum/);
   assert.match(panel, /value="prime_range">Range/);
   assert.match(panel, /value="prime_tactical_fade">Tactical Fade/);
   assert.match(panel, /width:min\(100%,260px\)/);
   assert.match(panel, /width:min\(100%,200px\)/);
+  assert.doesNotMatch(panel, /flex:0 1 260px|flex:0 1 200px/);
   assert.doesNotMatch(panel, /id="ckStrategyStatus"/);
   assert.doesNotMatch(panel, /Strategi dipilih otomatis/);
   assert.doesNotMatch(panel, /id="ckPlaybookSelector"/);

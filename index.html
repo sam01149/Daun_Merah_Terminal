@@ -2130,8 +2130,16 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .ck-mobile-pb-bg { flex: 1; height: 2px; background: var(--border); }
 .ck-mobile-pb { height: 100%; background: var(--green); transition: width .4s; }
 .ck-wrap { flex: 1; display: flex; overflow: hidden; }
-.ck-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-.ck-toolbar { padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+.ck-main {
+  flex: 1; min-width: 0; display: grid;
+  grid-template-columns: clamp(300px, 34%, 520px) minmax(0, 1fr);
+  overflow: hidden;
+}
+.ck-toolbar {
+  min-width: 0; padding: 12px; border-right: 1px solid var(--border);
+  overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+}
+.ck-selectors { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .ck-sections { flex: 1; overflow-y: auto; padding: 10px 12px 20px; scrollbar-width: none; }
 .ck-sections::-webkit-scrollbar { display: none; }
 .ck-sidebar {
@@ -2140,6 +2148,14 @@ body.light-theme .cal-date-input { color-scheme: light; }
   display: flex; flex-direction: column; gap: 8px;
 }
 .ck-sidebar::-webkit-scrollbar { display: none; }
+
+@media (max-width: 900px) {
+  .ck-main { display: flex; flex-direction: column; }
+  .ck-toolbar { flex: none; border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
+  .ck-selectors { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .ck-toolbar #ckTekNoteWrap { flex: none; }
+  .ck-toolbar #ckTekNoteWrap textarea { flex: none; min-height: 72px; height: 72px; }
+}
 
 .ck-sec {
   background: var(--surface); border: 1px solid var(--border);
@@ -2594,9 +2610,9 @@ body.light-theme .cal-date-input { color-scheme: light; }
   font: 12px 'DM Mono',monospace; resize: vertical; outline: none; transition: border-color .15s;
 }
 .tek-note-wrap textarea:focus { border-color: #38bdf8; }
-/* Catatan analisa dibuat ringkas agar daftar gate tetap menjadi fokus. */
-#ckTekNoteWrap { flex: none; min-height: 0; display: flex; flex-direction: column; }
-#ckTekNoteWrap textarea { flex: none; min-height: 72px; height: 72px; max-height: 160px; }
+/* Di desktop catatan memakai sisa tinggi kolom kiri; pada layar sempit kembali ringkas. */
+#ckTekNoteWrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#ckTekNoteWrap textarea { flex: 1 1 auto; min-height: 140px; height: auto; }
 /* ── TA Indicator Panel ── */
 .tek-ta-panel { padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
 .tek-ta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
@@ -4488,11 +4504,11 @@ body:not(.light-theme) .ringkasan-gen-btn {
         </div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <select id="ckPairSelector" onchange="ckOnPairChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;width:min(100%,260px);flex:0 1 260px">
+    <div class="ck-selectors">
+      <select id="ckPairSelector" onchange="ckOnPairChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;width:min(100%,260px);flex:none">
         <option value="">— Pilih pair —</option>
       </select>
-      <select id="ckStrategySelector" onchange="ckOnStrategyChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;width:min(100%,200px);flex:0 1 200px">
+      <select id="ckStrategySelector" onchange="ckOnStrategyChange()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:4px 8px;font-family:'DM Mono',monospace;font-size:11px;width:min(100%,200px);flex:none">
         <option value="">— Pilih setup —</option>
         <option value="prime_momentum">Momentum</option>
         <option value="prime_range">Range</option>
@@ -4723,7 +4739,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.22.4';
+const APP_VERSION = '2026.10.22.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js

@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-22 (Session 399 — Rencana Entry mandiri dan layout final)
+> **Last updated:** 2026-10-22 (Session 400 — Layout tiga kolom Rencana Entry)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 400 (2026-10-22) — Layout tiga kolom Rencana Entry
+
+**Perubahan layout.** Rencana Entry desktop kembali memakai tiga area sesuai preferensi user: pair, setup, dan Catatan Analisa berada di kolom kiri; seluruh gate checklist berada di kolom tengah; keputusan dan progress tetap di sidebar kanan. Kolom kiri responsif memakai lebar 34% dengan batas 300–520 px, checklist memakai sisa ruang, dan sidebar kanan tetap 260 px. Catatan mengisi sisa tinggi kolom kiri agar area tersebut berguna, sedangkan pair tetap 260 px dan setup 200 px.
+
+**Responsif dan verifikasi.** Di bawah 900 px, kontrol kembali diletakkan di atas checklist; pada ponsel sidebar kanan tetap disembunyikan dan catatan dibatasi 72 px. Chromium nyata mengukur desktop 1.920 px sebagai kiri 520 px, tengah 1.076 px, kanan 260 px; desktop 1.365 px sebagai kiri 354 px, tengah 687 px, kanan 260 px. Pada ponsel 390 px kontrol dan checklist memakai lebar penuh tanpa overflow. Ketiga viewport tidak menghasilkan error halaman. Regresi Rencana lulus 15/15, suite penuh lulus 1.456/1.456, dan `APP_VERSION` dinaikkan menjadi `2026.10.22.5`.
 
 ## Changelog Session 399 (2026-10-22) — Rencana Entry mandiri dan layout final
 
