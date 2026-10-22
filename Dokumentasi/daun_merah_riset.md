@@ -24,6 +24,12 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-10-22] Bentuk UI yang paling sesuai untuk Rencana Entry Prime
+
+**Kesimpulan.** Checklist bukan bentuk utama yang paling tepat untuk metode Prime Market Academy. Metodenya lebih menyerupai alur keputusan berurutan: tentukan arah dan alasan makro, pilih satu setup yang sesuai kondisi pasar, tentukan lokasi serta trigger, isi level dan risiko, lalu hasilkan keputusan `TUNGGU`, `SIAP ENTRY`, atau `NO TRADE`. Jika seluruh proses diubah menjadi deretan kotak centang, analisa mudah bergeser menjadi aktivitas "melengkapi kotak" dan jawaban yang seharusnya berupa alasan, level, atau keputusan kehilangan konteks.
+
+**Bentuk yang direkomendasikan.** Gunakan formulir bertahap lima bagian: (1) Arah dan Alasan, (2) Setup, (3) Trigger, (4) Level dan Risiko, (5) Pemeriksaan Terakhir. Arah, alasan, entry, SL, TP, dan invalidasi memakai input terstruktur atau teks; setup memakai satu pilihan; status tiap tahap dihitung sebagai belum lengkap/lulus. Checkbox hanya dipertahankan untuk konfirmasi biner yang memang cocok, seperti trigger sudah muncul, entry bukan mengejar breakout, event High enam jam aman, dan sizing sudah selesai. Tidak ada skor kualitas; seluruh gate wajib lulus. AI tetap opsional sebagai referensi dan tidak memilih atau memblok keputusan manual.
+
 ### [2026-10-21] Perbandingan tab Checklist lama vs metode Prime Market Academy
 
 **Konteks.** Evaluasi ini membandingkan implementasi tab Checklist saat ini di `index.html` dengan prinsip Prime Market Academy yang sudah diterapkan pada Analisa manual melalui policy `prime-v1`. Sumber: sesi user 2026-10-21; `index.html` (`PLAYBOOKS`, `ckGetVerdict`, auto-tick, Pre-Entry Check); `api/admin.js` (`_computePrimeManualDirection`, `_enforceManualAcademyContract`); dan changelog Session 386/392. Tidak ada perubahan runtime dari evaluasi ini.

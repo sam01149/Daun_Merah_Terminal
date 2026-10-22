@@ -173,6 +173,9 @@ test('panel aktif berupa satu planner dengan pilihan setup manual yang ringkas',
   assert.match(panel, /class="ck-toolbar"/);
   assert.match(panel, /class="ck-selectors"/);
   assert.match(html, /grid-template-columns: clamp\(300px, 34%, 520px\) minmax\(0, 1fr\)/);
+  assert.match(html, /\.ck-empty \{[\s\S]*?background: transparent; border: 0; border-radius: 0;/);
+  assert.match(html, /\.ck-w \{ background: transparent; border: 0; border-bottom: 1px solid var\(--border\); border-radius: 0;/);
+  assert.match(html, /\.ck-sec \{[\s\S]*?background: transparent; border: 0; border-bottom: 1px solid var\(--border\);/);
   assert.match(panel, /id="ckStrategySelector"/);
   assert.match(panel, /value="prime_momentum">Momentum/);
   assert.match(panel, /value="prime_range">Range/);
