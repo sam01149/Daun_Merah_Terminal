@@ -986,6 +986,27 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-size: 10px; color: var(--muted); line-height: 1.5; margin-bottom: 12px;
   border-left: 2px solid var(--border); padding-left: 10px;
 }
+.cot-subnav {
+  display:flex; align-items:center; gap:6px; overflow-x:auto; scrollbar-width:none;
+  margin:0 0 14px; padding:0 0 8px; border-bottom:1px solid var(--border);
+}
+.cot-subnav::-webkit-scrollbar { display:none; }
+.cot-subtab {
+  flex:0 0 auto; min-width:112px; padding:7px 12px; border:1px solid var(--border);
+  border-radius:5px; background:transparent; color:var(--muted); cursor:pointer;
+  font:700 9px 'DM Mono',monospace; letter-spacing:.05em; text-transform:uppercase;
+  transition:background .15s,border-color .15s,color .15s;
+}
+.cot-subtab:hover { color:var(--text); border-color:var(--text-mid); }
+.cot-subtab.active { color:var(--text); border-color:var(--purple); background:rgba(167,139,250,.1); }
+.cot-subpane { display:none; }
+.cot-subpane.active { display:block; }
+.cot-position-columns { display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
+.cot-position-group { min-width:0; }
+@media (min-width:900px) {
+  .cot-position-columns { grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+  .cot-position-group { padding:0 12px; border:1px solid var(--border); border-radius:7px; background:rgba(var(--fg-rgb),.012); }
+}
 .cot-empty {
   font-size: 11px; color: var(--muted); text-align: center;
   padding: 12px 0 8px; font-style: italic;
@@ -1082,8 +1103,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* ── RETAIL SENTIMENT (COT tab) ── */
 .cot-retail-section {
-  margin-top: 20px; padding: 14px 12px 10px;
-  border-top: 1px solid var(--border);
+  padding: 4px 0 10px;
 }
 .cot-retail-hdr {
   display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;
@@ -2006,7 +2026,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
   .cal-event-main { padding: 7px 16px 6px 18px; }
   .cal-event-name { font-size: 13px; }
   .cal-time { font-size: 12px; }
-  .cot-panel-inner { padding: 16px 24px 32px; max-width: 700px; margin: 0 auto; }
+  .cot-panel-inner { padding: 16px 24px 32px; max-width: 1100px; margin: 0 auto; }
   .cot-row { grid-template-columns: 50px 1fr auto auto; gap: 12px; padding: 7px 0; }
   .cot-cur { font-size: 13px; }
   .cot-net { font-size: 13px; min-width: 64px; }
@@ -2664,15 +2684,15 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .tek-news-hdr-pair { font: 700 9px 'DM Mono',monospace; color: #38bdf8; }
 .tek-news-empty { font: 10px 'DM Mono',monospace; color: var(--muted); padding: 10px 0 4px; }
 .tek-news-item {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
-  border-left-width: 3px !important;
-  cursor: default; transition: all .15s ease; position: relative;
+  background: transparent; border: 0; border-bottom: 1px solid var(--border);
+  border-radius: 0; padding: 12px 4px; margin: 0;
+  border-left: 0 !important;
+  cursor: default; transition: background .15s ease; position: relative;
   overflow: hidden; animation: fadeUp .25s ease-out both;
 }
-.tek-news-item:hover { border-color: rgba(var(--fg-rgb),.15); }
+.tek-news-item:hover { background: rgba(var(--fg-rgb),.025); }
 .tek-news-item-link { cursor: pointer; }
-.tek-news-item-link:hover { border-color: #38bdf8; }
+.tek-news-item-link:hover { background: rgba(56,189,248,.045); }
 .tek-news-item-link:hover .tek-news-title { color: #38bdf8; }
 .tek-news-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .tek-news-time { font: 9px 'DM Mono',monospace; color: var(--muted); }
@@ -2741,13 +2761,13 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .dash-retail-sig.short { color:#f87171; }
 .dash-retail-sig.neut  { color:var(--muted); }
 .dash-news-item {
-  display: flex; align-items: flex-start; gap: 6px;
-  padding: 6px 10px; border-bottom: 1px solid rgba(var(--fg-rgb),.03);
-  cursor: default;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid rgba(var(--fg-rgb),.055);
+  cursor: default; transition: background .15s;
 }
-.dash-news-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 4px; }
-.dash-news-text { font-size: 10px; color: var(--text-mid); line-height: 1.5; }
-.dash-news-time { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; margin-left: auto; flex-shrink: 0; padding-left: 4px; }
+.dash-news-item:hover { background: rgba(var(--fg-rgb),.025); }
+.dash-news-text { font-size: 10.5px; color: var(--text); line-height: 1.55; }
+.dash-news-time { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; margin-left: auto; flex-shrink: 0; padding: 2px 0 0 6px; }
 .dash-digest-section { padding: 10px 12px 8px; border-bottom: 1px solid var(--border); }
 .dash-digest-arrow { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 4px; width: 18px; height: 18px; line-height: 1; cursor: pointer; font-size: 11px; padding: 0; }
 .dash-digest-arrow:hover { border-color: var(--accent); color: var(--text); }
@@ -2785,7 +2805,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
   transition: background .15s;
 }
 .dash-cluster-header:hover { background: rgba(var(--fg-rgb),.04); }
-.dash-cluster-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: var(--accent); }
+.dash-cluster-header::before { content:''; width:2px; height:12px; border-radius:2px; flex-shrink:0; background:var(--text-mid); opacity:.35; }
 .dash-cluster-label { font-size: 8px; font-family: 'DM Mono', monospace; letter-spacing: .8px; text-transform: uppercase; flex: 1; font-weight: 600; color: var(--text-mid); }
 .dash-cluster-count { font-size: 8px; font-family: 'DM Mono', monospace; color: var(--muted); background: rgba(var(--fg-rgb),.06); padding: 1px 5px; border-radius: 3px; }
 .dash-cluster-age { font-size: 8px; font-family: 'DM Mono', monospace; color: var(--muted); min-width: 20px; text-align: right; }
@@ -4452,22 +4472,33 @@ body:not(.light-theme) .ringkasan-gen-btn {
         posisi sudah ekstrem satu arah dan secara historis rawan berbalik.
       </div>
     </div>
-    <div id="cotDivergenceSection" style="margin-bottom:14px"></div>
-    <div id="cotGrid">
-      <div class="cot-empty loading-pulse">Memuat data COT...</div>
+    <div class="cot-subnav" role="tablist" aria-label="Bagian COT">
+      <button type="button" class="cot-subtab active" data-cot-section="positioning" role="tab" aria-selected="true" aria-controls="cotSectionPositioning" onclick="setCotSection('positioning')">Posisi COT</button>
+      <button type="button" class="cot-subtab" data-cot-section="direction" role="tab" aria-selected="false" aria-controls="cotSectionDirection" onclick="setCotSection('direction')">Arah Pasar</button>
+      <button type="button" class="cot-subtab" data-cot-section="retail" role="tab" aria-selected="false" aria-controls="cotSectionRetail" onclick="setCotSection('retail')">Retail</button>
     </div>
-    <div class="cot-retail-section">
-      <div class="cot-retail-hdr">
-        <div>
-          <span class="cot-group-label" style="margin:0;padding:0;border:none">RETAIL SENTIMENT</span>
-          <span class="cot-retail-src">FXSSI</span>
-        </div>
-        <button class="cot-retail-refresh" onclick="fetchRetailSentiment(true)" title="Refresh">↻</button>
+    <section class="cot-subpane active" id="cotSectionPositioning" data-cot-pane="positioning" role="tabpanel">
+      <div id="cotGrid">
+        <div class="cot-empty loading-pulse">Memuat data COT...</div>
       </div>
-      <div class="cot-retail-desc">Contrarian indicator — retail ≥65% satu arah = sinyal berlawanan. Paling kuat saat konfirmasi dengan COT Leveraged Funds.</div>
-      <div id="retailGrid"><div class="cot-empty loading-pulse" style="padding:10px 0">Memuat...</div></div>
-      <div class="cot-retail-meta" id="retailMeta"></div>
-    </div>
+    </section>
+    <section class="cot-subpane" id="cotSectionDirection" data-cot-pane="direction" role="tabpanel">
+      <div id="cotDivergenceSection"><div class="cot-empty loading-pulse">Memuat perbandingan posisi pasar...</div></div>
+    </section>
+    <section class="cot-subpane" id="cotSectionRetail" data-cot-pane="retail" role="tabpanel">
+      <div class="cot-retail-section">
+        <div class="cot-retail-hdr">
+          <div>
+            <span class="cot-group-label" style="margin:0;padding:0;border:none">RETAIL SENTIMENT</span>
+            <span class="cot-retail-src">FXSSI</span>
+          </div>
+          <button class="cot-retail-refresh" onclick="fetchRetailSentiment(true)" title="Refresh">↻</button>
+        </div>
+        <div class="cot-retail-desc">Contrarian indicator — retail ≥65% satu arah = sinyal berlawanan. Paling kuat saat konfirmasi dengan COT Leveraged Funds.</div>
+        <div id="retailGrid"><div class="cot-empty loading-pulse" style="padding:10px 0">Memuat...</div></div>
+        <div class="cot-retail-meta" id="retailMeta"></div>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -4770,7 +4801,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.22.10';
+const APP_VERSION = '2026.10.23.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -10762,7 +10793,10 @@ function computeCotOnlyLean(base, quote) {
 function renderCotDivergenceMatrix() {
   const el = document.getElementById('cotDivergenceSection');
   if (!el) return;
-  if (!cotData?.positions || !retailData?.positions) { el.innerHTML = ''; return; }
+  if (!cotData?.positions || !retailData?.positions) {
+    el.innerHTML = '<div class="cot-empty">Perbandingan tersedia setelah data COT dan retail berhasil dimuat.</div>';
+    return;
+  }
 
   let rows = '';
   let hasAny = false;
@@ -10988,12 +11022,30 @@ function renderCOT() {
     makeRow(cur, 'am_net', 'am_change_net', 'am_long', 'am_short', false, 'am')
   ).join('');
 
-  grid.innerHTML = `
-    <div class="cot-group-label">Leveraged Funds <span style="color:var(--muted);font-size:8px;margin-left:4px">Hedge Fund · Spekulan aktif</span></div>
-    ${levRows}
-    <div class="cot-group-label" style="margin-top:14px">Asset Manager <span style="color:var(--muted);font-size:8px;margin-left:4px">Institusi · Posisi jangka panjang</span></div>
-    ${amRows}
-  `;
+  grid.innerHTML = `<div class="cot-position-columns">
+    <section class="cot-position-group">
+      <div class="cot-group-label">Leveraged Funds <span style="color:var(--muted);font-size:8px;margin-left:4px">Hedge Fund · Spekulan aktif</span></div>
+      ${levRows}
+    </section>
+    <section class="cot-position-group">
+      <div class="cot-group-label">Asset Manager <span style="color:var(--muted);font-size:8px;margin-left:4px">Institusi · Posisi jangka panjang</span></div>
+      ${amRows}
+    </section>
+  </div>`;
+}
+
+let cotActiveSection = 'positioning';
+function setCotSection(section) {
+  const allowed = ['positioning', 'direction', 'retail'];
+  cotActiveSection = allowed.includes(section) ? section : 'positioning';
+  document.querySelectorAll('[data-cot-section]').forEach(btn => {
+    const active = btn.dataset.cotSection === cotActiveSection;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-cot-pane]').forEach(pane => {
+    pane.classList.toggle('active', pane.dataset.cotPane === cotActiveSection);
+  });
 }
 
 // ── COT TREND PANEL ──────────────────────────────────────
@@ -17419,7 +17471,7 @@ function renderTekNews() {
       const safeLink = (item.link || '').replace(/'/g, "\\'");
       const linkClass = safeLink ? ' tek-news-item-link' : '';
       const clickAttr = safeLink ? ' onclick="openLink(\'' + safeLink + '\')"' : '';
-      return '<div class="tek-news-item' + linkClass + '" style="border-left:3px solid #38bdf8"' + clickAttr + '>'
+      return '<div class="tek-news-item' + linkClass + '"' + clickAttr + '>'
         + '<div class="tek-news-meta">'
         + '<span class="tek-news-time">' + fmtTime(item.pubDate) + ' · ' + fmtTimeAgo(item.pubDate) + '</span>'
         + '<span class="tek-news-cat" style="background:rgba(56,189,248,.15);color:#38bdf8">AF · tek</span>'
@@ -17459,7 +17511,7 @@ function renderTekNews() {
             + '<img class="feed-chart-img" src="https://www.financialjuice.com/images/' + item.guid + '.png" loading="lazy" alt="" onerror="const w=this.closest(\'.feed-chart-wrap\');w.className=\'feed-chart-wrap feed-chart-error\';w.textContent=\'Gambar tidak tersedia\';">'
             + '</div>'
           : '';
-        return '<div class="tek-news-item" style="border-left:3px solid ' + col + '">'
+        return '<div class="tek-news-item">'
           + '<div class="tek-news-meta">'
           + '<span class="tek-news-time">' + fmtTime(item.pubDate) + ' · ' + fmtTimeAgo(item.pubDate) + '</span>'
           + '<span class="tek-news-cat" style="background:' + bg + ';color:' + col + '">' + cat.replace('-',' ') + '</span>'
@@ -18900,7 +18952,6 @@ function renderDashNews() {
 
     html += `<div class="dash-cluster" id="cluster-${cat}">
       <div class="dash-cluster-header" onclick="toggleDashCluster('${cat}')">
-        <div class="dash-cluster-dot"></div>
         <div class="dash-cluster-label">${meta.label}</div>
         <div class="dash-cluster-count">${catItems.length}</div>
         <div class="dash-cluster-age">${fmtAge(catItems[0].pubDate)}</div>
@@ -18910,7 +18961,6 @@ function renderDashNews() {
         ${catItems.slice(0, 15).map(it => {
           const dispTitle = (newsLangPref === 'id' && it.title_id) ? it.title_id : (it.title || '');
           return `<div class="dash-news-item">
-          <div class="dash-news-dot"></div>
           <div class="dash-news-text">${escHtml(dispTitle)}</div>
           <div class="dash-news-time">${fmtAge(it.pubDate)}</div>
         </div>`;

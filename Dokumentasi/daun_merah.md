@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-22 (Session 402 — Distribusi poin Fundamental)
+> **Last updated:** 2026-10-23 (Session 403 — Penyesuaian desain News dan COT)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 403 (2026-10-23) — Penyesuaian desain News dan COT
+
+**News Teknikal.** Daftar `Berita Terkait` pada fitur Teknikal tidak lagi memakai kartu terpisah, sudut membulat, atau garis kategori di sisi kiri. Setiap berita sekarang berupa baris datar berlatar transparan dengan pemisah horizontal dan hover halus, konsisten dengan pola tab News. Aturan interaksi lama tetap dijaga: artikel ActionForex masih dapat dibuka, sedangkan berita FinancialJuice tetap tidak diberi tautan keluar.
+
+**News Dashboard.** Titik merah pada setiap headline dan titik merah pada header kategori dihapus. Keterbacaan dipertahankan melalui teks headline yang sedikit lebih tegas, jarak vertikal yang lebih lega, garis pemisah netral, hover lembut, serta penanda vertikal abu-abu pada header kategori. Tidak ada aksen merah pengganti di area News Dashboard.
+
+**COT.** Konten panjang yang sebelumnya menumpuk ke bawah dibagi menjadi tiga subtab horizontal: `Posisi COT`, `Arah Pasar`, dan `Retail`. Pada layar laptop, grup Leveraged Funds dan Asset Manager di tab Posisi COT kini berdampingan dalam dua kolom dan lebar kerja COT dinaikkan dari 700 px menjadi 1.100 px. Ponsel tetap memakai satu kolom; navigasi subtab dapat bergeser secara horizontal tanpa membuat halaman overflow. State tab memakai satu fungsi terpusat yang menyinkronkan tombol aktif, panel aktif, dan `aria-selected`. Panel Arah Pasar juga memiliki pesan fallback ketika data COT atau retail belum tersedia. `APP_VERSION` dinaikkan menjadi `2026.10.23.1`.
+
+**Verifikasi lokal.** Empat regresi baru memastikan News Teknikal tetap datar, News Dashboard bebas titik merah tetapi memiliki hierarki netral, COT memiliki tiga subtab dan dua kolom laptop, serta perpindahan subtab hanya mengaktifkan satu tombol/panel termasuk fallback input tidak valid. Suite penuh `npm test` lulus 1.466/1.466. Chromium nyata pada 1.365×768 mengonfirmasi News Dashboard tetap terbaca tanpa titik merah; News Teknikal menjadi daftar datar; Arah Pasar dan Retail muat dalam satu layar; Posisi COT menampilkan dua kolom 516 px dan hanya memerlukan sedikit gulir untuk delapan currency, jauh lebih pendek daripada tiga bagian yang sebelumnya ditumpuk. Viewport 390×844 tidak mengalami overflow horizontal halaman.
 
 ## Changelog Session 402 (2026-10-22) — Distribusi poin indikator Fundamental
 
