@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-23 (Session 404 — Ringkasan/Analisa tanpa kartu dan penghentian thesis generatif)
+> **Last updated:** 2026-10-23 (Session 405 — Diagnosis peringatan posisi dan pemakaian Upstash)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 405 (2026-10-23) — Diagnosis peringatan posisi dan pemakaian Upstash
+
+**Peringatan posisi bukan empat kejadian terpisah.** Tampilan `4 headline kontra buy/sell limit` pada GBP/JPY LONG berasal dari empat ukuran dalam satu kelompok rilis penjualan ritel Inggris: retail/core retail dan MoM/YoY. Keempatnya berada di bawah forecast sehingga konsisten melemahkan GBP; daftar tetap menampilkan satu per satu agar bukti asal peringatan dapat diaudit. Ini selaras dengan Ringkasan yang menempatkan JPY sebagai yang terkuat dan GBP sebagai yang terlemah pada snapshot tersebut.
+
+**Cooldown 65 detik normal.** Tombol Ringkasan sengaja terkunci 90 detik setelah generate dan penghitungnya disimpan di browser. Ia mencegah klik ulang memulai request AI yang sama; bukan respons error atau pembatasan Upstash.
+
+**Kuota Upstash.** Screenshot pengguna pada 2026-10-23 menunjukkan akun yang terbuka masih di bawah batas command (314K/500K) dan penyimpanan (5 MB/250 MB), tetapi bandwidth sudah 7 GB dari 10 GB sehingga berisiko ditahan jika mencapai batas. Dari kode, penyumbang pasti yang berjalan terus adalah daemon: heartbeat setiap 60 detik, polling `news_history` setiap 60 detik, serta baca/tulis cache candle ketika candle H1 ditutup; request aplikasi juga membaca cache seperti `latest_article`. Screenshot agregat tidak memecah bandwidth per key/endpoint, jadi belum cukup bukti untuk menuduh satu jalur tertentu sebagai penyebab tunggal. Audit berikutnya harus memakai rincian usage Upstash per periode/command atau telemetry ukuran respons sebelum optimasi yang dapat mengorbankan alert dan cache.
 
 ## Changelog Session 404 (2026-10-23) — Ringkasan/Analisa tanpa kartu dan penghentian thesis generatif
 
