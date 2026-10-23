@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-23 (Session 408 — Key ringkas watcher Upstash)
+> **Last updated:** 2026-10-24 (Session 409 — Verifikasi pembaruan Ringkasan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 409 (2026-10-24) — Verifikasi pembaruan Ringkasan
+
+**Status produksi: belum terbarui sesuai jadwal.** Pembacaan aman `GET /api/market-digest?mode=cached` pada 24 Oktober menunjukkan cache terakhir dibuat `2026-10-23T00:02:25.180Z` (07:02:25 WIB). Cache itu sendiri valid—berisi briefing DeepSeek, 150 berita tersedia, dan 80 headline dikirim ke model—tetapi tidak ada pembaruan untuk slot Eropa maupun New York sesudahnya. Dengan waktu pemeriksaan sekitar 06:53 WIB tanggal 24 Oktober, umurnya hampir 24 jam, bukan ritme tiga kali sehari yang dijanjikan.
+
+**Akar operasional yang terkonfirmasi.** Tiga run terjadwal GitHub Actions setelah cache tersebut selesai sukses (`2026-10-23 04:31`, `12:33`, dan `17:22` UTC), tetapi langkah generator fallback semuanya `skipped`; langkah cek heartbeat VPS sukses. Workflow memang didesain agar diam saat heartbeat hidup, sehingga health heartbeat saat ini bukan bukti scheduler `market-digest` di VPS benar-benar berjalan. Kode daemon masih mendaftarkan tiga jadwal yang benar (`00:02`, `07:02`, `12:32` UTC), sehingga kegagalan berada pada eksekusi/observabilitas scheduler VPS yang belum dapat dibuktikan dari endpoint publik, bukan pada pengaturan jadwal di repository.
+
+**Tindak lanjut.** Tidak memicu generate manual agar tidak menghabiskan panggilan AI dan tidak menutupi bukti kegagalan. Perbaikan perlu memisahkan kesehatan scheduler digest dari heartbeat umum atau membuat fallback GitHub juga memeriksa umur `latest_article`; itu perubahan perilaku operasional, jadi menunggu persetujuan user.
 
 ## Changelog Session 408 (2026-10-23) — Key ringkas watcher Upstash
 
