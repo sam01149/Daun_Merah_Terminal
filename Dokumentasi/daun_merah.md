@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-23 (Session 405 — Diagnosis peringatan posisi dan pemakaian Upstash)
+> **Last updated:** 2026-10-23 (Session 406 — Akar bandwidth Upstash)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 406 (2026-10-23) — Akar bandwidth Upstash
+
+**Temuan terukur.** Dashboard Usage Upstash yang benar-benar aktif memperlihatkan bandwidth harian 382 MB (Senin), 459 MB (Selasa), 423 MB (Rabu), dan 500 MB (Kamis); Jumat masih 176 MB saat dibaca. Halaman Insights tidak dipakai sebagai bukti karena Free Tier menandainya jelas sebagai `Sample data`. Monitor live hanya menangkap `GET daily_snapshot`, yang kecil dan bukan kandidat penyebab.
+
+**Penyebab dominan.** Pembacaan read-only Redis menemukan `setup_log_auto:v1` berukuran 803.709 byte. Daemon memanggil `getOpenSetupsWatchlist()` pada setiap tick harga, tetapi cache-nya hanya berlaku dua menit; saat pasar/stream hidup ia lalu membaca SELURUH key itu kembali. Batas atas satu jalur ini adalah 720 pembacaan/hari × 803.709 byte = sekitar **579 MB/hari**, sejalan langsung dengan grafik 382–500 MB/hari. Komentar lama yang menyebut GET ini “murah” sudah basi: ia benar saat log kecil, tetapi tidak lagi setelah log berkembang menjadi ~804 KB. Scheduler evaluasi setup lima-menit juga membaca key yang sama dan merupakan beban tambahan.
+
+**Bukan masalah storage atau satu headline.** Total 959 key hanya memakai 4.618.839 byte; kandidat besar lain adalah `aatas_reject_log:v1` 867 KB, `setup_log_auto_archive:v1` 770 KB, dan `setup_log:v1` 619 KB. Karena key-key tersebut tidak dibaca dalam loop dua-menit pada stream harga, mereka bukan penjelasan utama untuk pola bandwidth harian. Optimasi yang tepat perlu memisahkan daftar ringkas setup terbuka (symbol/bias/SL/TP) dari arsip setup penuh dan memperbaruinya atomik setiap penulisan setup; belum diubah pada sesi diagnosis ini agar jalur TP/SL dan auto-entry tidak berubah tanpa pengujian khusus.
 
 ## Changelog Session 405 (2026-10-23) — Diagnosis peringatan posisi dan pemakaian Upstash
 
