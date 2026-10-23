@@ -28,6 +28,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi lokal.** Tes baru mengunci isi key ringkas, array kosong yang sah, dan fallback data korup. Mock Redis seluruh jalur auto diperbarui untuk menjalankan transaksi yang sama seperti Upstash. `npm test` lulus **1.474/1.474**; `node --check api/admin.js` dan `node --check vps/daemon.js` juga lulus.
 
+**Verifikasi produksi.** Commit `2c0da7d` telah dipush ke `main`. Key `setup_watch_open:v1` disiapkan aman dengan `SET ... NX` (tidak dapat menimpa writer baru), lalu dibaca ulang: log sumber berisi 121 record, daftar watcher berisi 1 setup `open`, dan keduanya cocok. Monitor juga mengonfirmasi daemon Railway aktif melalui heartbeat. Tidak ada event harga yang memicu watcher selama jendela pengamatan, sehingga pembacaan daemon terhadap key baru belum diklaim sebagai bukti observasi; fallback kompatibilitas akan tetap melindungi hingga siklus tersebut terjadi.
+
 ## Changelog Session 407 (2026-10-23) — Retensi aman untuk bandwidth watcher
 
 **Ini mekanisme lama yang membesar, bukan jalur baru.** Watcher TP/SL real-time diperkenalkan pada commit `5ce1a97` tanggal 2026-07-28. Dari awal ia membaca `setup_log_auto:v1` penuh lalu memfilter status `open`, dengan cache proses dua menit. Ketika dibuat, komentar menyebut pembacaan itu murah; penilaian itu tidak lagi benar setelah record bertambah kaya dan ukuran key mencapai 803.709 byte.
