@@ -3253,6 +3253,111 @@ body.light-theme .ck-bdg-gate { background: var(--accent-dim); color: var(--acce
   margin-top: 0 !important;
 }
 
+/* ── EDITORIAL CARDLESS: RINGKASAN & ANALISA ──
+   Informasi dikelompokkan dengan ruang, heading, dan garis pemisah; bukan
+   kotak berulang. Badge status, tombol, dan warning tetap berbatas karena
+   berfungsi sebagai kontrol/umpan balik, bukan container isi. */
+#ringkasanPanel .ringkasan-card,
+#ringkasanPanel .ringkasan-dashboard-card {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  padding: 0 0 20px !important;
+  margin: 0 !important;
+}
+#ringkasanPanel .ringkasan-card::before { display: none !important; }
+#ringkasanPanel .ringkasan-main .ringkasan-card {
+  border-top: 2px solid var(--accent) !important;
+  padding-top: 12px !important;
+}
+#ringkasanPanel .ringkasan-side {
+  display: grid;
+  gap: 26px;
+  align-content: start;
+}
+#ringkasanPanel .ringkasan-side > section {
+  border-top: 1px solid var(--border) !important;
+  padding-top: 12px !important;
+}
+#ringkasanPanel .ringkasan-dashboard-card .cb-section-title,
+#ringkasanPanel .ringkasan-dashboard-card .corr-title {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(var(--fg-rgb),.07);
+}
+#ringkasanPanel .ringkasan-calendar-card { margin-top: 0 !important; }
+#ringkasanPanel .ringkasan-calendar-columns { background: var(--bg); }
+#ringkasanPanel .ringkasan-disclaimer-wrap .ai-disclaimer {
+  background: transparent !important;
+  border: 0 !important;
+  border-top: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  padding: 10px 0 0 !important;
+}
+#ringkasanPanel .thesis-alert-card,
+#dashboardPanel .thesis-alert-card {
+  background: transparent !important;
+  border: 0 !important;
+  border-top: 1px solid rgba(244,114,182,.35) !important;
+  border-radius: 0 !important;
+  padding: 10px 0 0 !important;
+  box-shadow: none !important;
+}
+
+#analisaPanel .analisa-tf-card,
+#analisaPanel .analisa-side-card {
+  background: transparent !important;
+  border: 0 !important;
+  border-top: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  padding: 12px 0 16px !important;
+  margin: 0 !important;
+}
+#analisaPanel #analisaAiResult > .analisa-tf-card:first-of-type {
+  border-top: 2px solid var(--accent) !important;
+}
+#analisaPanel .analisa-context-col,
+#analisaPanel .analisa-decision-col { gap: 0 !important; }
+#analisaPanel .analisa-position-stack { gap: 0; }
+#analisaPanel .analisa-position-row {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(var(--fg-rgb),.07);
+  border-radius: 0;
+  padding: 8px 0;
+}
+#analisaPanel .analisa-position-row:last-child { border-bottom: 0; }
+#analisaPanel .position-alert-notice {
+  background: transparent !important;
+  border: 0 !important;
+  border-top: 1px solid rgba(244,114,182,.35) !important;
+  border-radius: 0 !important;
+  padding: 10px 0 0 !important;
+}
+#analisaPanel .ai-disclaimer {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: 10px 0 0;
+}
+
+@media (min-width: 1200px) {
+  #ringkasanPanel .ringkasan-main,
+  #ringkasanPanel .ringkasan-side-right,
+  #analisaPanel .analisa-main-col,
+  #analisaPanel .analisa-decision-col {
+    border-left: 1px solid var(--border);
+    padding-left: 20px;
+  }
+  #ringkasanPanel .ringkasan-workspace,
+  #analisaPanel .analisa-workspace { gap: 24px; }
+}
+
 /* Batasi measure teks Ringkasan, tetapi Analisa adalah workspace multi-kolom dan
    harus memakai bentang desktop penuh. Aturan lama 680px di sini pernah menimpa
    grid Analisa baru karena memakai !important, lalu mendorong tiga kolom ke kanan. */
@@ -4428,8 +4533,8 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <div id="dashMainCol">
     <div class="dash-col-title">RINGKASAN PASAR</div>
     <div id="dashDigestSection"><div class="dash-no-data">Buka tab RINGKASAN dulu untuk memuat briefing.</div></div>
-    <div class="dash-col-title" style="margin-top:6px">THESIS</div>
-    <div id="dashThesisSection"><div class="dash-no-data">—</div></div>
+    <div class="dash-col-title" style="margin-top:6px">PERINGATAN POSISI</div>
+    <div id="dashPositionAlertsSection"><div class="dash-no-data">Tidak ada peringatan posisi.</div></div>
   </div>
   <div id="dashSideCol">
     <div class="dash-col-title">CB BIAS</div>
@@ -4801,7 +4906,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.23.1';
+const APP_VERSION = '2026.10.23.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5116,7 +5221,7 @@ async function loadCachedRingkasan() {
       // tick cooldown after render (button might have been re-created)
       if (Date.now() < ringkasanCooldownEnd) tickCooldown();
       if (data.thesis_alerts && data.thesis_alerts.length > 0) {
-        showToast('Thesis Alert', `${data.thesis_alerts.length} headline kontra buy/sell limit terdeteksi pada trade terbuka`, 5000);
+        showToast('Peringatan Posisi', `${data.thesis_alerts.length} headline kontra buy/sell limit terdeteksi pada trade terbuka`, 5000);
       }
     }
   } catch(e) { /* silent fail — user can still press Generate */ }
@@ -6015,13 +6120,8 @@ document.getElementById('toast').addEventListener('click', _toastHide);
 function _applyRingkasanData(data) {
   const prevAlerts = Array.isArray(ringkasanCache?.thesis_alerts) ? ringkasanCache.thesis_alerts : null;
   const freshAlerts = Array.isArray(data.thesis_alerts) ? data.thesis_alerts : null;
-  ringkasanCache = { ...data, thesis_alerts: freshAlerts !== null ? freshAlerts : prevAlerts };
-  // Thesis tidak lagi ditampilkan sebagai kartu di Ringkasan, tetapi tetap
-  // disimpan untuk kompatibilitas alur Checklist/Sizing yang sudah ada.
-  if (data.thesis) {
-    _lastThesis = data.thesis;
-    try { localStorage.setItem('daun_merah_thesis', JSON.stringify(data.thesis)); } catch(_) {}
-  }
+  const { thesis: _legacyThesis, ...digestData } = data;
+  ringkasanCache = { ...digestData, thesis_alerts: freshAlerts !== null ? freshAlerts : prevAlerts };
 }
 
 async function generateRingkasan() {
@@ -6041,7 +6141,7 @@ async function generateRingkasan() {
     renderRingkasan();
     if (data.bias_updated && data.bias_updated.length > 0) fetchCBStatus();
     if (data.thesis_alerts && data.thesis_alerts.length > 0) {
-      showToast('Thesis Alert', `${data.thesis_alerts.length} headline kontra buy/sell limit terdeteksi pada trade terbuka`, 5000);
+      showToast('Peringatan Posisi', `${data.thesis_alerts.length} headline kontra buy/sell limit terdeteksi pada trade terbuka`, 5000);
     }
     // Plan T-5: auto-chain Ringkas -> Analisa satu klik. Pair aktif dipakai apa
     // adanya; kalau tab Analisa belum pernah dibuka (analisaActive kosong),
@@ -6578,7 +6678,7 @@ async function downloadRingkasanPdf() {
   ]);
 
   if (d.thesis_alerts && d.thesis_alerts.length > 0) {
-    b.heading(`Thesis Alert · ${d.thesis_alerts.length} headline kontra buy/sell limit`);
+    b.heading(`Peringatan Posisi · ${d.thesis_alerts.length} headline kontra buy/sell limit`);
     d.thesis_alerts.forEach(a => {
       b.subheading(`${a.pair} ${(a.direction || '').toUpperCase()}`);
       b.para(`"${a.headline}"`, { size: 9.5, italic: true, gapAfter: 1.5 });
@@ -7997,24 +8097,8 @@ function renderArticleSections(article) {
   return `<div class="ringkasan-card"><div class="ringkasan-fx-label">ANALISIS BERITA · MAKRO</div><div class="ringkasan-text">${articleToHtml(unifiedArticle)}</div></div>`;
 }
 
-let _lastThesis = (() => {
-  try { return JSON.parse(localStorage.getItem('daun_merah_thesis') || 'null'); } catch(_) { return null; }
-})();
-
-// Rating bintang keyakinan AI — ikon SVG (2026-07-29), ganti karakter ★/☆ literal
-// (ATURAN §4.1). filled/kosong pakai bentuk polygon sama, beda cuma fill vs outline.
-function _fundStarSvg(filled) {
-  const pts = '12 2 15 9 22 9.5 17 14.5 18.5 22 12 18 5.5 22 7 14.5 2 9.5 9 9';
-  return filled
-    ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px"><polygon points="${pts}"/></svg>`
-    : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35" style="vertical-align:-2px"><polygon points="${pts}"/></svg>`;
-}
-function fundStarsRating(n, max = 5) {
-  n = Math.max(0, Math.min(max, n || 0));
-  let html = '';
-  for (let i = 0; i < max; i++) html += _fundStarSvg(i < n);
-  return html;
-}
+// Bersihkan artefak localStorage dari fitur thesis generatif yang sudah dihentikan.
+try { localStorage.removeItem('daun_merah_thesis'); } catch(_) {}
 
 function renderThesisAlerts(alerts) {
   const items = alerts.map(a => `
@@ -8024,7 +8108,7 @@ function renderThesisAlerts(alerts) {
       <div class="thesis-alert-reason">${escHtml(a.reason)}</div>
     </div>`).join('');
   return `<div class="thesis-alert-card">
-    <div class="thesis-alert-header">Thesis Alert · ${alerts.length} headline kontra buy/sell limit</div>
+    <div class="thesis-alert-header">Peringatan Posisi · ${alerts.length} headline kontra buy/sell limit</div>
     ${items}
   </div>`;
 }
@@ -8048,55 +8132,11 @@ function renderThesisAlertNotice(alerts) {
   if (!alerts || alerts.length === 0) return '';
   const first = alerts[0] || {};
   const extra = alerts.length > 1 ? ` · +${alerts.length - 1} lain` : '';
-  return `<div style="margin:10px 0 14px;padding:10px 12px;border:1px solid rgba(244,114,182,0.35);border-radius:4px;background:rgba(244,114,182,0.08);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:10px;line-height:1.5">
+  return `<div class="position-alert-notice" style="margin:10px 0 14px;padding:10px 12px;border:1px solid rgba(244,114,182,0.35);border-radius:4px;background:rgba(244,114,182,0.08);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:10px;line-height:1.5">
     <div style="color:#f472b6;font-weight:700">${alerts.length} headline kontra buy/sell limit${extra}</div>
     <div style="margin-top:4px;color:var(--text-mid)">"${escHtml(first.headline || '')}"</div>
     <div style="margin-top:2px;color:var(--muted)">${escHtml(first.reason || '')}</div>
   </div>`;
-}
-
-function thesisGoToSizing(pair, direction) {
-  if (!pair) return;
-  switchView('sizing');
-  setTimeout(() => {
-    const sel = document.getElementById('szPair');
-    if (sel) {
-      for (const opt of sel.options) {
-        if (opt.value === pair) { sel.value = pair; szUpdatePipInfo(); break; }
-      }
-    }
-    if (direction === 'long' || direction === 'short') szSetDir(direction);
-    showToast('Thesis AI siap dipakai', `${pair} ${(direction||'').toUpperCase()} — isi stop/entry, lalu selesaikan Rencana Prime sebelum entry.`);
-  }, 200);
-}
-
-function thesisGoToChecklist(pair, direction) {
-  if (!pair) return;
-  let struct = null, freshStruct = null;
-  for (const sym in analisaAiCache) {
-    if (_analisaLabelForSymbol(sym) === pair || sym.toUpperCase() === pair.replace('/', '').toUpperCase()) {
-      struct = analisaAiCache[sym]?.structured;
-      if (struct && !_analisaResultIsStale(analisaAiCache[sym])) freshStruct = struct;
-      if (struct) break;
-    }
-  }
-  _storePendingSizingSetup(pair, direction, struct);
-
-  switchView('checklist');
-  setTimeout(() => {
-    const sel = document.getElementById('ckPairSelector');
-    if (sel) {
-      const cleanTarget = pair.replace('/', '').toUpperCase();
-      for (let i = 0; i < sel.options.length; i++) {
-        if (sel.options[i].value.replace('/', '').toUpperCase() === cleanTarget) {
-          sel.selectedIndex = i;
-          if (typeof ckOnPairChange === 'function') ckOnPairChange();
-          break;
-        }
-      }
-    }
-    showToast('Rencana Entry', `${pair} ${(direction||'').toUpperCase()} dibuka. Pilih setup lalu lengkapi gate.`, 3500);
-  }, 200);
 }
 
 // ── VIEW SWITCHING ────────────────────────────────────────
@@ -13753,10 +13793,6 @@ function ckPrefillJurnalAction(pct, verdict) {
     if (qLvl > bLvl) direction = 'short';
   }
 
-  // AI thesis (RINGKASAN tab) overrides inferred direction kalau pair cocok — lebih informed dari sekadar diff CB bias
-  const aiThesis = (_lastThesis && _lastThesis.pair_recommendation === pair) ? _lastThesis : null;
-  if (aiThesis && aiThesis.direction && aiThesis.direction !== 'no_trade') direction = aiThesis.direction;
-
   // Build thesis from checklist state
   const lines = [`[${pbName} | ${pct}% — ${verdict}]`];
   if (pair) lines.push(`Pair: ${pair}`);
@@ -13771,12 +13807,6 @@ function ckPrefillJurnalAction(pct, verdict) {
   }
   const speedNote = ckConsumeSpeedAckNote();
   if (speedNote) lines.push(speedNote);
-  if (aiThesis) {
-    lines.push(`\n— Thesis (${aiThesis.confidence_1_to_5}/5):`);
-    if (aiThesis.catalyst_dependency) lines.push(`  Katalis: ${aiThesis.catalyst_dependency}`);
-    if (aiThesis.invalidation_condition) lines.push(`  Invalidasi jika: ${aiThesis.invalidation_condition}`);
-  }
-
   const thesisAlerts = getThesisAlertsForPair(pair, direction);
   if (thesisAlerts.length > 0) {
     lines.push(`\n— ALERT BUY/SELL LIMIT:`);
@@ -13906,11 +13936,6 @@ function ckShowMt5ModalAction(pair) {
     const qLvl  = CB_BIAS_LEVEL[qObj?.bias?.toLowerCase()] ?? CB_BIAS_NEUTRAL_LVL;
     if (qLvl > bLvl) direction = 'short';
   }
-  // AI thesis (RINGKASAN tab) overrides inferred direction kalau pair cocok
-  if (_lastThesis && _lastThesis.pair_recommendation === pair && _lastThesis.direction && _lastThesis.direction !== 'no_trade') {
-    direction = _lastThesis.direction;
-  }
-
   // Lot/SL/TP dikunci ke hasil Sizing Calculator — tidak boleh diisi manual di modal ini,
   // supaya angka eksekusi tetap objektif walau lagi terburu-buru/emosi.
   const sz = window._lastSizing;
@@ -14582,14 +14607,8 @@ function _ckAutoSMC(base, quote) {
       }
     }
   }
-  // ── PRE-MARKET p4 "sudah ada skenario": arah dari Thesis AI (Ringkasan) + area
-  // entry dari AI Analisa pair yang sama. p1/p2/p3 SELALU manusia (komitmen perilaku:
-  // kapan bias ditentukan, tidak berubah tanpa news, batas jumlah pair).
-  const _ai = (typeof analisaAiCache !== 'undefined') ? analisaAiCache[symbol] : null;
-  const _aiS = !_analisaResultIsStale(_ai) ? _ai.structured : null;
-  if (_lastThesis && _lastThesis.pair_recommendation === pair && _lastThesis.direction && _lastThesis.direction !== 'no_trade' && _aiS?.entry_zone) {
-    ckAutoTick('p4', `AI: arah ${_lastThesis.direction.toUpperCase()} dari Thesis Ringkasan + area entry ${_aiS.entry_zone} dari Analisa`);
-  }
+  // p4 "sudah ada skenario" tetap keputusan manual. Setelah Thesis generatif
+  // dihentikan, tidak ada lagi sumber arah makro terpisah yang sah untuk auto-tick.
   // Session timing auto-tick — tick juga parent tm1 (subs hanya panduan, tidak dihitung skor)
   // Batas jam diambil dari FxSessions (single source, lihat fx-sessions.js) supaya
   // tidak ada salinan literal 8/13/16/21 kedua yang bisa drift (audit 2026-08-08).
@@ -15617,10 +15636,6 @@ function calcSizing() {
     ? `<div class="sz-sub" style="color:var(--accent)">SL: ${slPrice.toFixed(priceDp)}</div>`
     : '';
 
-  // PLAN U-4: AI confidence (Ringkasan) tampil sebagai INFORMASI saja di Sizing —
-  // bukan checkbox/gate (keputusan rapat), murni konteks buat user.
-  const _szConfThesis = (_lastThesis && _lastThesis.pair_recommendation === pair && _lastThesis.confidence_1_to_5) ? _lastThesis : null;
-
   resultEl.style.display = 'block';
   resultEl.innerHTML = `
     <div class="sz-result-block">
@@ -15628,7 +15643,6 @@ function calcSizing() {
       <div class="sz-sub">${miniLots.toFixed(2)} mini · ${microLots.toFixed(2)} micro</div>
       <div class="sz-sub" style="margin-top:6px">At risk: <span style="color:var(--accent)">$${dollarRisk.toFixed(2)}</span> · Pip value: $${pipVal.toFixed(2)}/lot</div>
       ${riskMultiplier < 1 ? `<div class="sz-sub" style="margin-top:4px;color:var(--orange)">Risk ${riskPct}% × ${riskMultiplier} [KONFLIK — checklist ${pair}] = ${effectiveRiskPct}%</div>` : ''}
-      ${_szConfThesis ? `<div class="sz-sub" style="margin-top:4px">AI Confidence (Ringkasan): ${_szConfThesis.confidence_1_to_5}/5</div>` : ''}
       ${thesisAlerts.length > 0 ? renderThesisAlertNotice(thesisAlerts) : ''}
       ${dangerousEvents.length > 0 ? `<div style="margin-top:6px;padding:8px 10px;background:rgba(var(--accent-rgb),.1);border:1px solid var(--accent);border-radius:4px"><div style="color:var(--accent);font-weight:700;font-size:10px">Saran diskon 50% (event risk &lt;24 jam)</div><div style="font-size:13px;margin-top:2px">${(Math.floor(lots * 50) / 100).toFixed(2)} lots</div></div>` : ''}
       ${slStr}${tpStr}
@@ -18978,12 +18992,12 @@ function renderDashNews() {
 // jalan diam-diam kalau Dashboard dibuka berkali-kali (mis. tiap sesi/jam).
 function renderDashDigest() {
   const digestEl = document.getElementById('dashDigestSection');
-  const thesisEl = document.getElementById('dashThesisSection');
+  const alertsEl = document.getElementById('dashPositionAlertsSection');
   if (!digestEl) return;
   if (!ringkasanCache || !ringkasanCache.article) {
     digestEl.innerHTML = `<div class="dash-no-data">Belum ada briefing.</div>
       <button class="cal-scenario-ck-btn" id="dashGenBtn" onclick="dashGenerateRingkasan()" style="margin-top:6px">Ringkas Berita</button>`;
-    if (thesisEl) thesisEl.innerHTML = '<div class="dash-no-data">—</div>';
+    if (alertsEl) alertsEl.innerHTML = '<div class="dash-no-data">Tidak ada peringatan posisi.</div>';
     return;
   }
   const preview = unifyDigestArticle(ringkasanCache.article || '');
@@ -18996,64 +19010,11 @@ function renderDashDigest() {
     : '';
   digestEl.innerHTML = `<div class="dash-digest-section"><div class="dash-digest-text">${articleToHtml(preview)}</div>${refreshBtn}${lihatSemua}${lastGenCaption}</div>`;
 
-  if (thesisEl) {
-    let html = '';
-    const t = ringkasanCache.thesis;
-
-    // FX thesis card
-    if (t && t.pair_recommendation) {
-      const dirClass = t.direction === 'long' ? 'long' : t.direction === 'short' ? 'short' : '';
-      const dirLabel = t.direction === 'no_trade' ? 'NO TRADE' : (t.direction || '').toUpperCase();
-      const stars = fundStarsRating(t.confidence_1_to_5 || 0);
-      html += `<div class="thesis-card" style="margin-bottom:10px">
-        <div style="font-size:9px;color:var(--pink);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">THESIS · FX · MAKRO + CB BIAS</div>
-        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-          <span class="thesis-pair">${escHtml(t.pair_recommendation)}</span>
-          ${t.direction !== 'no_trade' ? `<span class="thesis-dir ${dirClass}">${dirLabel}</span>` : `<span class="thesis-dir" style="background:var(--border);color:var(--muted)">${dirLabel}</span>`}
-          <span class="thesis-conf">${stars}</span>
-        </div>
-        ${t.invalidation_condition ? `<div class="thesis-label">INVALIDASI</div><div class="thesis-val">${escHtml(t.invalidation_condition)}</div>` : ''}
-        ${t.cb_bias_note ? `<div class="thesis-label">DASAR CB</div><div class="thesis-val">${escHtml(t.cb_bias_note)}</div>` : ''}
-        ${t.regime_note ? `<div class="thesis-label" style="color:var(--yellow)">CATATAN REGIME</div><div class="thesis-val" style="color:var(--yellow)">${escHtml(t.regime_note)}</div>` : ''}
-        ${t.catalyst_dependency ? `<div class="thesis-label">KATALIS</div><div class="thesis-val">${escHtml(t.catalyst_dependency)}</div>` : ''}
-        ${t.time_horizon_days ? `<div class="thesis-label">HORIZON</div><div class="thesis-val">${t.time_horizon_days} hari</div>` : ''}
-        <div class="thesis-horizon-note">Horizon: fundamental, relevan untuk pergerakan menengah-panjang — bukan sinyal entry presisi jangka pendek.</div>
-      </div>`;
-    }
-
-    // XAU thesis card
-    if (t && t.xau_bias && t.xau_bias !== 'insufficient_data') {
-      const xauColorMap = { bullish: 'var(--green)', bearish: 'var(--accent)', conflicting: 'var(--yellow)', neutral: 'var(--muted)' };
-      const xauColor = xauColorMap[t.xau_bias] || 'var(--muted)';
-      const xauStars = t.xau_confidence ? fundStarsRating(t.xau_confidence) : '';
-      const driverLabel = (t.xau_dominant_driver || '').replace(/_/g, ' ').toUpperCase();
-      html += `<div class="thesis-card xau" style="margin-bottom:10px">
-        <div style="font-size:9px;color:var(--yellow);font-family:'DM Mono',monospace;letter-spacing:.1em;margin-bottom:6px">THESIS · XAU/USD</div>
-        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-          <span class="thesis-pair" style="font-size:15px">XAU/USD</span>
-          <span class="thesis-dir" style="background:${xauColor}22;color:${xauColor}">${(t.xau_bias || '').toUpperCase()}</span>
-          ${xauStars ? `<span class="thesis-conf">${xauStars}</span>` : ''}
-        </div>
-        ${driverLabel && t.xau_dominant_driver !== 'insufficient_data' ? `<div class="thesis-label">DRIVER</div><div class="thesis-val">${driverLabel}</div>` : ''}
-        ${t.xau_driver_evidence ? `<div class="thesis-label">BUKTI</div><div class="thesis-val">${escHtml(t.xau_driver_evidence)}</div>` : ''}
-        ${t.xau_key_trigger ? `<div class="thesis-label">TRIGGER</div><div class="thesis-val">${escHtml(t.xau_key_trigger)}</div>` : ''}
-      </div>`;
-    }
-
-    // Thesis alerts (contradictions for open journal positions)
+  if (alertsEl) {
     const alerts = ringkasanCache.thesis_alerts;
-    if (alerts && alerts.length > 0) {
-      html += `<div class="thesis-alert-card">
-        <div class="thesis-alert-header">${alerts.length} kontradiksi posisi terbuka</div>
-        ${alerts.map(a => `<div class="thesis-alert-item">
-          <div class="thesis-alert-pair">${escHtml(a.pair||'')} ${escHtml((a.direction||'').toUpperCase())}</div>
-          <div class="thesis-alert-headline">"${escHtml(a.headline||'')}"</div>
-          <div class="thesis-alert-reason">${escHtml(a.reason||'')}</div>
-        </div>`).join('')}
-      </div>`;
-    }
-
-    thesisEl.innerHTML = html || '<div class="dash-no-data">Ringkas Berita untuk melihat AI thesis.</div>';
+    alertsEl.innerHTML = alerts && alerts.length > 0
+      ? renderThesisAlerts(alerts)
+      : '<div class="dash-no-data">Tidak ada peringatan posisi.</div>';
   }
 }
 

@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-23 (Session 403 — Penyesuaian desain News dan COT)
+> **Last updated:** 2026-10-23 (Session 404 — Ringkasan/Analisa tanpa kartu dan penghentian thesis generatif)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 404 (2026-10-23) — Ringkasan/Analisa tanpa kartu dan penghentian thesis generatif
+
+**Desain Ringkasan dan Analisa.** Container isi yang sebelumnya berupa kartu berulang diubah menjadi layout editorial transparan tanpa border keliling, radius, bayangan, atau strip warna samping. Hierarki baca sekarang memakai heading, ruang vertikal, garis horizontal antarbagian, serta garis pemisah kolom pada desktop. Ringkasan tetap tiga kolom (CB/kalender, narasi, Polymarket); Analisa tetap memakai urutan responsif yang sama. Badge status, tombol, dan warning dipertahankan sebagai kontrol/umpan balik, bukan container isi. Disclaimer serta peringatan posisi juga diratakan agar tidak muncul sebagai kartu baru. `APP_VERSION` dinaikkan menjadi `2026.10.23.2`.
+
+**Thesis generatif dihentikan.** Call 3 pada `api/market-digest.js` dipaksa nonaktif untuk seluruh jalur, termasuk query diagnostik, sehingga provider tidak lagi dipanggil dan token maksimal 1.200 per generate tidak lagi dialokasikan. Payload baru tidak memuat field `thesis`; respons cached/cron-dedup/single-flight menyaring field legacy; proses generate berikutnya menghapus key Redis `latest_thesis`. Frontend menghapus artefak localStorage dan tidak lagi memakai thesis sebagai override arah di Rencana/MT5, auto-tick skenario, atau info confidence di Sizing. Dashboard menghapus kartu Thesis FX/XAU dan hanya mempertahankan fungsi keselamatan kontra-headline dengan nama `Peringatan Posisi`. Call 4 tetap aktif karena memeriksa posisi jurnal yang benar-benar terbuka, bukan membuat rekomendasi trade baru. Penghematan terjadwal minimum adalah tiga panggilan DeepSeek Call 3 per hari dari cron, ditambah satu panggilan untuk setiap generate manual.
+
+**Dampak auto-entry.** Penghapusan input `latest_thesis` membuat arah XAU AATAS sepenuhnya berasal dari Call 1 makro-first miliknya sendiri; batas populasi dinaikkan ke policy v63 agar hasil sebelum/sesudah perubahan tidak tercampur diam-diam. Rincian ada di `Dokumentasi/professional_llm_trader/changelog.md` Session 391.
+
+**Verifikasi.** Regresi baru mengunci Call 3 nonaktif, payload/cache bebas thesis generatif, Dashboard bebas kartu thesis, dan aturan cardless Ringkasan/Analisa. Tes fokus lulus 18/18; suite penuh `npm test` lulus 1.472/1.472. Chromium nyata dengan data representatif mengonfirmasi desktop 1.440×1.000 dan mobile 390×844 memiliki background container transparan, radius 0 px, tidak ada border kiri kartu, dan section tetap terbaca melalui garis pemisah. Tidak ada panggilan AI dalam verifikasi visual.
 
 ## Changelog Session 403 (2026-10-23) — Penyesuaian desain News dan COT
 

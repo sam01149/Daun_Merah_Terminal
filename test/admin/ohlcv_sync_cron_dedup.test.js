@@ -77,7 +77,7 @@ test('ohlcv_sync: last_run_at basi (>45 menit) -> sync penuh jalan & marker baru
       const body = redisBody(opts);
       if (body[0] === 'GET' && body[1] === 'ohlcv_sync:last_run_at') return { json: async () => ({ result: staleTs }) };
       if (body[0] === 'SET' && body[1] === 'ohlcv_sync:last_run_at') { setCalls.push(body[2]); return { json: async () => ({ result: 'OK' }) }; }
-      return { json: async () => ({ result: null }) }; // latest_thesis GET, ohlcv:*:1h/4h/1d/source SET
+      return { json: async () => ({ result: null }) }; // ohlcv:*:1h/4h/1d/source SET
     }
     if (u.includes('query1.finance.yahoo.com')) throw new Error('simulated Yahoo outage');
     if (u.includes('api.twelvedata.com')) {

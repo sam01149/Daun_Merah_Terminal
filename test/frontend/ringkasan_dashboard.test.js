@@ -40,21 +40,37 @@ test('Ringkasan kembali satu kolom saat dicetak agar isi tidak menyempit', () =>
   assert.match(html, /body\.printing-ringkasan #ringkasanPanel \.ringkasan-workspace\s*\{\s*display:\s*block !important;/);
 });
 
-test('Ringkasan tidak merender kartu Thesis FX/XAU, tetapi Thesis Alert tetap ada', () => {
+test('Ringkasan tidak merender kartu Thesis FX/XAU, tetapi Peringatan Posisi tetap ada', () => {
   const render = between('function renderRingkasan()', '\nfunction _printWibNow');
   assert.doesNotMatch(render, /renderThesisCard|renderXauThesisCard/);
   assert.match(render, /renderThesisAlerts/);
   assert.ok(render.indexOf('renderThesisAlerts') < render.indexOf('renderArticleSections'),
-    'Thesis Alert harus tampil sebelum narasi berita');
+    'Peringatan Posisi harus tampil sebelum narasi berita');
 });
 
 test('narasi Ringkasan dan Dashboard memakai satu briefing makro tanpa toggle XAU', () => {
-  const renderSections = between('function renderArticleSections(article)', '\nlet _lastThesis');
-  const dashDigest = between('function renderDashDigest()', '\n  if (thesisEl)');
+  const renderSections = between('function renderArticleSections(article)', '\n// Bersihkan artefak localStorage');
+  const dashDigest = between('function renderDashDigest()', '\nfunction renderDashBias()');
   assert.match(renderSections, /ANALISIS BERITA · MAKRO/);
   assert.doesNotMatch(renderSections, /ANALISIS BERITA · FX|ANALISIS BERITA · XAUUSD/);
   assert.match(dashDigest, /unifyDigestArticle/);
   assert.doesNotMatch(dashDigest, /toggleDashDigestSide|dashDigestSide|FX \+ XAU/);
+});
+
+test('Dashboard tidak lagi merender thesis generatif dan hanya mempertahankan peringatan posisi', () => {
+  const dashboardMarkup = between('<!-- DASHBOARD PANEL -->', '<!-- MOBILE BOTTOM NAV -->');
+  const dashDigest = between('function renderDashDigest()', '\nfunction renderDashBias()');
+  assert.doesNotMatch(dashboardMarkup, /dashThesisSection|>THESIS</);
+  assert.match(dashboardMarkup, /dashPositionAlertsSection/);
+  assert.doesNotMatch(dashDigest, /ringkasanCache\.thesis\b|thesis-card|fundStarsRating/);
+  assert.match(dashDigest, /renderThesisAlerts/);
+});
+
+test('Ringkasan dan Analisa memakai layout editorial tanpa container kartu', () => {
+  assert.match(html, /EDITORIAL CARDLESS: RINGKASAN & ANALISA/);
+  assert.match(html, /#ringkasanPanel \.ringkasan-card,[\s\S]*?background: transparent !important;[\s\S]*?border: 0 !important;/);
+  assert.match(html, /#analisaPanel \.analisa-tf-card,[\s\S]*?background: transparent !important;[\s\S]*?border-top: 1px solid var\(--border\) !important;/);
+  assert.match(html, /#analisaPanel \.analisa-position-row \{[\s\S]*?background: transparent;[\s\S]*?border-bottom:/);
 });
 
 test('Polymarket mengurutkan volume dan menampilkan tiga market utama sebelum detail sisanya', () => {

@@ -657,8 +657,8 @@ async function runCronThesisSweep(recentItems, DEEPSEEK_KEY) {
         if (sub && configureVapid()) {
           const first = freshAlerts[0];
           const payload = {
-            title: `⚠ Thesis Alert · ${first.pair} ${(first.direction || '').toUpperCase()}`,
-            body: freshAlerts.length > 1 ? `${freshAlerts.length} headline kontra thesis terbuka` : first.reason,
+            title: `Peringatan Posisi · ${first.pair} ${(first.direction || '').toUpperCase()}`,
+            body: freshAlerts.length > 1 ? `${freshAlerts.length} headline kontra posisi terbuka` : first.reason,
             url: '/#ringkasan', icon: '/icon.svg',
           };
           const staleKeys = await sendWebPush([sub], payload);
@@ -676,6 +676,13 @@ module.exports = async function handler(req, res) {
   const handlerStart = Date.now();
   res.setHeader('Access-Control-Allow-Origin', '*');
 
+  // Keputusan produk 2026-10-23: digest hanya membuat briefing makro + CB bias.
+  // Structured trade thesis (Call 3) dimatikan karena tidak dipakai pengguna dan
+  // hanya menambah konsumsi token. Blok implementasi lama sengaja masih berada di
+  // bawah untuk sementara sebagai referensi migrasi, tetapi guard ini memastikan
+  // tidak ada provider yang pernah dipanggil dari jalur mana pun, termasuk mode tes.
+  const GENERATE_TRADE_THESIS = false;
+
   // Cached mode — serve last saved digest from Redis, no AI calls
   if (req.query?.mode === 'cached') {
     try {
@@ -688,7 +695,10 @@ module.exports = async function handler(req, res) {
           if (alertsRaw) cachedAlerts = JSON.parse(alertsRaw);
         } catch(e) { /* skip — non-critical */ }
       }
-      if (raw) return res.status(200).json({ ...JSON.parse(raw), from_cache: true, thesis_alerts: cachedAlerts });
+      if (raw) {
+        const { thesis: _legacyThesis, ...cached } = JSON.parse(raw);
+        return res.status(200).json({ ...cached, from_cache: true, thesis_alerts: cachedAlerts });
+      }
     } catch(e) { console.warn('cached mode Redis read failed:', e.message); }
     return res.status(200).json({ from_cache: true, article: null });
   }
@@ -698,7 +708,7 @@ module.exports = async function handler(req, res) {
   // rate limit below since they're 3 authenticated calls/day, not user traffic.
   // No device_id on these calls, which is intentional: Call 4 (thesis monitor,
   // gated on `&& deviceId` further down) is per-user journal data and is skipped,
-  // while the shared briefing/bias/thesis still generate and populate the cache
+  // while the shared briefing/bias still generate and populate the cache
   // every user's dashboard reads via mode=cached.
   const isCronCall = _isCronCallReq(req);
 
@@ -726,7 +736,8 @@ module.exports = async function handler(req, res) {
         const cached = JSON.parse(raw);
         if (isCronDedupFresh(cached.generated_at, Date.now(), CRON_DEDUP_WINDOW_MS)) {
           console.log('market-digest: cron call kedua untuk slot yang sama (cache masih fresh) — skip generate ulang');
-          return res.status(200).json({ ...cached, thesis_alerts: null, from_cache: 'cron_dedup' });
+          const { thesis: _legacyThesis, ...cachedWithoutThesis } = cached;
+          return res.status(200).json({ ...cachedWithoutThesis, thesis_alerts: null, from_cache: 'cron_dedup' });
         }
       }
     } catch(e) { console.warn('market-digest: cron dedup check gagal (fail-open, tetap generate):', e.message); }
@@ -742,7 +753,7 @@ module.exports = async function handler(req, res) {
 
   // Single-flight throttle (non-cron only): kalau ada request LAIN yang lagi generate
   // atau baru saja selesai generate dalam DIGEST_LOCK_TTL detik terakhir, jangan ikut
-  // generate lagi — Call 1/2/3 hasilnya SAMA untuk semua orang (shared, bukan per-device,
+  // generate lagi — Call 1/2 hasilnya SAMA untuk semua orang (shared, bukan per-device,
   // lihat latest_article), jadi generate ulang cuma menghasilkan kalimat beda-beda dari
   // data yang sama, boros jatah AI harian (_ai_guard.js) untuk nol informasi baru.
   // Beda dari withSingleFlight()/_fetch_lock.js yang polling pendek (cocok untuk fetch
@@ -766,7 +777,8 @@ module.exports = async function handler(req, res) {
         const raw = await redisCmd('GET', 'latest_article');
         if (raw) {
           console.log('market-digest: single-flight busy — serving latest_article without generating');
-          return res.status(200).json({ ...JSON.parse(raw), thesis_alerts: null, from_cache: 'busy' });
+          const { thesis: _legacyThesis, ...cached } = JSON.parse(raw);
+          return res.status(200).json({ ...cached, thesis_alerts: null, from_cache: 'busy' });
         }
       } catch(e) { console.warn('Digest single-flight cache read failed — falling through to generate:', e.message); }
       // Tidak ada cache sama sekali (cold start) — lanjut generate walau lock dipegang
@@ -1015,13 +1027,13 @@ SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIE
 
   // 3b. Load digest history + real yields + liquidity + yield curve
   //     + risk regime (VIX/MOVE/HY) + rate path (Fed Funds futures) + cross-asset correlations + FX skew, in parallel
-  let digestHistory = [], realYieldsData = null, liqData = null, ycData = null, rawPrevThesis = null;
+  let digestHistory = [], realYieldsData = null, liqData = null, ycData = null;
   let riskRegimeData = null, ratePathData = null, polymarketData = null;
   try {
     // Promise.all sengaja punya 1 entry lebih banyak (daily_snapshot) daripada nama yang
     // di-destructure — market-digest.js sendiri tidak butuh isinya, cuma memicu warming
     // cache untuk konsumen di admin.js (lihat komentar di entry itu di bawah).
-    const [rawHist, rawRY, rawLiq, rawYc, _rawPrevThesis, rawRisk, rawRate, , , , rawPoly] = await Promise.all([
+    const [rawHist, rawRY, rawLiq, rawYc, rawRisk, rawRate, , , , rawPoly] = await Promise.all([
       redisCmd('LRANGE', 'digest_history', 0, 6),
       // real_yields dipindah ke fetchOrWarm (2026-07-21, diskusi user soal DXY/WTI/real
       // yield breakdown) — sebelumnya cuma GET pasif (TTL 6h, hanya fresh kalau ada yang
@@ -1031,7 +1043,6 @@ SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIE
       fetchOrWarm('real_yields', '/api/real-yields'),
       redisCmd('GET', 'liquidity_usd'),
       redisCmd('GET', 'yield_curve'),
-      redisCmd('GET', 'latest_thesis'),
       fetchOrWarm('risk_regime', '/api/risk-regime'),
       fetchOrWarm('rate_path', '/api/rate-path'),
       fetchOrWarm('correlations_v3', '/api/correlations'),
@@ -1048,7 +1059,6 @@ SESI YANG SEDANG/AKAN DIBUKA: ${sesiNow} — mata uang utamanya ${SESI_CURRENCIE
       // dengan angka konkret, bukan cuma label "eskalasi geopolitik".
       fetchOrWarm('daily_snapshot', '/api/correlations?action=daily-snapshot'),
     ]);
-    rawPrevThesis = _rawPrevThesis;
     if (rawPoly) { try { polymarketData = JSON.parse(rawPoly); } catch(_) {} }
     if (Array.isArray(rawHist)) digestHistory = rawHist.map(e => { try { return JSON.parse(e); } catch(_) { return null; } }).filter(Boolean);
     if (rawRY) realYieldsData = JSON.parse(rawRY);
@@ -1944,7 +1954,9 @@ ${historyBlock}`;
   let thesis = null;
   const elapsedBeforeCall3 = Date.now() - handlerStart;
   const CALL3_BUDGET_MS = 50000; // sisakan ~10s headroom dari maxDuration 60s
-  if (elapsedBeforeCall3 > CALL3_BUDGET_MS) {
+  if (!GENERATE_TRADE_THESIS) {
+    console.log('Call 3 disabled — structured trade thesis is no longer generated');
+  } else if (elapsedBeforeCall3 > CALL3_BUDGET_MS) {
     console.warn(`Call 3 skipped — time budget exhausted (${elapsedBeforeCall3}ms elapsed)`);
     // thesis tetap null → UI sajikan latest_thesis lama dari Redis (tak fatal)
   } else if (recentItems.length > 0 && article) {
@@ -2105,8 +2117,12 @@ ${historyBlock}`;
   // validated thesis_alerts, silently hiding genuine contra-headline warnings.
   const thesisAlerts = await _call4Promise;
 
+  // Hapus cache thesis lama saat digest baru berjalan. Fire-and-forget agar cleanup
+  // tidak menambah latensi respons; key ini sebelumnya hidup sampai 24 jam.
+  if (!GENERATE_TRADE_THESIS) redisCmd('DEL', 'latest_thesis').catch(() => {});
+
   const payload = {
-    article, method, thesis,
+    article, method,
     thesis_alerts:  thesisAlerts,
     news_count:     recentItems.length,
     // Headline yang DIKIRIM ke AI (bukan yang "dipakai" — nama field lama `headlines_used`

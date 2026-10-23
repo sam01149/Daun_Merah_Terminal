@@ -718,7 +718,6 @@ const KEY_REGISTRY = [
   { key: 'rss_cache',          owner: 'api/feeds.js',          ttl_expected: 60,     note: 'FinancialJuice RSS XML' },
   { key: 'real_yields',        owner: 'api/real-yields.js',    ttl_expected: 21600,  note: 'Real yield per currency (DGS10-T10YIE for USD)' },
   { key: 'rate_path',          owner: 'api/rate-path.js',      ttl_expected: 14400,  note: 'USD rate path heuristic (SOFR/EFFR)' },
-  { key: 'latest_thesis',      owner: 'api/market-digest.js',  ttl_expected: 86400,  note: 'Structured trade thesis JSON from Call 3 (DeepSeek). TTL 6j->24j (audit 2026-08-28): jarak terjauh jadwal session-open 11,5j, lebih panjang dari TTL lama' },
   { key: 'correlations',       owner: 'api/correlations.js',   ttl_expected: 86400,  note: '20d+60d cross-asset correlation matrix' },
   { key: 'prompt_digest',      owner: 'api/admin.js',          ttl_expected: null,   note: 'AI prompt for market briefing (fallback: hardcoded)' },
   { key: 'health_last_ok',     owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET: source → last OK timestamp for alerting' },
@@ -2318,7 +2317,7 @@ async function gdpnowHandler(req, res) {
 }
 
 // ── OHLCV Sync — called by Vercel cron every hour ────────────────────────────
-// Fetches 1H candles for fixed pairs + dynamic pair from latest_thesis.
+// Fetches 1H candles for the fixed tracked pairs.
 // Stores as JSON array in Redis (key: ohlcv:{symbol}:1h, TTL 8h, max 120 candles).
 // Self-healing: if Yahoo fails for one pair, others still sync. TTL ensures stale data
 // expires automatically if the cron stops running.
@@ -2443,23 +2442,9 @@ async function ohlcvSyncHandler(req, res) {
     } catch(e) { console.warn('ohlcv_sync: cron dedup check gagal (fail-open, tetap sync):', e.message); }
   }
 
-  // Determine pairs: fixed set + dynamic pair from latest thesis recommendation
+  // Pair sinkronisasi bersifat tetap. Generator thesis Ringkasan dihentikan
+  // 2026-10-23, jadi tidak ada lagi pair dinamis dari rekomendasi AI.
   const pairsToSync = [...OHLCV_FIXED_PAIRS];
-  try {
-    const rawThesis = await redisCmd('GET', 'latest_thesis');
-    if (rawThesis) {
-      const thesis = JSON.parse(rawThesis);
-      const rec = thesis?.pair_recommendation;
-      if (rec && OHLCV_PAIR_SYMBOL_MAP[rec]) {
-        const dynSymbol = OHLCV_PAIR_SYMBOL_MAP[rec];
-        if (!pairsToSync.some(p => p.symbol === dynSymbol)) {
-          pairsToSync.push({ symbol: dynSymbol, label: rec });
-        }
-      }
-    }
-  } catch(e) {
-    console.warn('ohlcv_sync: latest_thesis read failed:', e.message);
-  }
 
   // Plan P (2026-07-18): Deriv primary untuk pair FX — dicoba BERURUTAN (bukan
   // paralel per pair, edge case Plan P: "jangan loop 15 pair paralel tanpa jeda dari
@@ -7230,7 +7215,6 @@ async function ohlcvAnalyzeHandler(req, res) {
         const artObj = JSON.parse(rawArticle);
         ringkasanContext = _extractRingkasanExcerpt(artObj.article || '', label || symbol, symbol === 'GC=F');
         if (ringkasanContext) ringkasanAt = artObj.generated_at || null;
-        xauThesis = artObj.thesis || null;
       }
     } catch(e) { /* opsional — analisa tetap jalan tanpa konteks makro */ }
   }
@@ -7436,12 +7420,6 @@ async function ohlcvAnalyzeHandler(req, res) {
       cbDir = _computeCbDirServerSide({ label: data.label, isXau: data.is_xau, cbBiasObj: cbBiasParsed, xauThesis });
     }
     if (!isAutoCall) {
-      if (data.is_xau && !xauThesis) {
-        try {
-          const rawLatestThesis = await redisCmd('GET', 'latest_thesis');
-          if (rawLatestThesis) xauThesis = JSON.parse(rawLatestThesis);
-        } catch (e) { /* best-effort; prompt tetap dapat menentukan macro_direction */ }
-      }
       manualMacroDirection = _computePrimeManualDirection({
         label: data.label, isXau: data.is_xau, cbBiasObj: cbBiasParsed, xauThesis,
       });
