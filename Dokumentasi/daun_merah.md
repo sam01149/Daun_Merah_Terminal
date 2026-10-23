@@ -28,6 +28,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** Regresi baru mengunci Call 3 nonaktif, payload/cache bebas thesis generatif, Dashboard bebas kartu thesis, dan aturan cardless Ringkasan/Analisa. Tes fokus lulus 18/18; suite penuh `npm test` lulus 1.472/1.472. Chromium nyata dengan data representatif mengonfirmasi desktop 1.440×1.000 dan mobile 390×844 memiliki background container transparan, radius 0 px, tidak ada border kiri kartu, dan section tetap terbaca melalui garis pemisah. Tidak ada panggilan AI dalam verifikasi visual.
 
+**Verifikasi produksi.** Setelah commit `efa37ae` ter-deploy, production merespons dengan `APP_VERSION 2026.10.23.2`, memuat penanda aturan cardless, tidak lagi memiliki `dashThesisSection`, dan sudah memakai `dashPositionAlertsSection`. Pembacaan aman `/api/market-digest?mode=cached` mengembalikan cache valid tanpa field `thesis` dan tanpa memicu generate AI. Chromium production mengukur container Ringkasan berlatar transparan, radius 0 px, border kiri 0 px, dan tanpa bayangan; aturan cardless Analisa juga termuat. Tidak ada tombol generate yang ditekan selama verifikasi.
+
 ## Changelog Session 403 (2026-10-23) — Penyesuaian desain News dan COT
 
 **News Teknikal.** Daftar `Berita Terkait` pada fitur Teknikal tidak lagi memakai kartu terpisah, sudut membulat, atau garis kategori di sisi kiri. Setiap berita sekarang berupa baris datar berlatar transparan dengan pemisah horizontal dan hover halus, konsisten dengan pola tab News. Aturan interaksi lama tetap dijaga: artikel ActionForex masih dapat dibuka, sedangkan berita FinancialJuice tetap tidak diberi tautan keluar.
