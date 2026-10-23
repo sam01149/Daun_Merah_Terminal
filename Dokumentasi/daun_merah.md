@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-23 (Session 407 — Retensi aman untuk bandwidth watcher)
+> **Last updated:** 2026-10-23 (Session 408 — Key ringkas watcher Upstash)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 408 (2026-10-23) — Key ringkas watcher Upstash
+
+**Perbaikan bandwidth tanpa menghapus histori.** Ditambahkan key turunan `setup_watch_open:v1` yang hanya berisi `{symbol,bias,sl,tp}` untuk setup otomatis berstatus `open`. Riwayat lengkap `setup_log_auto:v1` tetap utuh untuk statistik AATAS, audit, serta evaluasi hasil TP/SL; tidak ada record selesai yang dihapus.
+
+**Sinkron dan tahan data lama.** Semua jalur penulisan log otomatis (pembuatan/refine setup, evaluasi status, koreksi Gold, position review, dan tighten Jumat) kini memakai satu helper. Helper menghitung ulang daftar ringkas lalu menulis key utama dan key watcher bersama-sama melalui transaksi Upstash `multi-exec`, sehingga watcher tidak melihat status campuran. Daemon Railway membaca key kecil setiap cache dua menit. Jika key belum ada setelah deployment, daemon sekali saja membaca log lama dan mengisi key kecil dengan `NX`; key kosong yang valid tidak memicu fallback, sedangkan data korup gagal-aman ke log lama tanpa menimpa data baru.
+
+**Dampak terukur.** Pembacaan berulang turun dari sekitar 804 KB menjadi beberapa puluh byte per cache refresh saat satu posisi terbuka. Estimasi batas atas jalur watcher sebelumnya sekitar 579 MB/hari (720 × 803.709 byte); beban tersebut sekarang tidak lagi bertumbuh mengikuti riwayat. Perilaku trigger TP/SL, cache dua menit, dan data statistik tidak diubah.
+
+**Verifikasi lokal.** Tes baru mengunci isi key ringkas, array kosong yang sah, dan fallback data korup. Mock Redis seluruh jalur auto diperbarui untuk menjalankan transaksi yang sama seperti Upstash. `npm test` lulus **1.474/1.474**; `node --check api/admin.js` dan `node --check vps/daemon.js` juga lulus.
 
 ## Changelog Session 407 (2026-10-23) — Retensi aman untuk bandwidth watcher
 

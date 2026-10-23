@@ -157,6 +157,12 @@ module.exports = async function handler(req, res) {
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
 
+// Watcher VPS hanya perlu setup yang benar-benar open beserta levelnya. Riwayat
+// lengkap tetap berada di key utama untuk statistik, audit, dan evaluasi TP/SL.
+// Keduanya harus ditulis bersamaan agar watcher tidak memakai snapshot status lama.
+const AUTO_SETUP_LOG_KEY = 'setup_log_auto:v1';
+const AUTO_SETUP_WATCH_KEY = 'setup_watch_open:v1';
+
 async function redisCmd(...args) {
   const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
   const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -168,6 +174,51 @@ async function redisCmd(...args) {
     signal: AbortSignal.timeout(5000),
   });
   return (await r.json()).result;
+}
+
+// Upstash REST /multi-exec menjalankan seluruh command sebagai satu transaksi.
+// Ini menghindari jendela kecil di mana log utama sudah berubah tetapi watcher
+// masih membaca daftar open yang lama (atau sebaliknya).
+async function redisMultiExec(commands) {
+  const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
+  const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!REDIS_URL || !REDIS_TOKEN) return null;
+  const r = await fetch(`${REDIS_URL}/multi-exec`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(commands),
+    signal: AbortSignal.timeout(5000),
+  });
+  const rows = await r.json();
+  if (!r.ok || !Array.isArray(rows) || rows.some(row => row && row.error)) {
+    const detail = Array.isArray(rows)
+      ? rows.find(row => row && row.error)?.error
+      : 'respons transaksi Redis tidak valid';
+    throw new Error(`Redis multi-exec gagal: ${detail || r.status}`);
+  }
+  return rows.map(row => row?.result);
+}
+
+// Pure/testable. Sengaja mempertahankan aturan watcher lama: hanya `open` dan
+// level SL/TP numerik yang boleh masuk; field historis besar tidak ikut dikirim.
+function _buildAutoSetupWatchlist(log) {
+  if (!Array.isArray(log)) return [];
+  return log.filter(s => s && s.status === 'open').map(s => ({
+    symbol: s.symbol, bias: s.bias, sl: parseFloat(s.sl), tp: parseFloat(s.tp),
+  })).filter(s => Number.isFinite(s.sl) && Number.isFinite(s.tp));
+}
+
+async function persistAutoSetupLog(log) {
+  const entries = Array.isArray(log) ? log : [];
+  return redisMultiExec([
+    ['SET', AUTO_SETUP_LOG_KEY, JSON.stringify(entries)],
+    ['SET', AUTO_SETUP_WATCH_KEY, JSON.stringify(_buildAutoSetupWatchlist(entries))],
+  ]);
+}
+
+async function persistSetupLog(key, log) {
+  if (key === AUTO_SETUP_LOG_KEY) return persistAutoSetupLog(log);
+  return redisCmd('SET', key, JSON.stringify(log));
 }
 
 // ── Arsip setup_log_auto:v1 sebelum tergeser cap 200 (audit 2026-08-27) ────────
@@ -4111,7 +4162,7 @@ async function _corroborateGoldTransitions(log, transitioned) {
       if (inMemory) { delete inMemory.closed_t; Object.assign(inMemory, cur); }
       flagged.push(cur);
     }
-    if (flagged.length) await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(fresh));
+    if (flagged.length) await persistAutoSetupLog(fresh);
   } finally { redisCmd('DEL', lockKey).catch(() => {}); }
   return flagged;
 }
@@ -4496,7 +4547,7 @@ async function _cheapAutoScopeStats() {
 }
 
 async function _buildAutoScopeStats() {
-  const setupLogKey = 'setup_log_auto:v1';
+  const setupLogKey = AUTO_SETUP_LOG_KEY;
   const lockKey = `lock:setuplog_write:${setupLogKey}`;
   const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', '10').catch(() => null);
   if (gotLock !== 'OK') return _cheapAutoScopeStats();
@@ -4590,7 +4641,7 @@ async function _buildAutoScopeStats() {
     if (optimizationApplied.changed) log = optimizationApplied.records;
   } catch (e) { console.warn('AATAS Entry Optimalization shadow gagal (diabaikan):', e.message); }
   const after = JSON.stringify(log);
-  if (after !== before) await redisCmd('SET', setupLogKey, after);
+  if (after !== before) await persistSetupLog(setupLogKey, log);
   await _finalizeSetupTransitions(log, statusBeforeById);
   await redisCmd('SET', SETUP_STATS_LAST_RUN_KEY, new Date().toISOString(), 'EX', '900').catch(() => {});
   return {
@@ -4942,7 +4993,7 @@ async function positionReviewHandler(req, res) {
       const lk = 'lock:setuplog_write:setup_log_auto:v1';
       const got = await redisCmd('SET', lk, '1', 'NX', 'EX', '10').catch(() => null);
       if (got !== 'OK') return; // fail-open: skip tick ini, dicoba lagi request berikutnya
-      try { await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log)); }
+      try { await persistAutoSetupLog(log); }
       finally { redisCmd('DEL', lk).catch(() => {}); }
     };
     const st = log[idx];
@@ -5111,7 +5162,7 @@ async function positionReviewHandler(req, res) {
         // exactly-once yang sama dengan pending/cancel), fire-and-forget.
         _notifyAutoEntryTelegram(stFresh, 'closed_early').catch(() => {});
       }
-      await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(logFresh));
+      await persistAutoSetupLog(logFresh);
       st.review_count = stFresh.review_count; st.intervention = stFresh.intervention;
       st.managed_status = stFresh.managed_status; st.managed_closed_t = stFresh.managed_closed_t;
     } finally { redisCmd('DEL', lockKey2).catch(() => {}); }
@@ -5188,7 +5239,7 @@ async function fridayTightenHandler(req, res) {
       tightened++;
       results.push({ id: st.id, tightened: true, new_sl: newSl });
     }
-    if (tightened > 0) await redisCmd('SET', 'setup_log_auto:v1', JSON.stringify(log));
+    if (tightened > 0) await persistAutoSetupLog(log);
     return res.status(200).json({ ok: true, checked: candidates.length, tightened, results });
   } catch (e) {
     return res.status(500).json({ error: e.message });
@@ -8544,7 +8595,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     }
 
     if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly) {
-      const setupLogKey = isAutoCall ? 'setup_log_auto:v1' : 'setup_log:v1';
+      const setupLogKey = isAutoCall ? AUTO_SETUP_LOG_KEY : 'setup_log:v1';
       // PLAN U-3 lanjutan (2026-07-20, diskusi user): baca-ubah-tulis array ini TIDAK
       // atomik — kalau AUTO_ENTRY_PAIRS diperluas (>1 pair berbagi array yang sama) dan
       // dua request nyaris bersamaan, yang nulis belakangan bisa menimpa perubahan yang
@@ -9030,7 +9081,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         // Fase 2 gagal total (mis. proses berhenti di tengah call AI).
         needsGateA = autoGuardConsidered && !autoGuardReason;
         if (needsGateA) {
-          if (shouldSaveLog) await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
+          if (shouldSaveLog) await persistSetupLog(setupLogKey, log.slice(0, 200));
         } else {
           if (autoGuardReason) {
             blockedByOpenPosition = true; // reuse flag skip existing — setup baru TIDAK disimpan sebagai live
@@ -9060,7 +9111,7 @@ async function ohlcvAnalyzeHandler(req, res) {
             // notifikasi Telegram HANYA untuk auto (setup_log_auto:v1), isolasi U-7.
             if (isAutoCall) _notifyAutoEntryTelegram(newEntry, 'pending').catch(() => {});
           }
-          if (shouldSaveLog) await redisCmd('SET', setupLogKey, JSON.stringify(log.slice(0, 200)));
+          if (shouldSaveLog) await persistSetupLog(setupLogKey, log.slice(0, 200));
         }
       } catch (e) { console.warn('setup_log write failed (fase 1):', e.message); }
       finally { redisCmd('DEL', lockKey).catch(() => {}); } }
@@ -9135,7 +9186,7 @@ async function ohlcvAnalyzeHandler(req, res) {
             } else {
               Object.assign(target, refineCandidate.fields);
               redisCmd('INCR', 'auto_guard_stats:saved_refine').catch(() => {});
-              await redisCmd('SET', setupLogKey, JSON.stringify(log2.slice(0, 200)));
+              await persistSetupLog(setupLogKey, log2.slice(0, 200));
               _notifyAutoEntryTelegram(target, 'pending', { refined: true }).catch(() => {});
             }
           } else if (dup2 || openNow) {
@@ -9148,12 +9199,12 @@ async function ohlcvAnalyzeHandler(req, res) {
             // atas, lihat komentar lengkap di sana. log2 di sini sudah dibaca ULANG segar
             // pasca Gate A (bukan `log` Fase 1 yang mungkin sudah basi).
             log2.unshift({ ...buildNewSetupEntry(), status: 'canceled', canceled_reason: `gate_${gateKey}`, canceled_t: Date.now() });
-            await redisCmd('SET', setupLogKey, JSON.stringify(log2.slice(0, 200)));
+            await persistSetupLog(setupLogKey, log2.slice(0, 200));
           } else {
             redisCmd('INCR', 'auto_guard_stats:saved').catch(() => {});
             const newEntry2 = buildNewSetupEntry();
             log2.unshift(newEntry2);
-            await redisCmd('SET', setupLogKey, JSON.stringify(log2.slice(0, 200)));
+            await persistSetupLog(setupLogKey, log2.slice(0, 200));
             _notifyAutoEntryTelegram(newEntry2, 'pending').catch(() => {});
           }
         } catch (e) { console.warn('setup_log write failed (fase 2):', e.message); }
@@ -9689,6 +9740,8 @@ module.exports._corroborateLevel = _corroborateLevel;
 module.exports._breachDirection = _breachDirection;
 module.exports._corroborateGoldTransitions = _corroborateGoldTransitions;
 module.exports._finalizeSetupTransitions = _finalizeSetupTransitions;
+module.exports._buildAutoSetupWatchlist = _buildAutoSetupWatchlist;
+module.exports.AUTO_SETUP_WATCH_KEY = AUTO_SETUP_WATCH_KEY;
 module.exports.GOLD_BASIS_TOLERANCE_USD = GOLD_BASIS_TOLERANCE_USD;
 module.exports._autoEntryDirectionLabel = _autoEntryDirectionLabel;
 module.exports._resolveFundamentalPct = _resolveFundamentalPct;

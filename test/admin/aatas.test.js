@@ -31,6 +31,7 @@ const {
   _enforceAatasRrGate, _normalizeFundamentalCase,
   _goldYieldCorrAnomaly, _countGoldRegimeAligned, _formatAatasCriticLine, _statsPayloadFromLog, AATAS_PROMPT_VERSION,
   _describeAatasAiFailure, _formatAatasAiHealthNotification,
+  _buildAutoSetupWatchlist, AUTO_SETUP_WATCH_KEY,
 } = loadHandler();
 
 test('AATAS AI health: penyebab disanitasi untuk operator dan pesan selalu menegaskan fail-safe setup baru', () => {
@@ -40,6 +41,16 @@ test('AATAS AI health: penyebab disanitasi untuk operator dan pesan selalu meneg
   const notice = _formatAatasAiHealthNotification({ state: 'unavailable', reason: 'Saldo API DeepSeek habis (HTTP 402).' });
   assert.match(notice.telegram, /Tidak ada setup virtual baru yang dibuat/);
   assert.match(notice.push.body, /ditahan aman/);
+});
+
+test('_buildAutoSetupWatchlist: hanya setup open dengan SL/TP valid yang masuk key kecil watcher', () => {
+  const out = _buildAutoSetupWatchlist([
+    { id: 'open', status: 'open', symbol: 'GBPJPY=X', bias: 'bearish', sl: '201.25', tp: '198.75', reasoning_note: 'besar' },
+    { id: 'pending', status: 'pending', symbol: 'EURUSD=X', bias: 'bullish', sl: 1.08, tp: 1.10 },
+    { id: 'invalid', status: 'open', symbol: 'USDJPY=X', bias: 'bullish', sl: 'bukan-angka', tp: 156 },
+  ]);
+  assert.equal(AUTO_SETUP_WATCH_KEY, 'setup_watch_open:v1');
+  assert.deepEqual(out, [{ symbol: 'GBPJPY=X', bias: 'bearish', sl: 201.25, tp: 198.75 }]);
 });
 
 // ── PLAN AC Tahap 1 (2026-09-06): blok [DATA RILIS EKONOMI] — fundamental:<CUR> ke Call 1 ─
@@ -1028,44 +1039,46 @@ test('_statsPayloadFromLog: entri lama tanpa policy_v dinilai lewat policy_v_est
 // array datar [k, v, k, v, ...] persis seperti Upstash.
 function makeStore(seed = {}, hashes = {}) { return { strings: { ...seed }, lists: {}, hashes: { ...hashes } }; }
 
+function executeRedisCommand(store, args) {
+  const [cmd, key, ...rest] = args;
+  switch (cmd) {
+    case 'GET': return Object.prototype.hasOwnProperty.call(store.strings, key) ? store.strings[key] : null;
+    case 'SET': {
+      const flags = rest.slice(1).map(v => String(v).toUpperCase());
+      if (flags.includes('NX') && Object.prototype.hasOwnProperty.call(store.strings, key)) return null;
+      store.strings[key] = rest[0];
+      return 'OK';
+    }
+    case 'DEL': delete store.strings[key]; return 1;
+    case 'INCR': {
+      const n = (parseInt(store.strings[key] || '0', 10)) + 1;
+      store.strings[key] = String(n);
+      return n;
+    }
+    // AATAS v2: `aatas_reject_log:v1` (jejak kandidat yang ditolak) bertipe LIST.
+    case 'LPUSH':
+      store.lists[key] = [rest[0], ...(store.lists[key] || [])];
+      return store.lists[key].length;
+    case 'LTRIM': {
+      const stop = parseInt(rest[1], 10);
+      if (store.lists[key]) store.lists[key] = store.lists[key].slice(0, stop + 1);
+      return 'OK';
+    }
+    case 'HGETALL': {
+      const h = (store.hashes || {})[key];
+      return h ? Object.entries(h).flatMap(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]) : [];
+    }
+    default: return 'OK';
+  }
+}
+
 function redisFetchStub(store) {
   return async (url, opts) => {
     const args = JSON.parse(opts.body);
-    const [cmd, key, ...rest] = args;
-    switch (cmd) {
-      case 'GET':
-        return { ok: true, json: async () => ({ result: Object.prototype.hasOwnProperty.call(store.strings, key) ? store.strings[key] : null }) };
-      case 'SET': {
-        const flags = rest.slice(1).map(v => String(v).toUpperCase());
-        if (flags.includes('NX') && Object.prototype.hasOwnProperty.call(store.strings, key)) {
-          return { ok: true, json: async () => ({ result: null }) };
-        }
-        store.strings[key] = rest[0];
-        return { ok: true, json: async () => ({ result: 'OK' }) };
-      }
-      case 'DEL': delete store.strings[key]; return { ok: true, json: async () => ({ result: 1 }) };
-      case 'INCR': {
-        const n = (parseInt(store.strings[key] || '0', 10)) + 1;
-        store.strings[key] = String(n);
-        return { ok: true, json: async () => ({ result: n }) };
-      }
-      // AATAS v2: `aatas_reject_log:v1` (jejak kandidat yang ditolak) bertipe LIST.
-      case 'LPUSH': {
-        store.lists[key] = [rest[0], ...(store.lists[key] || [])];
-        return { ok: true, json: async () => ({ result: store.lists[key].length }) };
-      }
-      case 'LTRIM': {
-        const stop = parseInt(rest[1], 10);
-        if (store.lists[key]) store.lists[key] = store.lists[key].slice(0, stop + 1);
-        return { ok: true, json: async () => ({ result: 'OK' }) };
-      }
-      case 'HGETALL': {
-        const h = (store.hashes || {})[key];
-        const flat = h ? Object.entries(h).flatMap(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]) : [];
-        return { ok: true, json: async () => ({ result: flat }) };
-      }
-      default: return { ok: true, json: async () => ({ result: 'OK' }) };
+    if (String(url).endsWith('/multi-exec')) {
+      return { ok: true, json: async () => args.map(command => ({ result: executeRedisCommand(store, command) })) };
     }
+    return { ok: true, json: async () => ({ result: executeRedisCommand(store, args) }) };
   };
 }
 
@@ -1346,6 +1359,7 @@ test('AATAS e2e: field checklist (termasuk reasoning_note) tersimpan ke setup_lo
       assert.equal(res.statusCode, 200);
 
       const log = JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.deepEqual(JSON.parse(store.strings['setup_watch_open:v1']), [], 'setup pending tidak boleh ikut watcher, tetapi key kecil harus tetap tersinkron');
       const st = log[0];
       assert.equal(st.checklist_pct, 82);
       assert.equal(st.verdict, 'SIAP TRADE');

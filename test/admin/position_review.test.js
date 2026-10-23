@@ -323,6 +323,15 @@ function combinedStub({ log, candles = [], calThis = { events: [] }, calNext = {
       return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(aiJson) } }] }) };
     }
     const args = JSON.parse(opts.body);
+    if (Array.isArray(args[0])) {
+      const results = args.map(command => {
+        if (command[0] === 'SET' && command[1] === 'setup_log_auto:v1') {
+          log.length = 0; log.push(...JSON.parse(command[2]));
+        }
+        return { result: 'OK' };
+      });
+      return { ok: true, json: async () => results };
+    }
     if (args[0] === 'GET') {
       const key = args[1];
       if (key === 'setup_log_auto:v1') return { ok: true, json: async () => ({ result: JSON.stringify(log) }) };

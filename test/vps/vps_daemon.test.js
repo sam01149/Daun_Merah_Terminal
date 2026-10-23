@@ -11,7 +11,7 @@ const path = require('path');
 
 const {
   mergeClosedCandle, normalizeDerivCandle, isHighImpactCategory, priceInZone,
-  YAHOO_TO_DERIV_SYMBOL, priceCrossesLevel,
+  YAHOO_TO_DERIV_SYMBOL, priceCrossesLevel, parseOpenSetupWatchlist, AUTO_SETUP_WATCH_KEY,
 } = require('../../vps/daemon.js');
 const { mapYahooSymbolToDeriv } = require('../../api/_ohlcv_fetch.js');
 
@@ -123,4 +123,16 @@ test('priceCrossesLevel: input non-finite -> false, bukan crash', () => {
   assert.equal(priceCrossesLevel('bearish', NaN, 105, 95), false);
   assert.equal(priceCrossesLevel('bearish', 100, null, 95), false);
   assert.equal(priceCrossesLevel('bullish', 100, 95, undefined), false);
+});
+
+test('parseOpenSetupWatchlist: key kecil menerima hanya setup open valid dan membedakan array kosong dari data rusak', () => {
+  assert.equal(AUTO_SETUP_WATCH_KEY, 'setup_watch_open:v1');
+  assert.deepEqual(parseOpenSetupWatchlist(JSON.stringify([
+    { status: 'open', symbol: 'GBPJPY=X', bias: 'bearish', sl: '201.25', tp: '198.75' },
+    { status: 'pending', symbol: 'EURUSD=X', bias: 'bullish', sl: 1.08, tp: 1.10 },
+    { status: 'open', symbol: 'USDJPY=X', bias: 'bullish', sl: 'salah', tp: 156 },
+  ])), [{ symbol: 'GBPJPY=X', bias: 'bearish', sl: 201.25, tp: 198.75 }]);
+  assert.deepEqual(parseOpenSetupWatchlist('[]'), [], 'array kosong valid: watcher tidak boleh fallback ke log besar');
+  assert.equal(parseOpenSetupWatchlist('{korup'), null, 'data korup harus memicu fallback aman');
+  assert.equal(parseOpenSetupWatchlist(null), null, 'key belum ada harus memicu migrasi kompatibel');
 });

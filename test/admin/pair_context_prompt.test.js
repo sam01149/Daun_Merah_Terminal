@@ -77,6 +77,7 @@ function makeFetchStub({ redisFixtures = {}, captured }) {
     const u = String(url);
     if (u.includes('fake-redis.test')) {
       const args = JSON.parse(opts.body);
+      if (Array.isArray(args[0])) return { ok: true, json: async () => args.map(() => ({ result: 'OK' })) };
       const [cmd, key] = args;
       if (cmd === 'GET') {
         const has = Object.prototype.hasOwnProperty.call(redisFixtures, key);
@@ -262,6 +263,13 @@ test('ohlcv_analyze: auto=1 DENGAN x-cron-secret valid -> source auto, masuk set
       const u = String(url);
       if (u.includes('fake-redis.test')) {
         const args = JSON.parse(opts.body);
+        if (Array.isArray(args[0])) {
+          const results = args.map(([cmd, key, value]) => {
+            if (cmd === 'SET' && key === 'setup_log_auto:v1') redisLogAuto.value = value;
+            return { result: 'OK' };
+          });
+          return { ok: true, json: async () => results };
+        }
         const [cmd, key, val] = args;
         if (key === 'setup_log_auto:v1') {
           if (cmd === 'GET') return { ok: true, json: async () => ({ result: redisLogAuto.value }) };

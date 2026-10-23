@@ -87,6 +87,13 @@ function makeStore(seed = {}) { return { strings: { ...seed }, lists: {} }; }
 function redisFetchStub(store) {
   return async (url, opts) => {
     const args = JSON.parse(opts.body);
+    if (Array.isArray(args[0])) {
+      const results = args.map(([cmd, key, value]) => {
+        if (cmd === 'SET') store.strings[key] = value;
+        return { result: 'OK' };
+      });
+      return { ok: true, json: async () => results };
+    }
     const [cmd, key, ...rest] = args;
     switch (cmd) {
       case 'GET':

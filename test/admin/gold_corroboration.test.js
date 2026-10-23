@@ -96,6 +96,13 @@ test('_corroborateGoldTransitions: GC=F sl TIDAK dikonfirmasi Twelve Data -> rev
     const u = String(url);
     if (u.includes('fake-upstash.test')) {
       const args = JSON.parse(opts.body);
+      if (Array.isArray(args[0])) {
+        const results = args.map(([cmd, key, value]) => {
+          if (cmd === 'SET') store[key] = value;
+          return { result: 'OK' };
+        });
+        return { ok: true, json: async () => results };
+      }
       const [cmd, key, ...rest] = args;
       if (cmd === 'GET') return { ok: true, json: async () => ({ result: Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null }) };
       if (cmd === 'SET') {

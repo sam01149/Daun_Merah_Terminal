@@ -1232,11 +1232,28 @@ async function maybeCheckPriceZone(yahooSymbol) {
 // penuh untuk XAU di atas kecepatan beberapa menit. `lastLivePrice['GC=F']`
 // sekarang tidak pernah terisi (fail-open, consumer-nya sudah cek `== null`).
 // ══════════════════════════════════════════════════════════════════════════
-const SETUP_WATCH_CACHE_TTL_MS = 2 * 60 * 1000; // sama semangat ZONE_DATA_CACHE_TTL_MS — GET setup_log_auto:v1 murah, tak perlu tiap tick
+const AUTO_SETUP_WATCH_KEY = 'setup_watch_open:v1';
+const SETUP_WATCH_CACHE_TTL_MS = 2 * 60 * 1000; // cache lokal tetap mencegah GET kecil ini terjadi pada setiap tick
 const SETUP_TRIGGER_DEBOUNCE_MS = 20 * 1000; // sanity debounce trigger HTTP per symbol, BUKAN pembatas budget (endpoint tujuan murni baca/tulis Redis, tanpa call AI)
 let openSetupsCache = { data: [], fetchedAt: 0 };
 let openSetupsFetchInFlight = null;
 const lastSetupTriggerAt = {}; // yahooSymbol -> epoch ms trigger terakhir
+
+// Key kecil ini ditulis atomik bersama setup_log_auto:v1 oleh api/admin.js.
+// `null` berarti key tidak ada/korup sehingga caller boleh fallback ke log lama;
+// array kosong justru valid: tidak ada setup open saat ini.
+function parseOpenSetupWatchlist(raw) {
+  if (typeof raw !== 'string') return null;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return null;
+    return arr.filter(s => s && s.status === 'open').map(s => ({
+      symbol: s.symbol, bias: s.bias, sl: parseFloat(s.sl), tp: parseFloat(s.tp),
+    })).filter(s => Number.isFinite(s.sl) && Number.isFinite(s.tp));
+  } catch (_) {
+    return null;
+  }
+}
 
 async function getOpenSetupsWatchlist() {
   const now = Date.now();
@@ -1246,12 +1263,23 @@ async function getOpenSetupsWatchlist() {
   const p = (async () => {
     let data = [];
     try {
-      const raw = await redisCmd('GET', 'setup_log_auto:v1');
-      const arr = raw ? JSON.parse(raw) : [];
-      if (Array.isArray(arr)) {
-        data = arr.filter(s => s && s.status === 'open').map(s => ({
-          symbol: s.symbol, bias: s.bias, sl: parseFloat(s.sl), tp: parseFloat(s.tp),
-        })).filter(s => Number.isFinite(s.sl) && Number.isFinite(s.tp));
+      const rawWatch = await redisCmd('GET', AUTO_SETUP_WATCH_KEY);
+      const compact = parseOpenSetupWatchlist(rawWatch);
+      if (compact !== null) {
+        data = compact;
+      } else {
+        // Kompatibilitas data lama: sebelum deploy ini key kecil belum ada. Baca
+        // log besar sekali saja per TTL lalu isi key baru dengan NX. NX penting:
+        // bila writer atomik membuat state lebih baru di tengah fallback, hasil
+        // fallback tidak boleh menimpanya.
+        const rawLegacy = await redisCmd('GET', 'setup_log_auto:v1');
+        const legacy = parseOpenSetupWatchlist(rawLegacy);
+        if (legacy !== null) {
+          data = legacy;
+          if (rawWatch == null) {
+            redisCmd('SET', AUTO_SETUP_WATCH_KEY, JSON.stringify(legacy), 'NX').catch(() => {});
+          }
+        }
       }
     } catch (e) { /* watchlist tetap basi, dicoba lagi setelah TTL cache lewat */ }
     openSetupsCache = { data, fetchedAt: Date.now() };
@@ -2069,7 +2097,7 @@ module.exports = {
   mergeClosedCandle, normalizeDerivCandle, isHighImpactCategory, priceInZone,
   YAHOO_TO_DERIV_SYMBOL, DERIV_TO_YAHOO_SYMBOL,
   // Q-7 (pure/testable):
-  priceCrossesLevel,
+  priceCrossesLevel, parseOpenSetupWatchlist, AUTO_SETUP_WATCH_KEY,
   // Self-healing (pure/testable):
   createRedisGuard, shouldForceReconnect, isFxMarketOpen, newestCandleEpoch, isCandleStale,
   // U-3 (pure/testable):
