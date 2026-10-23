@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-23 (Session 406 — Akar bandwidth Upstash)
+> **Last updated:** 2026-10-23 (Session 407 — Retensi aman untuk bandwidth watcher)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 407 (2026-10-23) — Retensi aman untuk bandwidth watcher
+
+**Ini mekanisme lama yang membesar, bukan jalur baru.** Watcher TP/SL real-time diperkenalkan pada commit `5ce1a97` tanggal 2026-07-28. Dari awal ia membaca `setup_log_auto:v1` penuh lalu memfilter status `open`, dengan cache proses dua menit. Ketika dibuat, komentar menyebut pembacaan itu murah; penilaian itu tidak lagi benar setelah record bertambah kaya dan ukuran key mencapai 803.709 byte.
+
+**Risiko kuota nyata.** Dengan 7 GB dari 10 GB telah terpakai dan laju aktual 382–500 MB per hari, sisa nominal sekitar 3 GB hanya cukup sekitar 6–8 hari bila laju bertahan; tanggal reset billing tidak terlihat di layar, sehingga tidak aman mengandalkan reset tiba lebih dahulu. Angka 7 GB dibulatkan dashboard, jadi ini peringatan rentang, bukan waktu habis yang presisi.
+
+**Penghapusan bukan obatnya.** Probe produksi mendapati 121 dari cap 200 entry: 1 `open`, 3 `pending`, serta 117 entry selesai/tertutup (58 canceled, 35 SL, 17 TP, 5 expired, 1 ambiguous, 1 invalid). Watcher memang hanya membutuhkan satu entry `open`, tetapi entry selesai adalah populasi statistik hasil AATAS; menghapusnya untuk mengecilkan key akan menghapus bukti TP/SL dan merusak evaluasi kebijakan. Arsip 5.000 entry juga bukan sumber masalah karena tidak dibaca oleh watcher.
+
+**Arah perbaikan yang aman (belum dieksekusi).** Buat key turunan kecil, misalnya `setup_watch_open:v1`, berisi hanya `{symbol,bias,sl,tp}` untuk status `open`. Semua jalur yang menulis `setup_log_auto:v1` harus melalui satu helper yang menulis log utama dan menghitung ulang key turunan di bawah lock yang sama. Daemon membaca key kecil ini setiap dua menit; jika key hilang/korup, ia satu kali membaca log penuh lalu membangunnya lagi. Riwayat penuh dan arsip tidak dihapus. Ini menghilangkan transfer berulang ~804 KB sambil mempertahankan data statistik dan perilaku TP/SL.
 
 ## Changelog Session 406 (2026-10-23) — Akar bandwidth Upstash
 
