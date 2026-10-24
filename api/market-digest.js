@@ -2181,7 +2181,15 @@ ${historyBlock}`;
     // dari run history: terlambat sampai ~10 jam dari jadwal). Frontend sudah
     // menampilkan umur "X jam lalu" (lihat ageStr, ringkasanGeneratedAt) jadi kartu
     // basi tetap jujur ke user — basi-tapi-tampil jauh lebih baik dari kosong total.
-    redisCmd('SET', 'latest_article', JSON.stringify(toCache), 'EX', 86400).catch(() => {});
+    // BUKAN fire-and-forget: pada serverless, respons yang sudah dikirim dapat
+    // menghentikan proses sebelum request Redis selesai. Itu membuat generator
+    // sukses tetapi mode=cached tetap kosong, sehingga fallback per-sesi tidak
+    // punya bukti hasil baru. Simpan cache wajib selesai sebelum handler membalas.
+    try {
+      await redisCmd('SET', 'latest_article', JSON.stringify(toCache), 'EX', 86400);
+    } catch(e) {
+      console.warn('market-digest: latest_article Redis save failed:', e.message);
+    }
     // A2.2: notify subscribers once per successful digest — fire-and-forget, never block the response.
     notifyDigestReady(article).catch(e => console.warn('Digest-ready push failed:', e.message));
   }

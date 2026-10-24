@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-24 (Session 410 — Fallback Ringkasan per sesi)
+> **Last updated:** 2026-10-24 (Session 411 — Cache Ringkasan harus tersimpan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 411 (2026-10-24) — Cache Ringkasan harus tersimpan sebelum respons
+
+**Temuan saat verifikasi produksi Session 410.** Workflow fallback baru terbukti membaca cache kosong dan menjalankan generator walau heartbeat Railway `OK`. DeepSeek menghasilkan Ringkasan valid dalam 7,2 detik dan endpoint membalas HTTP 200, tetapi pembacaan `mode=cached` sesudahnya masih kosong. Penyebabnya adalah penyimpanan `latest_article` sebelumnya fire-and-forget: handler dapat mengirim respons dan selesai sebelum request Upstash benar-benar tertulis.
+
+**Perbaikan.** Penulisan `latest_article` sekarang di-`await` sebelum handler mengirim respons. Kegagalan Redis tetap tidak menjatuhkan Ringkasan yang baru dibuat, tetapi sekarang dicatat jelas di log; sukses penyimpanan menjadi bagian dari jalur normal, bukan side effect yang boleh hilang. Ini memastikan pembaca UI dan pemeriksa fallback sesi mendapatkan cache yang sama dengan respons generator.
+
+**Verifikasi.** Regresi baru mengunci bahwa penulisan cache wajib ditunggu dan pola fire-and-forget lama tidak boleh kembali. Setelah deploy, satu workflow manual akan dipakai untuk membuktikan respons generator dan cache baca bersama-sama; itu memerlukan paling banyak satu panggilan DeepSeek tambahan.
 
 ## Changelog Session 410 (2026-10-24) — Fallback Ringkasan per sesi
 

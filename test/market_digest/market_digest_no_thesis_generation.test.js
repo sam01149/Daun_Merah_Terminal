@@ -12,6 +12,11 @@ test('market digest mematikan Call 3 thesis pada semua jalur', () => {
   assert.match(source, /if \(!GENERATE_TRADE_THESIS\) \{[\s\S]*?Call 3 disabled/);
 });
 
+test('market digest menunggu latest_article tersimpan sebelum membalas', () => {
+  assert.match(source, /await redisCmd\('SET', 'latest_article', JSON\.stringify\(toCache\), 'EX', 86400\)/);
+  assert.doesNotMatch(source, /redisCmd\('SET', 'latest_article', JSON\.stringify\(toCache\), 'EX', 86400\)\.catch/);
+});
+
 test('payload baru tidak lagi membawa thesis generatif', () => {
   const payloadStart = source.lastIndexOf('const payload = {', source.indexOf('// Persist full payload'));
   const payloadEnd = source.indexOf('\n  };', payloadStart);
