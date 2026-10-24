@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-24 (Session 409 — Verifikasi pembaruan Ringkasan)
+> **Last updated:** 2026-10-24 (Session 410 — Fallback Ringkasan per sesi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 410 (2026-10-24) — Fallback Ringkasan per sesi
+
+**Masalah ditutup.** Pemeriksaan sebelumnya membuktikan heartbeat Railway dapat tetap sehat ketika scheduler `market-digest` berhenti memperbarui cache. Akibatnya GitHub Actions lama selalu melewati fallback dan Ringkasan basi hampir 24 jam. Fallback sekarang tidak lagi menjadikan heartbeat sebagai satu-satunya syarat.
+
+**Perilaku baru.** Setiap run `market-digest.yml` membaca cache `mode=cached` secara aman lalu membandingkan `generated_at` dengan slot sesi UTC terakhir yang seharusnya sudah dimulai: 00:02 (Asia), 07:02 (London), atau 12:32 (New York). Jika belum ada hasil untuk slot itu—termasuk cache kosong, rusak, atau bertanggal masa depan—GitHub memicu generator walau VPS mengaku hidup. Jika daemon memang sudah membuat Ringkasan pada slot sama, fallback tetap diam; jadi run GitHub yang terlambat tidak menimpa hasil sesi valid atau memboroskan panggilan AI.
+
+**Pengujian.** Helper kecil `scripts/digest_session_fresh.js` memegang satu definisi slot yang dipakai workflow dan diuji untuk pergantian sesi, periode sebelum sesi Asia, cache sesi lama, cache kosong/rusak, serta clock masa depan. Workflow hanya memeriksa cache dan tidak memicu generasi selama pengujian lokal.
 
 ## Changelog Session 409 (2026-10-24) — Verifikasi pembaruan Ringkasan
 

@@ -37,9 +37,12 @@ name: Market Digest Session-Open Runs
 # 12:32, dedup 3 jam di atas menganggap cache 28 menit itu "masih fresh" dan
 # SKIP — digest New York yang harusnya segar jadi tidak pernah benar-benar
 # ter-generate, walau VPS-nya sendiri sudah benar jalan on-time. Sekarang GH
-# Actions cek `vps:heartbeat` (Plan Q-1) dulu: VPS hidup -> GH Actions diam
-# (VPS yang pegang jadwal, tepat waktu), VPS mati/tidak kebaca -> GH Actions
-# BARU jalan sebagai fallback sungguhan seperti niat aslinya Session 323.
+# Actions sekarang cek DUA bukti: heartbeat VPS DAN apakah cache sudah dibuat
+# untuk slot sesi UTC yang sedang berjalan. Heartbeat hanya membuktikan proses
+# daemon hidup, bukan callback scheduler digest berjalan; insiden 2026-10-24
+# membuktikan cache dapat basi hampir 24 jam sementara heartbeat tetap OK dan
+# semua fallback lama terlewati. Pembanding slot (bukan umur tetap) menjaga
+# straggler GH yang terlambat tidak menimpa digest valid dari sesi yang sama.
 on:
   schedule:
     - cron: '2 0 * * *'   # 00:02 UTC = 07:02 WIB — sesi Asia (+2 menit)
@@ -51,6 +54,8 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Cek heartbeat VPS Railway (VPS hidup = biar VPS saja yang pegang jadwal ini)
         id: vps
         run: |
@@ -67,8 +72,24 @@ jobs:
             echo "alive=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Trigger market digest generation (fallback — VPS tidak sehat)
-        if: steps.vps.outputs.alive == 'false'
+      - name: Cek cache Ringkasan untuk sesi UTC saat ini
+        id: digest
+        run: |
+          STATUS=$(curl -sS -o /tmp/digest-cache.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 15 \
+            "https://financial-feed-app.vercel.app/api/market-digest?mode=cached")
+          GENERATED_AT=$(jq -r '.generated_at // empty' /tmp/digest-cache.json 2>/dev/null || true)
+          if [ "$STATUS" = "200" ]; then
+            SESSION_FRESH=$(node scripts/digest_session_fresh.js /tmp/digest-cache.json)
+          else
+            SESSION_FRESH=false
+          fi
+          echo "HTTP $STATUS, generated_at: ${GENERATED_AT:-missing}, session_fresh: $SESSION_FRESH"
+          echo "session_fresh=$SESSION_FRESH" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger market digest generation (fallback — VPS tidak sehat atau sesi belum dibuat)
+        if: steps.vps.outputs.alive == 'false' || steps.digest.outputs.session_fresh != 'true'
         run: |
           STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
