@@ -24,7 +24,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perbaikan.** Penulisan `latest_article` sekarang di-`await` sebelum handler mengirim respons. Kegagalan Redis tetap tidak menjatuhkan Ringkasan yang baru dibuat, tetapi sekarang dicatat jelas di log; sukses penyimpanan menjadi bagian dari jalur normal, bukan side effect yang boleh hilang. Ini memastikan pembaca UI dan pemeriksa fallback sesi mendapatkan cache yang sama dengan respons generator.
 
-**Verifikasi.** Regresi baru mengunci bahwa penulisan cache wajib ditunggu dan pola fire-and-forget lama tidak boleh kembali. Setelah deploy, satu workflow manual akan dipakai untuk membuktikan respons generator dan cache baca bersama-sama; itu memerlukan paling banyak satu panggilan DeepSeek tambahan.
+**Verifikasi.** Regresi baru mengunci bahwa penulisan cache wajib ditunggu dan pola fire-and-forget lama tidak boleh kembali. `npm test` lulus 1.480/1.480. Setelah deploy, run manual GitHub Actions `40043498917` sukses: fallback berjalan walau heartbeat VPS `OK`, DeepSeek menghasilkan artikel, dan pembacaan `mode=cached` sesudahnya mengembalikan `generated_at` `2026-10-24T00:09:03Z`, method `deepseek-v4-pro`, 1.809 karakter artikel, 150 berita, serta 80 headline sumber. Jadi generator dan cache pembaca kini terbukti tersambung.
 
 ## Changelog Session 410 (2026-10-24) — Fallback Ringkasan per sesi
 
