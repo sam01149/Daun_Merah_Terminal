@@ -111,7 +111,9 @@ test('_renderStructuredAi: tidak crash saat sl/tp/entry_zone dari AI berupa numb
   };
   const out = _renderStructuredAi(structured, '', 'qwen-3-32b', true, false, true, '2026-07-06T10:00:00Z');
   assert.ok(out.includes('4166') && out.includes('4155.5') && out.includes('4210'));
-  assert.ok(out.includes('MOMENTUM') && out.includes('MAKRO BULLISH'));
+  assert.ok(out.includes('MOMENTUM') && out.includes('BULLISH'));
+  assert.ok(out.includes('ALASAN MAKRO') && out.includes('Real yield turun dan bias Fed dovish'));
+  assert.doesNotMatch(out, /MAKRO BULLISH|MAKRO SEARAH|DXY melemah sejalan bias bullish XAU/);
   assert.ok(out.includes('body 0.5-1 ATR') && out.includes('SL di balik wick rejection'));
   assert.ok(out.includes('RR minimum 1:2') && out.includes('bukan breakout'));
 

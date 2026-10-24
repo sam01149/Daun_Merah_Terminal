@@ -4906,7 +4906,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.23.2';
+const APP_VERSION = '2026.10.24.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -7251,31 +7251,16 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
     const biasLabel = bias === 'bullish' ? 'BULLISH' : bias === 'bearish' ? 'BEARISH' : bias === 'mixed' ? 'MIXED' : 'NEUTRAL';
     const strategyLabels = { momentum: 'MOMENTUM', range: 'RANGE', tactical_fade: 'TACTICAL FADE', no_trade: 'NO TRADE' };
     const strategyLabel = strategyLabels[structured.strategy_id] || null;
-    const macroDirLabel = structured.macro_direction ? String(structured.macro_direction).toUpperCase() : null;
-    
-    let alignChip = '';
-    if (structured.makro_alignment) {
-      const a = structured.makro_alignment;
-      const ac = a === 'searah' ? 'var(--green)' : a === 'konflik' ? '#f5a623' : 'var(--muted)';
-      const al = a === 'searah' ? 'MAKRO SEARAH' : a === 'konflik' ? 'MAKRO KONFLIK' : '– MAKRO NETRAL';
-      alignChip = `<span title="${escHtml(structured.makro_alignment_reason || '')}" style="border:1px solid ${ac};color:${ac};font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${al}</span>`;
-    }
-
     html += `<div class="analisa-tf-card" style="border-left-color: var(--accent); margin-bottom: 12px;">
       <div class="analisa-tf-label" style="color:var(--accent) !important">AI SETUP &amp; BIAS</div>
       <div style="display:flex;align-items:center;gap:10px;margin:8px 0 10px;flex-wrap:wrap">
         <span style="background:${biasColor};color:#0a0f1a;font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${biasLabel}</span>
         ${strategyLabel ? `<span style="border:1px solid var(--accent);color:var(--accent);font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em">${strategyLabel}</span>` : ''}
-        ${macroDirLabel ? `<span style="border:1px solid var(--border);color:var(--text);font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em">MAKRO ${escHtml(macroDirLabel)}</span>` : ''}
-        ${alignChip}
         ${structured.trigger ? `<span style="font-size:11px;color:var(--text);flex:1;min-width:160px;line-height:1.5">${escHtml(structured.trigger)}</span>` : ''}
       </div>`;
 
-    if (structured.makro_alignment_reason) {
-      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">MAKRO </span>${escHtml(structured.makro_alignment_reason)}</div>`;
-    }
     if (structured.macro_reason) {
-      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">DASAR ARAH </span>${escHtml(structured.macro_reason)}</div>`;
+      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">ALASAN MAKRO </span>${escHtml(structured.macro_reason)}</div>`;
     }
     if (structured.trigger_contract) {
       const tc = structured.trigger_contract;

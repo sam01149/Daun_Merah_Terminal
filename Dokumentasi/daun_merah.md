@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-24 (Session 411 — Cache Ringkasan harus tersimpan)
+> **Last updated:** 2026-10-24 (Session 412 — Ringkas kesimpulan Analisa)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 412 (2026-10-24) — Ringkas kesimpulan Analisa
+
+**Masalah.** Bagian `AI Setup & Bias` mengulang kesimpulan yang sama: arah bias, arah makro, status keselarasan makro, lalu dua alasan makro yang sering menjelaskan hal serupa. Pada contoh XAU/USD, pengguna menerima `BEARISH`, `MAKRO BEARISH`, dan `MAKRO SEARAH` sekaligus sebelum membaca alasan utamanya.
+
+**Perbaikan.** Tampilan kini menyisakan dua keputusan yang memang berbeda: bias dan strategi/aksi (`NO TRADE` bila dipilih). `MAKRO BEARISH`, `MAKRO SEARAH`, serta alasan keselarasan tidak lagi ditampilkan di kartu. Satu penjelasan tetap dipertahankan sebagai `ALASAN MAKRO`, sementara trigger, invalidasi, dan horizon tidak berubah. Data mentah keselarasan tetap ada untuk kontrak server, kritikus, dan audit; perubahan ini murni pengurangan noise di antarmuka Analisa. `APP_VERSION` dinaikkan ke `2026.10.24.1` agar PWA mengambil tampilan baru.
+
+**Verifikasi.** Regresi renderer mengunci bahwa alasan makro utama tetap terlihat, sedangkan tiga label/teks makro yang berulang tidak kembali.
 
 ## Changelog Session 411 (2026-10-24) — Cache Ringkasan harus tersimpan sebelum respons
 
