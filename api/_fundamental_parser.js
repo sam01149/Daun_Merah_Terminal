@@ -3,6 +3,8 @@
 // Used by market-digest.js (via digest pipeline) and admin.js (via fundamental_refresh).
 // All functions are pure except autoUpdateFundamentals which requires a redisCmd function.
 
+const { persistMacroReleases } = require('./_macro_surprise');
+
 const FUND_PREFIX_MAP = [
   { kw: [
       'non-farm payroll','nonfarm payroll','non farm payroll',' nfp ','nfp:',
@@ -522,19 +524,30 @@ function extractFundamentalFromCalendarEvent(e) {
 // fetch/parse → array kosong, caller cukup skip lapis calendar untuk tick itu.
 async function _fetchCalendarEventsForFund(redisCmd) {
   try {
-    const [raw1, raw2] = await Promise.all([
+    const [raw1, raw2, rawSurprise1, rawSurprise2] = await Promise.all([
       redisCmd('GET', 'calendar_v1'),
       redisCmd('GET', 'calendar_next_v1'),
+      redisCmd('GET', 'calendar_surprise_v1'),
+      redisCmd('GET', 'calendar_surprise_next_v1'),
     ]);
-    const events = [];
-    for (const raw of [raw1, raw2]) {
+    const byRelease = new Map();
+    for (const raw of [raw1, raw2, rawSurprise1, rawSurprise2]) {
       if (!raw) continue;
       try {
         const c = JSON.parse(raw);
-        if (Array.isArray(c?.events)) events.push(...c.events);
+        if (Array.isArray(c?.events)) {
+          for (const event of c.events) {
+            const key = `${event.date || ''}|${event.time_wib || ''}|${event.currency || ''}|${event.event || event.title || ''}`;
+            const prior = byRelease.get(key) || {};
+            // calendar_v1 membawa field display; calendar_surprise_v1 membawa
+            // seluruh impact termasuk raw numbers. Merge menjaga keduanya tanpa
+            // menghitung rilis yang sama dua kali.
+            byRelease.set(key, { ...prior, ...event });
+          }
+        }
       } catch(_) { /* fail-open, skip batch yang rusak */ }
     }
-    return events;
+    return [...byRelease.values()];
   } catch(e) {
     console.warn('fundamental: fetch calendar_v1/calendar_next_v1 gagal:', e.message);
     return [];
@@ -549,6 +562,11 @@ async function _fetchCalendarEventsForFund(redisCmd) {
 // sama) dan bukan berebut siapa yang menang secara kebetulan urutan async.
 async function autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd) {
   if (!Array.isArray(calendarEvents)) return {};
+  // Histori standardized-surprise disimpan dari raw actual/forecast sebelum
+  // filter kartu Fundamental. Gagal menyimpan histori tidak boleh memblokir
+  // update fundamental existing.
+  try { await persistMacroReleases(calendarEvents, redisCmd); }
+  catch (e) { console.warn('macro surprise history write failed:', e.message); }
   const byCurrency = {};
   for (const e of calendarEvents) {
     const fund = extractFundamentalFromCalendarEvent(e);

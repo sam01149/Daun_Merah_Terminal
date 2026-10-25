@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-25 (Session 413 — Smart Bias Dashboard dan eksekusi Prime)
+> **Last updated:** 2026-10-25 (Session 414 — Fondasi surprise makro Smart Bias)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 414 (2026-10-25) — Fondasi surprise makro Smart Bias
+
+**Masalah.** Formula awal Growth/Inflation memperlakukan setiap rilis sebagai suara penuh berdasarkan actual di atas/bawah forecast dengan toleransi tetap 0,5%. Itu membuat sel mudah terlihat `Campur` dan menyamakan miss 0,1 poin dengan kejutan besar. Cache `fundamental:<CUR>` juga hanya menyimpan observasi terbaru, sehingga tidak mempunyai distribusi kesalahan forecast untuk menilai besar-kecilnya surprise secara sah.
+
+**Fondasi baru, belum mengubah UI.** Ditambahkan `api/_macro_surprise.js` dan dua key Redis terdaftar: indeks rilis serta hash payload actual/forecast. Surprise dihitung kontinu per seri sebagai `(actual - consensus) / simpangan baku forecast error historis`, dengan minimum 12 observasi terdahulu, tanpa look-ahead, inverse untuk unemployment/claims, winsor ±3, decay waktu, lalu bobot setara per economic family. First print dipertahankan; final/revisi/second estimate dibuang; rilis nasional anggota Eurozone tidak boleh menyamar sebagai agregat EUR. Empat half-life (30/45/60/90 hari) menjadi audit sensitivitas: arah hanya dianggap stabil bila semuanya searah. Tidak ada ambang netral 0,5% baru.
+
+**Data dan positioning.** Backfill lima tahun berhasil menyimpan 4.819 rilis unik; seluruh delapan currency mempunyai coverage Growth dan Inflation pada parameter minimum. Pengambilan rutin menumpang jalur kalender/fundamental yang sudah ada dan `calendar_surprise` kini mencakup CAD. Kontrak CFTC fondasi menetapkan tanda net Leveraged Funds sebagai arah taktis; Asset Manager, perubahan mingguan, % OI, dan persentil tiga tahun hanya mendukung atau menurunkan kualitas. Konflik AM tidak menghapus arah Leveraged Funds. Retail/Dukascopy tidak ikut fondasi aktif. Dashboard sengaja belum disambungkan agar formula lama tidak diganti sebelum tahap integrasi terpisah.
+
+**Verifikasi.** Dry-run menemukan dan memperbaiki collision ID karena `period` kalender sering tidak membawa tahun; sesudah prefix tahun, 4.819/4.819 rilis unik terbaca kembali dari Redis. Uji mengunci no-look-ahead, minimum sampel, inverse series, equal-family weighting, penolakan rilis EUR nasional/revisi, sensitivitas parameter, konflik CFTC, dan data basi. Suite penuh lulus 1.507/1.507.
 
 ## Changelog Session 413 (2026-10-25) — Smart Bias Dashboard dan eksekusi Prime
 

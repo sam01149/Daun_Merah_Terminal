@@ -380,6 +380,18 @@ Pencarian metadata dilakukan langsung melalui Scopus API proyek: 145 hasil Trend
 
 **Implikasi untuk tabel Smart Bias:** `Trend` boleh menjadi lapis konfirmasi dengan fallback Prime yang diuji, bukan penentu arah inti. `Positioning` harus menyimpan sumber, jenis pelaku, horizon, perubahan/extreme, dan konflik; COT institusi dan retail tidak dijumlah mentah. Jika komponen tidak searah atau sampel tidak cukup, tampilkan `mixed`/`—`. Bukti akademik tidak menyediakan formula Academy untuk menggabungkan semuanya menjadi satu panah.
 
+## 19. Standardized macroeconomic surprise untuk Growth/Inflation (verifikasi primer, 2026-10-25)
+
+| Dokumen | Tipe | Temuan inti dan batas penerapan |
+|---|---|---|
+| [Scotti (2016), “Surprise and Uncertainty Indexes: Real-Time Aggregation of Real-Activity Macro-Surprises,” Journal of Monetary Economics; versi Fed IFDP 1093](https://www.federalreserve.gov/pubs/ifdp/2013/1093/ifdp1093.htm) | Method | Mengagregasi surprise rilis aktivitas secara real time setelah menstandardisasi error terhadap ekspektasi survei. Mendukung continuous standardized surprise, bukan voting beat/miss. Bobot/indikator paper tidak otomatis menjadi formula delapan currency Daun Merah. |
+| [Federal Reserve, “Macroeconomic News and Stock Prices Over the FOMC Cycle” (2020)](https://www.federalreserve.gov/econres/notes/feds-notes/macroeconomic-news-and-stock-prices-over-the-fomc-cycle-20201014.html) | Method | Mendefinisikan surprise sebagai realisasi dikurangi median forecast, lalu diskalakan dengan simpangan baku historis forecast error. Aplikasinya pada return saham/FOMC, bukan bukti prediksi FX tabel ini. |
+| [ECB Research Bulletin, “What determines the impact of macroeconomic news on asset markets?” (2017)](https://www.ecb.europa.eu/press/research-publications/resbull/2017/html/ecb.rb170725.en.html) | Method/Constraint | Surprise diukur sebagai nilai rilis dikurangi ekspektasi survei lalu dibagi simpangan baku seri surprise. Dampak aset bergantung karakter berita dan kondisi ekonomi; pilihan horizon/decay tabel tetap perlu sensitivity test. |
+| [CFTC, Traders in Financial Futures Explanatory Notes](https://www.cftc.gov/sites/default/files/idc/groups/public/%40commitmentsoftraders/documents/file/tfmexplanatorynotes.pdf) | Constraint | Kategori TFF mengklasifikasikan jenis trader, bukan tujuan tiap trade; posisi Leveraged Funds dapat mencakup hedging OTC. Karena itu arah net adalah konteks positioning, bukan sinyal harga mandiri. |
+| [CFTC, “Characteristics of U.S. Futures Trading: Evidence from the Traders in Financial Futures Report” (2023)](https://www.cftc.gov/system/files/2023/09/1694718044/FX%20white%20paper%2009.07.2023_ada.pdf) | Method/Constraint | Leveraged Funds lebih aktif mengubah posisi pada horizon pendek, sedangkan Asset Manager lebih stabil dan terkait pengelolaan exposure. Mendukung pemisahan arah taktis vs konteks struktural, bukan penjumlahan dua kategori. |
+
+**Implikasi untuk Daun Merah:** Growth/Inflation memakai standardized forecast error per seri dengan no-look-ahead, lalu deduplikasi family dan sensitivity test. Minimum 12, winsor ±3, serta half-life 30/45/60/90 hari adalah guard implementasi yang transparan, bukan angka yang diklaim berasal langsung dari paper. CFTC dipakai sebagai positioning context; tidak ada paper di atas yang membuktikan panah CFTC universal atau profit strategi.
+
 ---
 
 ## Cara pakai file ini

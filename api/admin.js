@@ -788,6 +788,8 @@ const KEY_REGISTRY = [
   { key: 'journal:*',          owner: 'api/journal.js',        ttl_expected: null,   note: 'Full journal entry JSON per device' },
   { key: 'journal_index:*',      owner: 'api/journal.js',        ttl_expected: null,   note: 'Sorted set: journal entry IDs by created_at timestamp' },
   { key: 'fundamental:*',        owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET fundamental data per currency (no TTL — overwritten when new data)' },
+  { key: 'macro_surprise_history:v1', owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Sorted set ID rilis makro untuk standardized forecast surprise Growth/Inflation (5 tahun backfill)' },
+  { key: 'macro_surprise_events:v1',  owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Hash payload actual/forecast terstruktur per ID rilis; belum dibaca UI sampai fondasi lolos validasi' },
   { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'AI analysis of fundamental data (Gemini only), cached 6h' },
   { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
   { key: 'vps:heartbeat',        owner: 'vps/heartbeat.js',      ttl_expected: 300,    note: 'Plan Q-1: epoch beat daemon Render, dibaca api/admin.js?action=health source=vps_heartbeat' },
