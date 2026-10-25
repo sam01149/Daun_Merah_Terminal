@@ -24,6 +24,33 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-10-25] Analisis Kelayakan dan Jalur Migrasi PWA Daun Merah ke Aplikasi Penuh (Native Mobile/Desktop)
+
+**Latar belakang:** Evaluasi arsitektur untuk mengubah Daun Merah dari Progressive Web App (PWA) menjadi aplikasi mandiri terinstall (native APK/Play Store untuk Android, IPA/App Store untuk iOS, atau executable `.exe` untuk desktop Windows).
+
+**Karakteristik kode saat ini:**
+- Frontend: Single-file `index.html` (vanilla JS, Web Audio API, Canvas chart, Service Worker `sw.js`).
+- Backend: Vercel Serverless (`/api/`, 12 slot penuh), Redis Upstash, WebSocket/daemon Railway (`vps/`).
+- Network: Mayoritas panggilan API menggunakan relative path `/api/...`.
+
+**Pilihan pendekatan teknis:**
+1. **Capacitor (Rekomendasi Utama Mobile Android/iOS):**
+   - *Mekanisme:* Membungkus `index.html` dan aset statis ke dalam WebView lokal native (Android Studio / Xcode).
+   - *Kelebihan:* 100% kode vanilla JS dipertahankan; menghasilkan file biner mandiri (`.apk`/`.aab` Android, `.ipa` iOS); mendukung plugin hardware native (KeepAwake untuk mencegah audio mati saat layar kunci, native push notification FCM, biometric/storage).
+   - *Prasyarat kode:* Relative fetch `/api/...` wajib diproxy atau diarahkan ke `https://daun-merah.vercel.app/api/...` saat berjalan di container native (`window.Capacitor`); header CORS di backend Vercel wajib mengizinkan origin `http://localhost` dan `capacitor://localhost`.
+2. **Trusted Web Activity / TWA via Google Bubblewrap (Jalur Instan Android):**
+   - *Mekanisme:* Membuka URL Vercel produksi di dalam container Chrome tanpa UI browser dan membungkusnya jadi APK/AAB Play Store.
+   - *Kelebihan:* Nol perubahan kode frontend; pembaruan via `git push` otomatis langsung aktif di aplikasi tanpa install ulang APK.
+   - *Kelemahan:* Bergantung pada keberadaan Chrome di ponsel pengguna; kapabilitas background audio/service terbatas sama seperti browser mobile biasa; tidak bisa untuk iOS.
+3. **Tauri v2 (Rekomendasi Desktop Windows `.exe` / macOS):**
+   - *Mekanisme:* Runtime berbasis Rust yang menggunakan WebView2 bawaan OS.
+   - *Kelebihan:* File installer `.exe` sangat ringan (~10-15 MB), konsumsi RAM rendah (<50 MB, jauh di bawah Electron >150 MB), mengatasi isu PWA Chrome desktop yang keluar dari fullscreen (Session 241).
+4. **Full Native Rewrite (Flutter / React Native — DITOLAK):**
+   - *Alasan:* Ribuan baris logika trading, formula teknikal/makro, canvas rendering, dan synth audio di `index.html` harus ditulis ulang dari nol. Memecah basis kode menjadi 2 entitas terpisah (web dan native), melipatgandakan beban pemeliharaan dan risiko desinkronisasi data.
+
+**Kesimpulan:** Opsi paling efisien dan stabil adalah menggunakan **Capacitor** jika targetnya Android/iOS (menjaga single-codebase), atau **Tauri v2** jika targetnya desktop Windows installer.
+
+
 ### [2026-10-23–24] Koreksi struktur tabel Smart Bias Prime Academy dan kelayakan datanya
 
 **Validasi implementasi 2026-10-25.** Deriv public history nyata tidak memenuhi warm-up yang sudah ditetapkan (EUR/USD hanya 185 D1 dan 97 H4), sehingga standar tidak diturunkan. Sumber OHLCV terkonfigurasi yang sama diuji langsung dan memberi 300 D1, 420 H4, serta 420 H1; H1 menghasilkan 71 bucket H6 UTC. Dengan demikian metode Prime dapat dihitung tanpa mencampur sumber. Retail Dukascopy tetap unavailable/`—`: jalur resmi berada di JForex, sedangkan scraping endpoint widget internal tidak dipakai. Temuan ini mengukuhkan prinsip riset: kekosongan data lebih aman ditampilkan daripada diisi proxy atau klasifikasi lemah.
