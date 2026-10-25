@@ -2596,21 +2596,29 @@ body.light-theme .cal-date-input { color-scheme: light; }
   border-bottom: 1px solid var(--border); flex-direction: column; gap: 8px;
 }
 .tek-mtf-section { padding: 14px 14px 10px; }
-.tek-mtf-bar {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 7px 14px;
-  background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0;
-}
-.tek-mtf-cell { display: flex; align-items: center; gap: 5px; }
-.tek-mtf-lbl { font: 700 9px 'DM Mono',monospace; color: var(--muted); }
-.tek-mtf-sel {
-  background: var(--bg); color: var(--text-mid); border: 1px solid var(--border);
-  border-radius: 4px; padding: 3px 5px; font: 10px 'DM Mono',monospace;
-  cursor: pointer; outline: none; width: 54px; transition: border-color .15s, color .15s;
-}
-.tek-mtf-align {
-  margin-left: auto; font: 700 10px 'DM Mono',monospace;
-  padding: 2px 9px; border-radius: 4px; border: 1px solid transparent;
-  transition: all .15s;
+.tek-prime-panel { border-bottom: 1px solid var(--border); padding: 0 14px; background: var(--surface); flex-shrink: 0; }
+.tek-prime-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0 7px; border-bottom:1px solid rgba(var(--fg-rgb),.06); }
+.tek-prime-title { font:700 9px 'Syne',sans-serif; color:var(--text-mid); letter-spacing:.1em; text-transform:uppercase; }
+.tek-prime-verdict { font:700 11px 'DM Mono',monospace; color:var(--muted); letter-spacing:.05em; }
+.tek-prime-verdict.buy { color:var(--green); }
+.tek-prime-verdict.sell { color:#f87171; }
+.tek-prime-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.tek-prime-step { padding:9px 12px 10px 0; border-right:1px solid rgba(var(--fg-rgb),.06); min-width:0; }
+.tek-prime-step + .tek-prime-step { padding-left:12px; }
+.tek-prime-step:last-child { border-right:0; }
+.tek-prime-kicker { font:700 8px 'DM Mono',monospace; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; margin-bottom:4px; }
+.tek-prime-value { font:700 11px 'DM Mono',monospace; color:var(--text); line-height:1.45; }
+.tek-prime-sub { font:9px 'DM Mono',monospace; color:var(--muted); line-height:1.45; margin-top:2px; }
+.tek-prime-confirm { display:flex; flex-wrap:wrap; gap:5px; padding:7px 0 9px; border-top:1px solid rgba(var(--fg-rgb),.06); }
+.tek-prime-confirm-label { width:100%; font:9px 'DM Mono',monospace; color:var(--muted); }
+.tek-prime-choice { background:transparent; border:1px solid var(--border); color:var(--text-mid); border-radius:4px; padding:4px 8px; font:9px 'DM Mono',monospace; cursor:pointer; }
+.tek-prime-choice:hover:not(:disabled), .tek-prime-choice.active { border-color:#38bdf8; color:#38bdf8; }
+.tek-prime-choice:disabled { opacity:.35; cursor:not-allowed; }
+.tek-prime-note { font:9px 'DM Mono',monospace; color:var(--muted); line-height:1.55; padding:0 0 9px; }
+@media (max-width:719px) {
+  .tek-prime-grid { grid-template-columns:1fr; }
+  .tek-prime-step, .tek-prime-step + .tek-prime-step { padding:8px 0; border-right:0; border-bottom:1px solid rgba(var(--fg-rgb),.06); }
+  .tek-prime-step:last-child { border-bottom:0; }
 }
 .tek-yield-strip {
   display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
@@ -2706,6 +2714,14 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .nvtab[data-view="dashboard"]        { color: #818cf8; display: none; }
 .nvtab[data-view="dashboard"].active { color: #818cf8; border-left-color: #818cf8; }
 #dashboardPanel { display: none; }
+@media (max-width: 1023px) {
+  #dashboardPanel.visible { display:flex; flex:1; min-height:0; overflow-y:auto; flex-direction:column; }
+  #dashMainCol { order:1; overflow:visible; }
+  #dashSideCol { order:2; border-top:1px solid var(--border); }
+  #dashNewsCol { order:3; border-top:1px solid var(--border); }
+  #dashAnalisaStrip { order:4; display:flex; align-items:center; min-height:56px; padding:6px 12px; overflow-x:auto; border-top:1px solid var(--border); flex-shrink:0; }
+  #dashEventBar { order:5; display:flex; align-items:center; gap:8px; padding:8px 12px; overflow-x:auto; border-top:1px solid var(--border); flex-shrink:0; }
+}
 @media (min-width: 1024px) {
   .nvtab[data-view="dashboard"] { display: flex; }
   #dashboardPanel {
@@ -2812,6 +2828,39 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .dash-cluster-chevron { font-size: 7px; color: var(--muted); transition: transform .2s; flex-shrink: 0; line-height: 1; }
 .dash-cluster-chevron.open { transform: rotate(90deg); }
 .dash-cluster-items { overflow: hidden; }
+.smart-bias-wrap { width:100%; overflow-x:auto; scrollbar-width:thin; }
+.smart-bias-meta { display:flex; justify-content:space-between; gap:12px; padding:7px 12px; border-bottom:1px solid rgba(var(--fg-rgb),.06); font:8px 'DM Mono',monospace; color:var(--muted); }
+.smart-bias-table { width:100%; min-width:720px; border-collapse:collapse; table-layout:fixed; font-family:'DM Mono',monospace; }
+.smart-bias-table th { position:static; background:var(--bg); color:var(--muted); font-size:8px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; text-align:center; padding:8px 6px; border-bottom:1px solid var(--border); }
+.smart-bias-table th:first-child, .smart-bias-table td:first-child { position:sticky; left:0; z-index:3; width:66px; text-align:left; background:var(--bg); }
+.smart-bias-table tbody tr.smart-bias-row { cursor:pointer; }
+.smart-bias-table tbody tr.smart-bias-row:hover td { background:rgba(var(--fg-rgb),.025); }
+.smart-bias-table tbody tr.smart-bias-row:hover td:first-child { background:var(--surface); }
+.smart-bias-table td { padding:9px 6px; text-align:center; border-bottom:1px solid rgba(var(--fg-rgb),.06); font-size:9px; color:var(--text-mid); vertical-align:middle; }
+.smart-bias-cur { font:700 11px 'Syne',sans-serif; color:var(--text); }
+.sb-state { display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; font-weight:600; }
+.sb-state::before { content:''; width:0; height:0; border-left:3px solid transparent; border-right:3px solid transparent; }
+.sb-state.bullish { color:var(--green); }
+.sb-state.bullish::before { border-bottom:6px solid currentColor; }
+.sb-state.bearish { color:#f87171; }
+.sb-state.bearish::before { border-top:6px solid currentColor; }
+.sb-state.mixed { color:#fbbf24; }
+.sb-state.mixed::before { width:6px; height:2px; border:0; background:currentColor; }
+.sb-state.neutral, .sb-state.insufficient { color:var(--muted); }
+.sb-state.neutral::before, .sb-state.insufficient::before { width:6px; height:1px; border:0; background:currentColor; }
+.sb-pos-lines { display:flex; flex-direction:column; gap:3px; align-items:flex-start; min-width:90px; }
+.sb-pos-line { display:flex; align-items:center; gap:4px; white-space:nowrap; }
+.sb-pos-lbl { color:var(--muted); min-width:28px; text-align:left; font-size:8px; }
+.sb-source { font-size:7px; color:var(--muted); opacity:.75; }
+.smart-bias-detail td { text-align:left; padding:0; background:rgba(var(--fg-rgb),.018); }
+.smart-bias-detail-inner { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; padding:10px 12px 12px 78px; border-bottom:1px solid var(--border); }
+.sb-detail-group { min-width:0; }
+.sb-detail-title { font:700 8px 'DM Mono',monospace; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px; }
+.sb-detail-text { font:9px 'DM Mono',monospace; color:var(--text-mid); line-height:1.55; overflow-wrap:anywhere; }
+.sb-detail-text + .sb-detail-text { margin-top:3px; }
+@media (max-width:1199px) {
+  .smart-bias-detail-inner { grid-template-columns:1fr 1fr; padding-left:12px; }
+}
 
 /* ── DRAWER / OVERFLOW NAV ── */
 /* Tab yang masuk ke "Menu Lainnya" — disembunyikan dari top nav & bottom nav */
@@ -4477,20 +4526,9 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div id="tekChartContainer"></div>
   </div>
   <div class="tek-event-strip" id="tekEventStrip" style="display:none"></div>
-  <div class="tek-mtf-bar">
-    <div class="tek-mtf-cell"><span class="tek-mtf-lbl">D1</span><select class="tek-mtf-sel" id="mtfSelD1" onchange="onMtfChange()"><option value="">—</option><option value="bull">Bull</option><option value="bear">Bear</option><option value="neut">Neut</option></select></div>
-    <div class="tek-mtf-cell"><span class="tek-mtf-lbl">H4</span><select class="tek-mtf-sel" id="mtfSelH4" onchange="onMtfChange()"><option value="">—</option><option value="bull">Bull</option><option value="bear">Bear</option><option value="neut">Neut</option></select></div>
-    <div class="tek-mtf-cell"><span class="tek-mtf-lbl">H1</span><select class="tek-mtf-sel" id="mtfSelH1" onchange="onMtfChange()"><option value="">—</option><option value="bull">Bull</option><option value="bear">Bear</option><option value="neut">Neut</option></select></div>
-    <div class="tek-mtf-cell"><span class="tek-mtf-lbl">M15</span><select class="tek-mtf-sel" id="mtfSelM15" onchange="onMtfChange()"><option value="">—</option><option value="bull">Bull</option><option value="bear">Bear</option><option value="neut">Neut</option></select></div>
-    <button class="tek-note-auto-btn" id="tekMtfAutoBtn" onclick="autoFillMtfSelectors(true)" title="Isi D1/H4/H1 otomatis dari trend Makro/Swing/Entry (M15 tetap manual)">↻ Auto</button>
-    <div class="tek-mtf-align" id="mtfAlignBadge"></div>
-  </div>
+  <div id="tekPrimePanel" class="tek-prime-panel"><div class="tek-prime-note">Memuat pemeriksaan trend dan momentum...</div></div>
   <div class="tek-yield-strip" id="tekYieldStrip" style="display:none"></div>
   <div class="tek-yield-strip" id="tekRangeStrip" style="display:none; border-top:none; padding-top:2px"></div>
-  <div id="tekTaPanel" class="tek-ta-panel">
-    <div class="tek-ta-loading" id="tekTaLoading">Memuat indikator...</div>
-    <div class="tek-ta-grid" id="tekTaGrid" style="display:none"></div>
-  </div>
   <div class="tek-mtf-section">
     <div id="tekPosisiBiasSection" style="margin-bottom:12px"></div>
     <div class="tek-note-wrap">
@@ -4531,20 +4569,14 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div id="dashNewsList"><div class="dash-no-data">Buka tab NEWS dulu untuk memuat data.</div></div>
   </div>
   <div id="dashMainCol">
-    <div class="dash-col-title">RINGKASAN PASAR</div>
-    <div id="dashDigestSection"><div class="dash-no-data">Buka tab RINGKASAN dulu untuk memuat briefing.</div></div>
+    <div class="dash-col-title">SMART BIAS · WEEK AHEAD <span id="dashSmartBiasAge" class="dash-refresh-badge"></span></div>
+    <div id="dashSmartBiasSection"><div class="dash-no-data">Memuat tabel bias...</div></div>
     <div class="dash-col-title" style="margin-top:6px">PERINGATAN POSISI</div>
     <div id="dashPositionAlertsSection"><div class="dash-no-data">Tidak ada peringatan posisi.</div></div>
   </div>
   <div id="dashSideCol">
-    <div class="dash-col-title">CB BIAS</div>
-    <div id="dashBiasList"><div class="dash-no-data">Buka tab RINGKASAN dulu.</div></div>
-    <div class="dash-col-title" style="margin-top:4px">FUNDAMENTAL RANKING</div>
-    <div id="dashFundStrip"><div class="dash-no-data">Buka tab FUNDAMENTAL dulu.</div></div>
-    <div class="dash-col-title" style="margin-top:4px">DAILY PULSE <span id="dashSnapAge" style="color:var(--border);margin-left:4px;text-transform:none;letter-spacing:0;font-size:8px"></span></div>
+    <div class="dash-col-title">KONTEKS PASAR <span id="dashSnapAge" style="color:var(--border);margin-left:4px;text-transform:none;letter-spacing:0;font-size:8px"></span></div>
     <div id="dashDailySnap"><div class="dash-no-data" style="padding:8px 12px">Memuat...</div></div>
-    <div class="dash-col-title" style="margin-top:4px">RETAIL SENTIMENT <span id="dashRetailAge" style="color:var(--border);margin-left:4px;text-transform:none;letter-spacing:0;font-size:8px"></span></div>
-    <div id="dashRetailStrip"><div class="dash-no-data" style="padding:8px 12px">Memuat...</div></div>
   </div>
   <div id="dashAnalisaStrip">
     <span class="das-section-label">TEKNIKAL:</span>
@@ -4906,7 +4938,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.24.1';
+const APP_VERSION = '2026.10.25.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -17591,61 +17623,117 @@ let tekInited = false;
 let tvChartSig = null;
 let tvChartDivId = null;
 
-const MTF_SELS = [
-  { id:'mtfSelD1', key:'D1' }, { id:'mtfSelH4', key:'H4' },
-  { id:'mtfSelH1', key:'H1' }, { id:'mtfSelM15', key:'M15' },
-];
-let tekMtf = {};
-
 function loadTekNotes() {
   try {
     const n = localStorage.getItem('tek_notes');
     if (n) tekNotes = JSON.parse(n);
-    const m = localStorage.getItem('tek_mtf_v2');
-    if (m) tekMtf = JSON.parse(m);
   } catch(e) {}
 }
 
-function onMtfChange() {
-  if (!tekMtf[tekPair]) tekMtf[tekPair] = {};
-  MTF_SELS.forEach(s => {
-    const el = document.getElementById(s.id);
-    if (!el) return;
-    tekMtf[tekPair][s.key] = el.value;
-    const col = el.value === 'bull' ? 'var(--green)' : el.value === 'bear' ? 'var(--accent)' : el.value === 'neut' ? '#7f8c8d' : null;
-    el.style.borderColor = col || '';
-    el.style.color = col ? (el.value === 'bull' ? 'var(--green)' : el.value === 'bear' ? '#e74c3c' : '#95a5a6') : '';
-  });
-  localStorage.setItem('tek_mtf_v2', JSON.stringify(tekMtf));
-  renderMtfAlign();
+const TEK_PRIME_CONFIRM_KEY = 'tek_prime_trend_v1';
+const TEK_PRIME_CLIENT_TTL = 30 * 60 * 1000;
+let tekPrimeCache = {};
+let tekPrimeData = null;
+let tekPrimeConfirm = (() => {
+  try { return JSON.parse(localStorage.getItem(TEK_PRIME_CONFIRM_KEY) || '{}') || {}; }
+  catch(e) { return {}; }
+})();
+
+function tekPrimeVerdict(data, manual) {
+  if (!data?.available || data.stale || !['above','below','unclear'].includes(manual)) return 'WAIT';
+  if (manual === 'above' && data.momentum?.direction === 'bullish' && data.strength?.passed) return 'BUY ONLY';
+  if (manual === 'below' && data.momentum?.direction === 'bearish' && data.strength?.passed) return 'SELL ONLY';
+  return 'WAIT';
 }
 
-function renderMtfAlign() {
-  const badge = document.getElementById('mtfAlignBadge');
-  if (!badge) return;
-  const vals = MTF_SELS.map(s => { const el = document.getElementById(s.id); return el ? el.value : ''; }).filter(v => v);
-  if (!vals.length) { badge.textContent = ''; badge.style.cssText = ''; return; }
-  const bull = vals.filter(v => v === 'bull').length;
-  const bear = vals.filter(v => v === 'bear').length;
-  const dom = bull > bear ? 'BULLISH' : bear > bull ? 'BEARISH' : 'MIXED';
-  const fg = dom === 'BULLISH' ? 'var(--green)' : dom === 'BEARISH' ? '#e74c3c' : '#95a5a6';
-  const bg = dom === 'BULLISH' ? 'rgba(var(--green-rgb),.15)' : dom === 'BEARISH' ? 'rgba(var(--accent-rgb),.15)' : 'rgba(127,140,141,.15)';
-  const br = dom === 'BULLISH' ? 'var(--green)' : dom === 'BEARISH' ? 'var(--accent)' : '#7f8c8d';
-  badge.textContent = dom;
-  badge.style.cssText = 'margin-left:auto;font:700 10px DM Mono,monospace;padding:2px 9px;border-radius:4px;color:' + fg + ';background:' + bg + ';border:1px solid ' + br;
+function tekPrimeManualFor(data) {
+  const saved = tekPrimeConfirm[tekPair];
+  if (!saved || saved.snapshot_key !== data?.trend?.snapshot_key) return null;
+  return ['above','below','unclear'].includes(saved.value) ? saved.value : null;
 }
 
-function loadMtfForPair() {
-  const pairData = tekMtf[tekPair] || {};
-  MTF_SELS.forEach(s => {
-    const el = document.getElementById(s.id);
-    if (!el) return;
-    el.value = pairData[s.key] || '';
-    const col = el.value === 'bull' ? 'var(--green)' : el.value === 'bear' ? 'var(--accent)' : el.value === 'neut' ? '#7f8c8d' : null;
-    el.style.borderColor = col || '';
-    el.style.color = col ? (el.value === 'bull' ? 'var(--green)' : el.value === 'bear' ? '#e74c3c' : '#95a5a6') : '';
-  });
-  renderMtfAlign();
+function setPrimeTrend(value) {
+  if (!tekPrimeData?.available || tekPrimeData.stale) return;
+  const relation = tekPrimeData.trend?.relation;
+  if ((value === 'above' && relation !== 'above') || (value === 'below' && relation !== 'below')) return;
+  tekPrimeConfirm[tekPair] = { value, snapshot_key: tekPrimeData.trend.snapshot_key };
+  try { localStorage.setItem(TEK_PRIME_CONFIRM_KEY, JSON.stringify(tekPrimeConfirm)); } catch(e) {}
+  renderPrimeExecution();
+}
+
+function _tekPrimeNum(value, digits = 5) {
+  return Number.isFinite(Number(value)) ? Number(value).toLocaleString('id-ID', { maximumFractionDigits: digits }) : '—';
+}
+
+function renderPrimeExecution() {
+  const el = document.getElementById('tekPrimePanel');
+  if (!el) return;
+  const d = tekPrimeData;
+  if (!d) { el.innerHTML = '<div class="tek-prime-note">Memuat pemeriksaan trend dan momentum...</div>'; return; }
+  if (!d.available) {
+    const reason = d.unavailable_reason === 'provider_native_timeframes_unavailable'
+      ? 'Pair ini belum memiliki seri D1, H4, dan H6 dari satu sumber yang sama.'
+      : 'Jumlah candle belum cukup untuk EMA 200 dan ATR 14.';
+    el.innerHTML = `<div class="tek-prime-head"><div class="tek-prime-title">Trend dan momentum Prime</div><div class="tek-prime-verdict">WAIT</div></div><div class="tek-prime-note" style="padding-top:9px">${reason} Sistem tidak menerbitkan arah saat data belum layak.</div>`;
+    return;
+  }
+  const manual = tekPrimeManualFor(d);
+  const verdict = tekPrimeVerdict(d, manual);
+  const verdictClass = verdict === 'BUY ONLY' ? ' buy' : verdict === 'SELL ONLY' ? ' sell' : '';
+  const relationText = d.trend.relation === 'above' ? 'Harga di atas EMA 200' : d.trend.relation === 'below' ? 'Harga di bawah EMA 200' : 'Harga tepat di EMA 200';
+  const momentumText = d.momentum.direction === 'bullish' ? 'EMA 21 di atas EMA 100' : d.momentum.direction === 'bearish' ? 'EMA 21 di bawah EMA 100' : 'EMA 21 dan EMA 100 sejajar';
+  const unit = d.momentum.gap_display?.unit || 'pip';
+  const gap = _tekPrimeNum(d.momentum.gap_display?.value, 2);
+  const atr = _tekPrimeNum(d.strength.atr_display?.value, 2);
+  const relation = d.trend.relation;
+  const staleNote = d.stale ? ' Snapshot lama; verdict dikunci WAIT sampai data segar.' : '';
+  el.innerHTML = `<div class="tek-prime-head">
+      <div class="tek-prime-title">Trend dan momentum Prime</div>
+      <div class="tek-prime-verdict${verdictClass}">${verdict}</div>
+    </div>
+    <div class="tek-prime-grid">
+      <div class="tek-prime-step"><div class="tek-prime-kicker">1 · Trend D1</div><div class="tek-prime-value">${relationText}</div><div class="tek-prime-sub">Close ${_tekPrimeNum(d.trend.close)} · EMA 200 ${_tekPrimeNum(d.trend.ema200)}</div></div>
+      <div class="tek-prime-step"><div class="tek-prime-kicker">2 · Arah H4</div><div class="tek-prime-value">${momentumText}</div><div class="tek-prime-sub">EMA 21 ${_tekPrimeNum(d.momentum.ema21)} · EMA 100 ${_tekPrimeNum(d.momentum.ema100)}</div></div>
+      <div class="tek-prime-step"><div class="tek-prime-kicker">3 · Kekuatan</div><div class="tek-prime-value">${d.strength.passed ? 'Gap lebih besar dari ATR' : 'Gap belum lebih besar dari ATR'}</div><div class="tek-prime-sub">Gap ${gap} ${unit} · ATR 14 H6 ${atr} ${unit}</div></div>
+    </div>
+    <div class="tek-prime-confirm">
+      <div class="tek-prime-confirm-label">Konfirmasi visual kata “jelas” pada D1; pilihan tersimpan hanya untuk snapshot ini.</div>
+      <button class="tek-prime-choice${manual === 'above' ? ' active' : ''}" onclick="setPrimeTrend('above')" ${relation !== 'above' || d.stale ? 'disabled' : ''}>Jelas di atas</button>
+      <button class="tek-prime-choice${manual === 'below' ? ' active' : ''}" onclick="setPrimeTrend('below')" ${relation !== 'below' || d.stale ? 'disabled' : ''}>Jelas di bawah</button>
+      <button class="tek-prime-choice${manual === 'unclear' ? ' active' : ''}" onclick="setPrimeTrend('unclear')" ${d.stale ? 'disabled' : ''}>Tidak jelas</button>
+    </div>
+    <div class="tek-prime-note">Tiga pemeriksaan wajib selaras. Dua dari tiga tetap WAIT.${staleNote}</div>`;
+}
+
+async function fetchPrimeExecution(force = false) {
+  const pairAtCall = tekPair;
+  const sym = TEK_YAHOO_SYM[pairAtCall];
+  const cache = tekPrimeCache[pairAtCall];
+  if (!force && cache && Date.now() - cache.ts < TEK_PRIME_CLIENT_TTL) {
+    tekPrimeData = cache.data;
+    renderPrimeExecution();
+    return;
+  }
+  tekPrimeData = null;
+  renderPrimeExecution();
+  if (!sym) {
+    tekPrimeData = { available:false, unavailable_reason:'provider_native_timeframes_unavailable' };
+    renderPrimeExecution();
+    return;
+  }
+  try {
+    const url = `/api/admin?action=prime_execution&symbol=${encodeURIComponent(sym)}&label=${encodeURIComponent(tekPairLabel(pairAtCall))}${force ? '&force=1' : ''}`;
+    const response = await fetch(url, { signal:AbortSignal.timeout(30000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    tekPrimeCache[pairAtCall] = { data, ts:Date.now() };
+    if (tekPair !== pairAtCall) return;
+    tekPrimeData = data;
+  } catch(e) {
+    if (tekPair !== pairAtCall) return;
+    tekPrimeData = { available:false, unavailable_reason:'data_fetch_failed' };
+  }
+  renderPrimeExecution();
 }
 
 function saveTekNote() {
@@ -17718,65 +17806,6 @@ async function autoFillTekNote() {
   noteEl.value = merged;
   tekNotes[pairAtCall] = merged;
   localStorage.setItem('tek_notes', JSON.stringify(tekNotes));
-}
-
-// Maps the auto-computed trend label (from D1/H4/H1 Makro/Swing/Entry data,
-// same source as tab ANALISA) to the bull/bear/neut value used by the MTF
-// alignment selectors — so D1/H4/H1 don't have to be picked by hand every time.
-function mapTrendToMtf(trend) {
-  if (trend === 'Uptrend')   return 'bull';
-  if (trend === 'Downtrend') return 'bear';
-  if (trend === 'Sideways')  return 'neut';
-  return '';
-}
-
-// Auto-fill the D1/H4/H1 MTF selectors from Makro/Swing/Entry trend data.
-// M15 has no equivalent auto-computed trend anywhere in the app — left manual on purpose.
-// force=false (default, called on pair switch): only fills selectors that are still
-// empty ("—") — never overrides a bull/bear/neut the user picked by hand.
-// force=true (the "↻ Auto" button): regenerates D1/H4/H1, overwriting current picks.
-async function autoFillMtfSelectors(force = false) {
-  const btn = document.getElementById('tekMtfAutoBtn');
-  const pairAtCall = tekPair;
-  const sym = TEK_YAHOO_SYM[pairAtCall];
-  if (!sym) return;
-
-  let d = analisaDataCache[sym];
-  if (!d) {
-    if (btn) { btn.disabled = true; btn.textContent = '…'; }
-    try {
-      const res = await fetch(`/api/admin?action=ohlcv_read&symbol=${encodeURIComponent(sym)}&label=${encodeURIComponent(tekPairLabel(pairAtCall))}`, { signal: AbortSignal.timeout(12000) });
-      if (res.ok) { d = await res.json(); analisaDataCache[sym] = d; }
-    } catch(e) { /* silent — user can retry via the Auto button */ }
-    if (btn) { btn.disabled = false; btn.textContent = '↻ Auto'; }
-  }
-  if (tekPair !== pairAtCall) return; // pair switched while fetch was in flight
-
-  const autoVals = {
-    D1: d?.d1?.available ? mapTrendToMtf(d.d1.trend) : '',
-    H4: d?.h4?.available ? mapTrendToMtf(d.h4.trend) : '',
-    H1: d?.h1?.available ? mapTrendToMtf(d.h1.trend) : '',
-  };
-
-  if (!autoVals.D1 && !autoVals.H4 && !autoVals.H1) {
-    // Cross pairs outside the 8 major OHLCV-synced pairs often have no cached
-    // MTF data yet — say so explicitly instead of the button silently doing nothing.
-    if (force) showToast('Data belum tersedia', `MTF ${tekPairLabel(pairAtCall)} belum ke-sync — coba pair major (XAU/EUR/GBP/JPY/AUD/CAD/CHF/NZD) atau buka tab Analisa dulu.`, 4000);
-    return;
-  }
-
-  if (!tekMtf[tekPair]) tekMtf[tekPair] = {};
-  let changed = false;
-  for (const key of ['D1', 'H4', 'H1']) {
-    if (!autoVals[key]) continue;
-    if (!force && tekMtf[tekPair][key]) continue; // don't override a manual pick
-    tekMtf[tekPair][key] = autoVals[key];
-    changed = true;
-  }
-  if (!changed) return;
-
-  localStorage.setItem('tek_mtf_v2', JSON.stringify(tekMtf));
-  loadMtfForPair(); // re-applies values + colors to the <select> elements and re-renders the align badge
 }
 
 function loadTVScript(cb) {
@@ -17927,14 +17956,12 @@ function selectTekPair(p) {
   const note = document.getElementById('tekNote');
   if (note) note.value = tekNotes[tekPair] || '';
   syncTekPairTimeframe();
-  loadMtfForPair();
   renderTekNews();
   renderTekEventStrip();
   createTVChart();
-  fetchTaData();
+  fetchPrimeExecution();
   renderTekOptions();
   fetchAFTek();
-  autoFillMtfSelectors();
   renderTekYield();
   renderTekVolProfile(); // profil volatilitas opsi ikut pair aktif
   if (corrData) renderCorrelations(); // tabel korelasi kontekstual ikut pair aktif
@@ -18076,7 +18103,6 @@ function analisaRemovePair(symbol, e) {
 function onTekTFChange() {
   tekTF = document.getElementById('tekTFSelect').value;
   createTVChart();
-  fetchTaData();
 }
 
 function syncTekPairTimeframe() {
@@ -18425,14 +18451,12 @@ function initTeknikal() {
   if (tf) tf.value = tekTF;
   const note = document.getElementById('tekNote');
   if (note) note.value = tekNotes[tekPair] || '';
-  loadMtfForPair();
   renderTekNews();
   renderTekEventStrip();
   createTVChart();
-  fetchTaData();
+  fetchPrimeExecution();
   fetchTekOptions();
   fetchAFTek();
-  autoFillMtfSelectors();
   // Auto-load korelasi cross-asset (cache server 24h, jadi sekali per sesi cukup)
   if (!corrData || (Date.now() - corrFetAt) > 24 * 60 * 60 * 1000) fetchCorrelations();
   if (!realYieldsData || (Date.now() - realYieldsFetAt) > 6 * 60 * 60 * 1000) fetchRealYields();
@@ -18467,6 +18491,7 @@ function renderTekYield() {
 // disatukan bareng warna nav tab utama (lihat komentar .nvtab.active di CSS) supaya
 // konsisten satu sistem navigasi, bukan cuma sebagian yang diseragamkan.
 const DRAWER_ITEMS = [
+  { view:'dashboard',   label:'Dashboard',   desc:'Smart Bias delapan mata uang' },
   { view:'cal',         label:'Kalender',    desc:'Economic calendar & event countdown' },
   { view:'riset',       label:'Artikel',     desc:'Riset & artikel macro terbaru' },
   { view:'cot',         label:'COT',         desc:'COT positioning data mingguan' },
@@ -18724,6 +18749,110 @@ let dashRefreshInterval  = null;
 let dashLastRefresh      = 0;
 let dashAnalisaData      = null;
 let dashAnalisaFetchedAt = 0;
+let dashSmartBiasData    = null;
+let dashSmartBiasFetchedAt = 0;
+let dashSmartBiasOpen    = null;
+
+async function fetchDashSmartBias(force = false) {
+  if (!force && dashSmartBiasData && Date.now() - dashSmartBiasFetchedAt < 15 * 60 * 1000) {
+    renderDashSmartBias();
+    return;
+  }
+  try {
+    const r = await fetch(`/api/admin?action=smart_bias${force ? '&force=1' : ''}`, { signal:AbortSignal.timeout(20000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (!Array.isArray(data.rows)) throw new Error('Schema tabel tidak valid');
+    dashSmartBiasData = data;
+    dashSmartBiasFetchedAt = Date.now();
+  } catch(e) {
+    if (!dashSmartBiasData) dashSmartBiasData = { rows:[], error:'data_unavailable' };
+  }
+  renderDashSmartBias();
+}
+
+function _sbStateHtml(state, confidence) {
+  const valid = ['bullish','bearish','mixed','neutral','insufficient'].includes(state) ? state : 'insufficient';
+  const labels = { bullish:'Naik', bearish:'Turun', mixed:'Campur', neutral:'Netral', insufficient:'—' };
+  const title = confidence ? ` title="Keyakinan ${escHtml(confidence)}"` : '';
+  return `<span class="sb-state ${valid}"${title}>${labels[valid]}</span>`;
+}
+
+function _sbEvidenceText(evidence, emptyText = 'Bukti belum cukup.') {
+  if (!Array.isArray(evidence) || evidence.length === 0) return `<div class="sb-detail-text">${emptyText}</div>`;
+  return evidence.slice(0, 5).map(ev => {
+    if (ev.institution) return `<div class="sb-detail-text">${escHtml(ev.institution)}: ${escHtml(ev.direction || '—')} — ${escHtml(ev.reason || ev.evidence || '')}</div>`;
+    if (ev.indicator) {
+      const cmp = ev.comparison === 'forecast' ? 'konsensus' : 'sebelumnya';
+      return `<div class="sb-detail-text">${escHtml(ev.indicator)}: ${escHtml(ev.actual ?? '—')} vs ${cmp} ${escHtml(ev.forecast ?? ev.previous ?? '—')} (${escHtml(ev.date || 'tanpa tanggal')})</div>`;
+    }
+    if (ev.title) return `<div class="sb-detail-text">${escHtml(ev.title)}</div>`;
+    return '';
+  }).join('') || `<div class="sb-detail-text">${emptyText}</div>`;
+}
+
+function _sbDetailHtml(row) {
+  const p = row.positioning || {};
+  const inst = p.institutional || {};
+  const retail = p.retail || {};
+  const am = inst.asset_manager || {};
+  const lev = inst.leveraged_funds || {};
+  const pct = v => Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}% OI` : '—';
+  const conflicts = row.overall?.conflicts?.length ? `Konflik: ${row.overall.conflicts.join(', ')}` : 'Tidak ada konflik tier pendukung.';
+  return `<div class="smart-bias-detail-inner">
+    <div class="sb-detail-group"><div class="sb-detail-title">Growth</div>${_sbEvidenceText(row.growth?.evidence)}</div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Inflation</div>${_sbEvidenceText(row.inflation?.evidence)}</div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Central bank</div><div class="sb-detail-text">Stance: ${escHtml(row.central_bank?.bias || '—')} · as of ${escHtml(row.central_bank?.as_of || '—')}</div>${_sbEvidenceText(row.central_bank?.evidence)}</div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Banks</div>${_sbEvidenceText(row.banks?.evidence, 'Tidak ada outlook week-ahead yang lolos validasi.')}</div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Positioning</div><div class="sb-detail-text">Asset Manager: ${escHtml(am.state || '—')} · ${pct(am.net_pct_oi)}</div><div class="sb-detail-text">Leveraged Funds: ${escHtml(lev.state || '—')} · ${pct(lev.net_pct_oi)}</div><div class="sb-detail-text">Laporan: ${escHtml(inst.report_date || '—')}</div><div class="sb-detail-text">Retail: ${escHtml(retail.state || '—')} · ${Number.isFinite(Number(retail.long_pct)) ? `${Number(retail.long_pct).toFixed(1)}% long` : 'data belum tersedia'} <span class="sb-source">src: Dukascopy</span></div></div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Overall</div><div class="sb-detail-text">Keyakinan ${escHtml(row.overall?.confidence || 'rendah')}. ${escHtml(conflicts)} Tier pendukung tidak dapat membalik arah inti.</div></div>
+  </div>`;
+}
+
+function toggleDashSmartBias(currency) {
+  dashSmartBiasOpen = dashSmartBiasOpen === currency ? null : currency;
+  renderDashSmartBias();
+}
+
+function renderDashSmartBias() {
+  const el = document.getElementById('dashSmartBiasSection');
+  if (!el) return;
+  const rows = dashSmartBiasData?.rows || [];
+  const ageEl = document.getElementById('dashSmartBiasAge');
+  if (ageEl) {
+    const ts = dashSmartBiasData?.computed_at ? new Date(dashSmartBiasData.computed_at).getTime() : null;
+    const mins = Number.isFinite(ts) ? Math.max(0, Math.floor((Date.now() - ts) / 60000)) : null;
+    ageEl.textContent = mins == null ? '' : mins < 1 ? 'baru saja' : `${mins}m lalu`;
+  }
+  if (!rows.length) {
+    el.innerHTML = '<div class="dash-no-data">Tabel bias belum tersedia. Data kosong tidak diubah menjadi sinyal.</div>';
+    return;
+  }
+  const body = rows.map(row => {
+    const p = row.positioning || {};
+    const isOpen = dashSmartBiasOpen === row.currency;
+    return `<tr class="smart-bias-row" onclick="toggleDashSmartBias('${row.currency}')" aria-expanded="${isOpen}">
+      <td><span class="smart-bias-cur">${escHtml(row.currency)}</span></td>
+      <td>${_sbStateHtml(row.growth?.state, row.growth?.confidence)}</td>
+      <td>${_sbStateHtml(row.inflation?.state, row.inflation?.confidence)}</td>
+      <td>${_sbStateHtml(row.central_bank?.state, row.central_bank?.confidence)}</td>
+      <td>${_sbStateHtml(row.banks?.state, row.banks?.confidence)}</td>
+      <td><div class="sb-pos-lines"><div class="sb-pos-line"><span class="sb-pos-lbl">Inst</span>${_sbStateHtml(p.institutional?.state)}</div><div class="sb-pos-line"><span class="sb-pos-lbl">Retail</span>${_sbStateHtml(p.retail?.state)} <span class="sb-source">src: Dukascopy</span></div></div></td>
+      <td>${_sbStateHtml(row.overall?.state, row.overall?.confidence)}</td>
+    </tr>${isOpen ? `<tr class="smart-bias-detail"><td colspan="7">${_sbDetailHtml(row)}</td></tr>` : ''}`;
+  }).join('');
+  const retailNote = dashSmartBiasData.retail_note || 'Retail diperlakukan sebagai crowding, bukan suara penentu arah.';
+  el.innerHTML = `<div class="smart-bias-meta"><span>Core: Growth + Inflation + Central bank</span><span>Klik currency untuk bukti</span></div><div class="smart-bias-wrap"><table class="smart-bias-table"><thead><tr><th>Currency</th><th>Growth</th><th>Inflation</th><th>Central bank</th><th>Banks</th><th>Positioning</th><th>Overall</th></tr></thead><tbody>${body}</tbody></table></div><div class="tek-prime-note" style="padding:8px 12px">${escHtml(retailNote)}</div>`;
+}
+
+function renderDashPositionAlerts() {
+  const alertsEl = document.getElementById('dashPositionAlertsSection');
+  if (!alertsEl) return;
+  const alerts = ringkasanCache?.thesis_alerts;
+  alertsEl.innerHTML = alerts && alerts.length > 0
+    ? renderThesisAlerts(alerts)
+    : '<div class="dash-no-data">Tidak ada peringatan posisi.</div>';
+}
 
 async function fetchDashAnalisa() {
   if (Date.now() - dashAnalisaFetchedAt < 5 * 60 * 1000) { renderDashAnalisa(); return; }
@@ -18821,25 +18950,13 @@ async function initDashboard() {
   if (!newsFetchAttempted)
     fetches.push(fetchFeed().catch(() => {}));
 
-  if (!cbData || (now - cbFetchedAt) > 5 * 60 * 1000)
-    fetches.push(fetchCBStatus().catch(() => {}));
-
-  if (!fundData || (now - fundFetchedAt) > 30 * 60 * 1000)
-    fetches.push(fetchFundamental().catch(() => {}));
-
   if (!calData || (now - calFetchedAt) > 60 * 60 * 1000)
     fetches.push(fetchCalendar().catch(() => {}));
 
   if (!ringkasanCache)
     fetches.push(loadCachedRingkasan().catch(() => {}));
 
-  // Retail sentiment: dulu strip dashboard cuma terisi kalau user pernah buka tab COT
-  // (stuck "Memuat..." selamanya kalau langsung ke dashboard) — sekarang dashboard
-  // fetch sendiri, dan interval 60s di bawah menjaga tetap segar (TTL client 5 menit,
-  // server di-warm GitHub Action tiap 15 menit).
-  if (!retailData || (now - retailFetchedAt) > RETAIL_CLIENT_TTL)
-    fetches.push(fetchRetailSentiment().catch(() => {}));
-
+  fetches.push(fetchDashSmartBias().catch(() => {}));
   fetches.push(fetchDashAnalisa().catch(() => {}));
 
   if (fetches.length > 0) {
@@ -18852,10 +18969,7 @@ async function initDashboard() {
   dashRefreshInterval = setInterval(() => {
     if (activeView === 'dashboard') {
       refreshDashboard();
-      // Retail realtime: re-fetch tiap tick tapi digerbang RETAIL_CLIENT_TTL (5 menit)
-      // di dalam fetchRetailSentiment — efektif refresh tiap 5 menit selama dashboard
-      // terbuka, mengikuti server yang di-warm tiap 15 menit.
-      fetchRetailSentiment().catch(() => {});
+      fetchDashSmartBias().catch(() => {});
     }
     else { clearInterval(dashRefreshInterval); dashRefreshInterval = null; }
   }, 60000);
@@ -18885,11 +18999,11 @@ function refreshDashboard() {
   const DASH_COLS = ['dashNewsCol', 'dashMainCol', 'dashSideCol'];
   const savedScroll = DASH_COLS.map(id => { const el = document.getElementById(id); return el ? el.scrollTop : 0; });
   renderDashNews();
-  renderDashDigest();
-  renderDashBias();
+  renderDashSmartBias();
+  renderDashPositionAlerts();
+  renderDailySnapshot();
   renderDashEvents();
   renderDashAnalisa();
-  renderDashRetail(); // ikut re-render tiap 60s — teks umur data ("Xm lalu") tetap akurat
   DASH_COLS.forEach((id, i) => { const el = document.getElementById(id); if (el && savedScroll[i]) el.scrollTop = savedScroll[i]; });
   const badge = document.getElementById('dashAutoRefreshBadge');
   if (badge) badge.textContent = 'auto-refresh 60s';

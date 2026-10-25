@@ -25,7 +25,9 @@ const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
 const { isDeepSeekDisabled, getDeepSeekApiKey } = require('./_deepseek');
 const { requireAppKey, safeEqual } = require('./_app_key');
-const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
+const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, mapYahooSymbolToTwelveData, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
+const { CURRENCIES: SMART_BIAS_CURRENCIES, buildSmartBiasRows } = require('./_smart_bias');
+const { computePrimeExecution, resampleCandles } = require('./_prime_execution');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated, isManagedPending } = require('./_position_review');
 const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isManagedResolved, isLiveExposure, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
@@ -108,6 +110,8 @@ const PUBLIC_ACTION_LIMITS = {
   ohlcv_analyze:         5,
   ohlcv_critic:          3,
   ohlcv_dashboard:      30,
+  smart_bias:           20,
+  prime_execution:      20,
   setup_stats:          20,
   polymarket:           30,
   gdpnow:               10,
@@ -145,6 +149,8 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
   if (action === 'ohlcv_critic')       return ohlcvCriticHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
+  if (action === 'smart_bias')         return smartBiasHandler(req, res);
+  if (action === 'prime_execution')    return primeExecutionHandler(req, res);
   if (action === 'setup_stats')        return setupStatsHandler(req, res);
   if (action === 'setup_override')     return setupOverrideHandler(req, res);
   if (action === 'position_review')    return positionReviewHandler(req, res);
@@ -152,7 +158,7 @@ module.exports = async function handler(req, res) {
   if (action === 'polymarket')         return polymarketHandler(req, res);
   if (action === 'push_subscribe_dev') return pushSubscribeDevHandler(req, res);
   if (action === 'setup_log_archive')  return setupLogArchiveHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, ohlcv_dashboard, setup_stats, setup_override, position_review, friday_tighten, polymarket, push_subscribe_dev, or setup_log_archive' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, ohlcv_dashboard, smart_bias, prime_execution, setup_stats, setup_override, position_review, friday_tighten, polymarket, push_subscribe_dev, or setup_log_archive' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -9567,6 +9573,138 @@ async function ohlcvDashboardHandler(req, res) {
     return res.status(200).json({ pairs, fetched_at: new Date().toISOString() });
   } catch(e) {
     return res.status(500).json({ error: e.message });
+  }
+}
+
+const SMART_BIAS_CACHE_KEY = 'smart_bias:v1';
+const SMART_BIAS_TTL_SECS = 15 * 60;
+
+function _parseJsonValue(raw, fallback) {
+  if (raw == null) return fallback;
+  if (typeof raw === 'object') return raw;
+  try { return JSON.parse(raw); } catch (e) { return fallback; }
+}
+
+function _parseNewsHistory(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(item => _parseJsonValue(item, null)).filter(Boolean);
+}
+
+// Tabel Smart Bias adalah ringkasan deterministik per currency. Tiga kolom inti
+// (growth, inflation, central bank) menentukan arah; banks dan positioning hanya
+// mengonfirmasi atau menandai konflik, sehingga data sekunder tidak dapat membalikkan
+// fondasi makro. Nilai kosong tetap kosong — endpoint ini tidak mengarang substitusi.
+async function smartBiasHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const force = req.query.force === '1';
+  let cached = null;
+  try {
+    cached = _parseJsonValue(await redisCmd('GET', SMART_BIAS_CACHE_KEY), null);
+    if (!force && cached) return res.status(200).json(cached);
+  } catch (e) { /* lanjut hitung fresh */ }
+
+  try {
+    const [fundRows, liveRates, rawBias, rawCot, rawNews, rawBankStances, rawRetail] = await Promise.all([
+      Promise.all(SMART_BIAS_CURRENCIES.map(cur => redisCmd('HGETALL', `fundamental:${cur}`).catch(() => null))),
+      getLiveCbRates().catch(() => []),
+      redisCmd('GET', 'cb_bias').catch(() => null),
+      redisCmd('GET', 'cot_cache_v2').catch(() => null),
+      redisCmd('ZREVRANGE', 'news_history', 0, 299).catch(() => null),
+      redisCmd('GET', 'bank_stances:v1').catch(() => null),
+      redisCmd('GET', 'dukascopy_sentiment_v1').catch(() => null),
+    ]);
+    const fundamentals = Object.fromEntries(SMART_BIAS_CURRENCIES.map((cur, i) => [cur, _hgetallToObj(fundRows[i])]));
+    const biasMap = _parseJsonValue(rawBias, {});
+    const cbBanks = (Array.isArray(liveRates) ? liveRates : []).map(rate => ({
+      ...rate,
+      bias: biasMap[rate.currency]?.bias || null,
+      confidence: biasMap[rate.currency]?.confidence || null,
+      bias_updated: biasMap[rate.currency]?.updated_at || null,
+      source_headlines: biasMap[rate.currency]?.source_headlines || [],
+    }));
+    const storedStances = _parseJsonValue(rawBankStances, null);
+    const retailPayload = _parseJsonValue(rawRetail, {});
+    const retailByCurrency = retailPayload?.currencies || retailPayload?.positions || retailPayload || {};
+    const rows = buildSmartBiasRows({
+      fundamentals,
+      cbBanks,
+      cot: _parseJsonValue(rawCot, {}),
+      bankItems: _parseNewsHistory(rawNews),
+      bankStances: Array.isArray(storedStances) ? storedStances : null,
+      retailByCurrency,
+      nowMs: Date.now(),
+    });
+    const retailAvailable = rows.some(row => row.positioning.retail.long_pct != null);
+    const payload = {
+      schema_version: 1,
+      methodology: 'core_first',
+      rows,
+      computed_at: new Date().toISOString(),
+      retail_status: retailAvailable ? 'available' : 'unavailable',
+      retail_note: retailAvailable
+        ? 'Sampel liquidity consumers SWFX; bukan representasi retail global.'
+        : 'Data Dukascopy belum tersedia. Nilai sengaja dikosongkan, bukan diganti sumber lain.',
+      banks_mode: Array.isArray(storedStances) ? 'curated_cache' : 'strict_news_extraction',
+    };
+    await redisCmd('SET', SMART_BIAS_CACHE_KEY, JSON.stringify(payload), 'EX', SMART_BIAS_TTL_SECS).catch(() => null);
+    return res.status(200).json(payload);
+  } catch (e) {
+    console.warn('smart_bias failed:', e.message);
+    if (cached) return res.status(200).json({ ...cached, stale: true, stale_reason: 'refresh_failed' });
+    return res.status(200).json({ schema_version: 1, rows: [], error: 'data_unavailable', computed_at: new Date().toISOString() });
+  }
+}
+
+const PRIME_EXEC_TTL_SECS = 30 * 60;
+
+// Implementasi persis dua pemeriksaan Prime Academy: D1 EMA200 untuk arah,
+// kemudian relasi EMA21/EMA100 H4 dan gap-nya dibanding ATR14 H6. Kata "clearly"
+// tetap memerlukan konfirmasi visual user di klien; server tidak menciptakan ambang baru.
+async function primeExecutionHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  const symbol = String(req.query.symbol || '').trim();
+  const label = String(req.query.label || symbol).trim().slice(0, 40);
+  if (!symbol) return res.status(400).json({ error: 'symbol_required' });
+  const cacheKey = `prime_exec:v2:${symbol}`;
+  let cached = null;
+  try {
+    cached = _parseJsonValue(await redisCmd('GET', cacheKey), null);
+    if (cached && req.query.force !== '1') return res.status(200).json(cached);
+  } catch (e) { /* lanjut fetch */ }
+
+  if (!mapYahooSymbolToTwelveData(symbol)) {
+    return res.status(200).json({ schema_version: 1, symbol, label, available: false, unavailable_reason: 'provider_native_timeframes_unavailable', computed_at: new Date().toISOString() });
+  }
+  try {
+    const [d1, h4, h1] = await Promise.all([
+      fetchFallbackCandles(symbol, '1d'),
+      fetchFallbackCandles(symbol, '4h'),
+      fetchFallbackCandles(symbol, '1h'),
+    ]);
+    // Provider tidak menyediakan granularity 6H. Bentuk H6 dari H1 sumber yang sama,
+    // anchor UTC 00:00 (bucket 00/06/12/18), sehingga tidak ada campur-provider
+    // dan alignment dapat direproduksi/test.
+    const h6 = resampleCandles(h1, 6, 0);
+    const nowMs = Date.now();
+    const latestH4 = Array.isArray(h4) && h4.length ? Number(h4[h4.length - 1].t) * 1000 : null;
+    const latestD1 = Array.isArray(d1) && d1.length ? Number(d1[d1.length - 1].t) * 1000 : null;
+    const stale = marketHours.isFxMarketOpen(new Date(nowMs)) && (
+      !Number.isFinite(latestH4) || !Number.isFinite(latestD1)
+      || nowMs - latestH4 > 12 * 3600000 || nowMs - latestD1 > 72 * 3600000
+    );
+    const payload = computePrimeExecution({
+      symbol, label, d1, h4, h6, source: 'provider_single', alignment: 'derived_h1_utc_00', stale, computedAt: nowMs,
+    });
+    await redisCmd('SET', cacheKey, JSON.stringify(payload), 'EX', PRIME_EXEC_TTL_SECS).catch(() => null);
+    return res.status(200).json(payload);
+  } catch (e) {
+    console.warn(`prime_execution ${symbol} failed:`, e.message);
+    if (cached) return res.status(200).json({ ...cached, stale: true, stale_reason: 'refresh_failed' });
+    return res.status(200).json({ schema_version: 1, symbol, label, available: false, unavailable_reason: 'data_fetch_failed', computed_at: new Date().toISOString() });
   }
 }
 

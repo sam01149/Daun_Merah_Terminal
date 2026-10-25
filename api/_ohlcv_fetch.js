@@ -89,7 +89,10 @@ const YAHOO_TO_TWELVEDATA_SYMBOL = {
 };
 
 function mapYahooSymbolToTwelveData(yahooSymbol) {
-  return YAHOO_TO_TWELVEDATA_SYMBOL[yahooSymbol] || null;
+  if (YAHOO_TO_TWELVEDATA_SYMBOL[yahooSymbol]) return YAHOO_TO_TWELVEDATA_SYMBOL[yahooSymbol];
+  const fx = /^([A-Z]{3})([A-Z]{3})=X$/.exec(String(yahooSymbol || ''));
+  const supported = new Set(['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD']);
+  return fx && supported.has(fx[1]) && supported.has(fx[2]) ? `${fx[1]}/${fx[2]}` : null;
 }
 
 // Twelve Data time_series (timezone=UTC, order=asc) values[] -> shape IDENTIK
@@ -110,16 +113,17 @@ function normalizeTwelveDataCandles(values) {
   return out.sort((a, b) => a.t - b.t);
 }
 
-// interval: '1h' | '1d' (konvensi internal app, sama dengan key Redis ohlcv:<symbol>:<interval>).
+// interval: '1h' | '4h' | '1d' (konvensi internal app, sama dengan key Redis ohlcv:<symbol>:<interval>).
 async function fetchFallbackCandles(yahooSymbol, interval) {
   const apiKey = process.env.TWELVEDATA_API_KEY;
   if (!apiKey) throw new Error('fetchFallbackCandles: TWELVEDATA_API_KEY belum diset');
   const tdSymbol = mapYahooSymbolToTwelveData(yahooSymbol);
   if (!tdSymbol) throw new Error(`fetchFallbackCandles: tidak ada mapping Twelve Data untuk ${yahooSymbol}`);
   const tdInterval = interval === '1d' ? '1day' : interval;
-  // outputsize: 420 (1h) untuk 250 H1 + >=100 H4; 220 (1d) untuk EMA200. 1 credit/request
+  // outputsize: 420 intraday untuk 250 H1 + >=100 H4; 300 (1d) agar EMA200
+  // punya warm-up memadai. 1 credit/request
   // terlepas dari outputsize (docs.twelvedata.com), jadi tidak ada biaya tambahan minta lebih banyak.
-  const outputsize = interval === '1d' ? 220 : 420;
+  const outputsize = interval === '1d' ? 300 : 420;
   const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=${tdInterval}&outputsize=${outputsize}&timezone=UTC&order=asc&apikey=${encodeURIComponent(apiKey)}`;
   const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
   const json = await r.json();

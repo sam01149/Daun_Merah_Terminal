@@ -34,6 +34,8 @@ Ada 2 lapis pembatas yang perlu dibedakan:
 
 ## 2. Peta Fitur AI
 
+**Bukan fitur AI (pembaruan 2026-10-25).** Tabel Smart Bias Dashboard dan panel trend/momentum Prime di tab Teknikal sepenuhnya deterministik. Keduanya hanya membaca data/cache, menerapkan aturan kode, dan tidak memanggil provider/model. Membuka Dashboard atau mengganti pair tidak memakai token. Kolom Banks saat ini memakai filter forward-looking ketat dan agregasi kode; artikel seminar/recap/non-FX ditolak, bukan dikirim ke model untuk menutup kekosongan. Keputusan Session 404 untuk menghentikan thesis generatif tetap berlaku.
+
 | # | Fitur | Tombol di UI | Dipicu otomatis? | Cache | Rate limit server |
 |---|-------|--------------|-------------------|-------|--------------------|
 | 1 | **Ringkasan Berita** (briefing makro terpadu + CB Bias + Polymarket + Peringatan Posisi; tanpa generator trade thesis) | "Ringkas Berita" / "Ringkas Ulang" | Ya — 3×/hari (cron) | Tidak ada cache untuk generate baru; hasil terakhir disimpan untuk mode baca cepat | 4 request/menit/IP + single-flight lock global 55 detik (lihat §3.1) |

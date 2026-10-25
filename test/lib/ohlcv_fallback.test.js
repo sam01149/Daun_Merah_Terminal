@@ -22,6 +22,7 @@ test('mapYahooSymbolToTwelveData: 15 pair terdaftar (8 fixed + 7 dinamis) terpet
   assert.equal(mapYahooSymbolToTwelveData('EURUSD=X'), 'EUR/USD');
   assert.equal(mapYahooSymbolToTwelveData('USDJPY=X'), 'USD/JPY');
   assert.equal(mapYahooSymbolToTwelveData('GBPCAD=X'), 'GBP/CAD');
+  assert.equal(mapYahooSymbolToTwelveData('NZDCHF=X'), 'NZD/CHF');
 });
 
 test('mapYahooSymbolToTwelveData: simbol tidak dikenal -> null (bukan crash)', () => {

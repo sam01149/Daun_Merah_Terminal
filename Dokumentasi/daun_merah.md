@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-24 (Session 412 — Ringkas kesimpulan Analisa)
+> **Last updated:** 2026-10-25 (Session 413 — Smart Bias Dashboard dan eksekusi Prime)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 413 (2026-10-25) — Smart Bias Dashboard dan eksekusi Prime
+
+**Dashboard.** Blok Ringkasan Pasar diganti tabel datar per currency untuk USD, EUR, GBP, JPY, CHF, CAD, AUD, dan NZD. Kolomnya dikunci ke Growth, Inflation, Central bank, Banks, Positioning, dan Overall; Trend/Seasonality tidak dimasukkan karena formula currency-level Academy belum terbukti. Growth+Inflation+CB menjadi core, sedangkan Banks/Positioning hanya konfirmasi atau konflik dan tidak dapat membalik arah core. Bukti seed, basi, kurang, atau konflik menjadi `—`/mixed, bukan sinyal. Positioning memisahkan Asset Manager, Leveraged Funds, dan Retail; Retail hanya berlabel `src: Dukascopy` dan tetap `—` karena jalur resmi JForex belum layak untuk runtime proyek serta endpoint widget internal tidak di-scrape.
+
+**Teknikal.** Strip manual D1/H4/H1/M15 dan kartu RSI/SMA pada area tersebut diganti prosedur yang tertulis di materi Prime: close D1 terhadap EMA200, EMA21 terhadap EMA100 H4, lalu gap EMA H4 harus lebih besar dari ATR14 H6. Kata “jelas” tetap dikonfirmasi user dan terikat snapshot D1; 2/3, data basi, atau warm-up kurang selalu WAIT. D1/H4/H1 memakai satu sumber terkonfigurasi, H6 dibentuk dari H1 pada bucket UTC 00/06/12/18. Uji live EUR/USD memberi 300 D1, 420 H4, 420 H1, dan 71 H6—cukup untuk warm-up tanpa menurunkan standar. Data publik Deriv diuji tetapi hanya memberi 185 D1 dan 97 H4 sehingga tidak dipakai untuk verdict ini.
+
+**UI dan integrasi.** Dashboard kini dapat dibuka dari drawer mobile; tabel tetap 8 baris dengan scroll horizontal terkendali dan kolom Currency sticky. Detail bukti terbuka di bawah baris tanpa membuat kartu baru. Dua action baru menumpang `api/admin.js` (`smart_bias`, `prime_execution`), jadi jumlah serverless function tetap 12/12. Keduanya deterministik dan tidak memanggil model AI; penghentian thesis generatif Session 404 tidak dibalik. `APP_VERSION` dinaikkan ke `2026.10.25.1`.
+
+**Verifikasi.** Tes unit/integrasi baru mengunci parsing, freshness, independensi core, dedupe Banks, pemisahan populasi positioning, EMA/ATR/resampling, aturan 3/3, stale WAIT, wiring UI, dan pemetaan simbol. Suite penuh lulus 1.499/1.499. Chromium lokal diverifikasi pada 1440 px, 1024 px, dan 390 px; tabel berisi 8 currency dan tidak meluber ke body. Verifikasi produksi dicatat setelah deployment pada sesi yang sama.
 
 ## Changelog Session 412 (2026-10-24) — Ringkas kesimpulan Analisa
 
