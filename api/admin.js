@@ -9615,6 +9615,7 @@ async function _fetchMarcLatest() {
   const entries = marcWeekly.parseMarcFeed(await feedRes.text());
   if (!entries.length) throw new Error('marc_week_ahead_not_found');
   const article = entries[0];
+  if (article.content && article.content.length >= 500) return { ...article, text: article.content.slice(0, 60000) };
   const articleRes = await fetch(article.link, { headers, redirect: 'follow', signal: AbortSignal.timeout(12000) });
   if (!articleRes.ok) throw new Error(`marc_article_http_${articleRes.status}`);
   const text = marcWeekly.extractArticleText(await articleRes.text());

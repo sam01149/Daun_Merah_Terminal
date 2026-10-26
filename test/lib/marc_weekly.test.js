@@ -10,11 +10,12 @@ const {
 test('Marc weekly: feed memilih Week Ahead terbaru dan link alternate', () => {
   const xml = `<feed>
     <entry><title>Daily Note</title><published>2026-10-25T10:00:00Z</published><link rel="alternate" href="https://x/daily"/></entry>
-    <entry><title>Week Ahead: Five Central Banks Meet</title><published>2026-10-24T10:00:00Z</published><link rel="self" href="https://x/feed"/><link rel="alternate" href="https://www.marctomarket.com/week"/></entry>
+    <entry><title>Week Ahead: Five Central Banks Meet</title><published>2026-10-24T10:00:00Z</published><link rel="self" href="https://x/feed"/><link rel="alternate" href="https://www.marctomarket.com/week"/><content type="html">&lt;p&gt;The dollar is likely to rise next week.&lt;/p&gt;</content></entry>
   </feed>`;
   const rows = parseMarcFeed(xml);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].link, 'https://www.marctomarket.com/week');
+  assert.equal(rows[0].content, 'The dollar is likely to rise next week.');
 });
 
 test('Marc weekly: body artikel dipisahkan dari sidebar dan window dikunci Senin-Jumat', () => {

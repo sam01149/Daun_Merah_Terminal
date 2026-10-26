@@ -33,12 +33,12 @@ function decodeEntities(value) {
 }
 
 function cleanHtml(value) {
-  return decodeEntities(String(value || '')
+  return decodeEntities(String(value || ''))
     .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(?:p|h[1-6]|li|div|section)>/gi, '\n')
-    .replace(/<[^>]+>/g, ' '))
+    .replace(/<[^>]+>/g, ' ')
     .replace(/[ \t]+/g, ' ')
     .split('\n').map(line => line.trim()).filter(Boolean).join('\n')
     .trim();
@@ -61,8 +61,9 @@ function parseMarcFeed(xml) {
     const alternate = links.find(x => /rel=["']alternate["']/i.test(x[0]));
     const link = decodeEntities(alternate?.[1] || links[0]?.[1] || block.match(/<link>\s*(https?:\/\/[^<\s]+)\s*<\/link>/i)?.[1] || '');
     const pubDate = tag('published') || tag('pubDate') || tag('updated');
+    const content = tag('content');
     const publishedMs = Date.parse(pubDate);
-    if (title && link && Number.isFinite(publishedMs)) entries.push({ title, link, pubDate: new Date(publishedMs).toISOString() });
+    if (title && link && Number.isFinite(publishedMs)) entries.push({ title, link, pubDate: new Date(publishedMs).toISOString(), content });
   }
   return entries.sort((a, b) => Date.parse(b.pubDate) - Date.parse(a.pubDate));
 }
