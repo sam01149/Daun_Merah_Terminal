@@ -7,7 +7,7 @@ const NEWSCAT_VERSION = '2026.09.12.2';
 // seluruh SW — detectCat() di bawah punya fallback 'macro' (typeof guard).
 try { importScripts('/newscat.js?v=' + NEWSCAT_VERSION); } catch (e) {}
 
-const CACHE_NAME = 'fjfeed-v1';
+const CACHE_NAME = 'fjfeed-v2';
 const FETCH_URL = '/api/feeds?type=rss';
 const STATE_CACHE = 'daun-merah-state';
 const SEEN_GUIDS_URL = '/sw-seen-guids';

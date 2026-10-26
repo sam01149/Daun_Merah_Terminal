@@ -92,3 +92,13 @@ test('Smart Bias Overall: Inflation yang bergantung pada CB tidak dihitung dua k
   assert.equal(result.state, 'insufficient');
   assert.ok(result.rationale_codes.includes('core_independence_low'));
 });
+
+test('Smart Bias Overall: Pandangan Marc tidak memengaruhi kesimpulan sebelum track record layak', () => {
+  const layer = state => ({ state });
+  const result = buildOverall({
+    growth:layer('bullish'), inflation:{ state:'bullish', policy_context:'neutral' }, central_bank:layer('neutral'),
+    banks:{ state:'bearish', eligible_for_overall:false }, positioning:layer('insufficient'),
+  });
+  assert.equal(result.state, 'bullish');
+  assert.deepEqual(result.conflicts, []);
+});

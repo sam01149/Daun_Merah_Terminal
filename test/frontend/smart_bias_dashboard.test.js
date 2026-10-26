@@ -24,6 +24,9 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   for (const heading of ['Pertumbuhan', 'Inflasi', 'Bank sentral', 'Pandangan bank', 'Posisi pasar', 'Kesimpulan']) {
     assert.match(renderer, new RegExp(`<th>${heading}</th>`));
   }
+  assert.match(renderer, /Marc to Market \/ Marc Chandler/);
+  assert.match(renderer, /Rapor forward/);
+  assert.match(html, /Belum cukup sampel/);
   assert.doesNotMatch(renderer, /<th>Trend<\/th>|<th>Seasonality<\/th>/);
   assert.match(html, /@media \(max-width: 1023px\)[\s\S]*?#dashboardPanel\.visible \{ display:flex;/);
   assert.match(html, /view:'dashboard',\s+label:'Dashboard'/);

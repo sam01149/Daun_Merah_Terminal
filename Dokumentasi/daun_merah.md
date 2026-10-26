@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-26 (Session 419 — Dua indikator chart dan label gap eksplisit)
+> **Last updated:** 2026-10-26 (Session 420 — Tracker bias weekly Marc to Market)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 420 (2026-10-26) — Tracker bias weekly Marc to Market
+
+**Pipeline forward-only.** Modul baru `api/_marc_weekly.js` dan action `api/admin?action=marc_weekly` menumpang function `admin.js` yang sudah ada. Cron GitHub Actions mengambil feed `Week Ahead` Marc to Market tiga kali di sekitar akhir pekan, menyimpan teks asli immutable per content hash, lalu DeepSeek v4-flash mengekstrak maksimum satu base-case eksplisit per currency. Validator kode menolak klaim tanpa kutipan/alasan, pair yang tidak memuat currency, arah non-biner, duplikat currency, serta snapshot yang baru berhasil diambil sesudah Senin 00:00 UTC. Artikel yang direvisi menghasilkan snapshot baru dan tidak menimpa versi lama.
+
+**Evaluasi objektif.** Setelah Jumat berakhir, bias dinilai dengan candle Deriv H1 pada window Senin 00:00–Sabtu 00:00 UTC. Klaim pair-specific memakai pair tersebut; klaim currency-only memakai rata-rata semua pair Deriv yang tersedia dan memuat currency itu. Zona noise terkunci 0,15%; hasil kecil menjadi netral. Log menyimpan hit/miss, signed return, return ternormalisasi volatilitas minggu sebelumnya, MFE/MAE, serta baseline momentum minggu sebelumnya. Rapor memisahkan currency, layer, confidence, dan explicit/conditional; metrik utamanya `n`, hit-rate, Wilson 95%, effect size, dan baseline. `n<30` selalu `belum cukup`; kolom tidak boleh mengonfirmasi/menentang Kesimpulan sampai segmen currency mencapai `terbukti_baik`.
+
+**Dashboard dan keputusan label.** Atas koreksi user, judul kolom tetap `Pandangan bank`. Detail bukti menyebut sumber sebenarnya `Marc to Market / Marc Chandler`, menampilkan rapor forward, jumlah sampel, akurasi, dan tautan artikel aktif. Sistem tidak lagi memakai ekstraksi headline FinancialJuice/MUFG dan institusi lain untuk mengisi kolom ini. FinancialJuice RSS real-time tidak berubah. `APP_VERSION` naik ke `2026.10.26.6` dan cache service worker ke `fjfeed-v2`.
+
+**Verifikasi.** Parser diuji langsung pada feed produksi: artikel 24 Oktober ditemukan melalui link Atom `rel=alternate` dan body utama 15.980 karakter berhasil dipisahkan. Unit/regresi penuh lulus 1.521/1.521; `node --check` dan `git diff --check` bersih. Preview lokal memastikan Dashboard tetap terbuka dengan label `Pandangan bank`; data kosong tetap fail-closed. Verifikasi endpoint produksi dan snapshot pertama dilakukan setelah deploy.
 
 ## Changelog Session 419 (2026-10-26) — Dua indikator chart dan label gap eksplisit
 

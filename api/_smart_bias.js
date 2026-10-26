@@ -241,10 +241,16 @@ function buildBanks(currency, stances) {
   const bull = evidence.filter(x => x.direction === 'bullish').length;
   const bear = evidence.length - bull;
   const state = bull && bear ? 'mixed' : bull ? 'bullish' : 'bearish';
+  // Sumber Marc ditampilkan di kolom "Pandangan bank" atas keputusan user,
+  // tetapi baru boleh mengonfirmasi kesimpulan setelah track record currency itu
+  // mencapai n>=30 dan berstatus terbukti_baik. Outlook tetap terlihat sebelum itu.
+  const guarded = evidence.some(x => x.track_record_eligible === false);
   return {
     state,
     confidence: evidence.length >= 3 && state !== 'mixed' ? 'tinggi' : evidence.length >= 2 ? 'sedang' : 'rendah',
     freshness: 'fresh', institutions: evidence.map(x => x.institution), evidence,
+    eligible_for_overall: !guarded,
+    track_record: evidence.find(x => x.track_record)?.track_record || null,
   };
 }
 
@@ -316,6 +322,7 @@ function buildOverall({ growth, inflation, central_bank: centralBank, banks, pos
   const conflicts = [];
   for (const [name, layer] of [['banks', banks], ['positioning', positioning]]) {
     if (!['bullish', 'bearish'].includes(state)) continue;
+    if (name === 'banks' && layer.eligible_for_overall === false) continue;
     if (layer.state === state) confirmations.push(name);
     else if (['bullish', 'bearish', 'mixed'].includes(layer.state)) conflicts.push(name);
   }

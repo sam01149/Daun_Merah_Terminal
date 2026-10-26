@@ -1,0 +1,28 @@
+name: Marc Weekly Snapshot and Evaluation
+
+# Tiga kesempatan agar artikel akhir pekan tidak terlewat bila FeedBurner atau
+# GitHub Actions terlambat. Endpoint idempotent: hash konten yang sama tidak
+# membuat forecast ganda, dan lock Redis mencegah dua run bersamaan.
+on:
+  schedule:
+    - cron: '5 6 * * 0'   # Minggu 13:05 WIB
+    - cron: '5 18 * * 0'  # Senin 01:05 WIB
+    - cron: '15 0 * * 1'  # Senin 07:15 WIB, kesempatan terakhir
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bekukan artikel dan nilai minggu yang selesai
+        run: |
+          STATUS=$(curl -sS -o /tmp/marc-weekly.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 58 \
+            "https://financial-feed-app.vercel.app/api/admin?action=marc_weekly&mode=sync")
+          cat /tmp/marc-weekly.json
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Marc weekly sync failed with HTTP $STATUS"
+            exit 1
+          fi
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/marc-weekly.json','utf8')); if(x.error) { console.error(x.error); process.exit(1) }"
