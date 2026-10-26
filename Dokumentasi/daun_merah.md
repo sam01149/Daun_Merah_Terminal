@@ -22,7 +22,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perubahan.** Label metrik diperjelas dari `EMA GAP` menjadi `EMA GAP (EMA 21 & 100)` agar sumber perhitungannya terlihat tanpa harus menampilkan kedua garis tersebut. Chart TradingView kini hanya memasang dua indikator bawaan: EMA200 untuk pemeriksaan arah tren besar dan RSI14; overlay EMA21 serta EMA100 dihapus dari chart. Rumus server tidak berubah: EMA21/EMA100 H4 tetap dihitung untuk gap dan arah momentum, sedangkan close D1 tetap dibandingkan dengan EMA200 D1. Konfigurasi chart global membuat susunan ini berlaku untuk seluruh pair.
 
-**Verifikasi.** Regresi frontend mengunci label lengkap, satu study EMA200, satu study RSI, serta memastikan EMA21/EMA100 dan SMA lama tidak kembali ke chart. Versi aplikasi dinaikkan ke `2026.10.26.5`.
+**Verifikasi.** Regresi frontend mengunci label lengkap, satu study EMA200, satu study RSI, serta memastikan EMA21/EMA100 dan SMA lama tidak kembali ke chart. Suite penuh lulus 1.514/1.514. Production `2026.10.26.5` diverifikasi langsung: TradingView XAU/USD hanya merender EMA200 dan RSI14, sementara panel menampilkan `EMA GAP (EMA 21 & 100)`, nilai gap 90,17 point, ATR 18,27 point, dan arah `SELL`.
 
 ## Changelog Session 418 (2026-10-26) — Verdict kembali mengikuti tiga pemeriksaan
 
