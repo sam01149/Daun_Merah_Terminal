@@ -24,6 +24,16 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-10-26] Alur FJElite laporan bank menjadi kolom Pandangan bank
+
+**State sekarang.** FinancialJuice RSS sudah mengirim judul, isi `<description>`, GUID, tanggal, dan tautan FJElite; artikel panjang juga sudah tampil di tab Artikel. Endpoint Smart Bias membaca arsip `news_history` 36 jam dan mempunyai ekstraktor deterministik awal untuk institusi, currency/pair, arah, serta deduplikasi satu suara terbaru per institusi. Hasil masuk ke kolom `Pandangan bank`, sedangkan artikel yang tidak cukup eksplisit tetap `—`. Keterbatasannya: ekstraktor aktif masih berbasis pola kata, memakai horizon generik `week_ahead`, dan belum mengekstrak kondisi/invalidation secara semantik; key curated `bank_stances:v1` sudah didukung tetapi belum ada writer produksi yang membangunnya. Karena itu fondasi sudah tersambung, tetapi belum layak dianggap mampu membaca semua variasi prosa laporan bank secara andal.
+
+**Pipeline defensif yang dituju.** Saat laporan baru masuk: (1) simpan artikel mentah dan provenance; (2) prefilter hanya outlook FX forward-looking, tolak recap, seminar, CFTC gambar, dan artikel deskriptif; (3) ekstrak terstruktur `institution`, `currency/pair`, `direction`, `horizon`, `condition/invalidation`, `reason`, kutipan bukti pendek, tanggal, GUID, dan content hash; (4) validasi keras—arah, horizon, bank asal, dan bukti harus eksplisit, pair dipecah menjadi base/quote yang berlawanan; (5) deduplikasi repost dan tesis sama, lalu simpan maksimal satu stance terbaru per bank per currency/horizon; (6) agregasi antar-bank menjadi naik/turun/campur dengan confidence berdasarkan jumlah institusi independen; (7) tampilkan ringkasan di Dashboard dan detail bank, alasan, tanggal, serta tautan saat baris diklik. FJElite diperlakukan sebagai kanal publikasi, bukan sebagai satu suara bank.
+
+**Batas keputusan.** `Pandangan bank` hanya lapisan konfirmasi/konflik. Ia tidak boleh membalik kesimpulan yang dibentuk oleh Pertumbuhan + Inflasi + Bank sentral, tidak boleh menghitung beberapa artikel bank yang sama sebagai beberapa suara, dan tidak boleh menebak arah dari bahasa ambigu. Cache per GUID/content hash mencegah ekstraksi berbayar berulang; full text tidak perlu dipublikasikan ulang. Contoh: “MUFG expects EUR/USD to rise next week while ECB repricing is limited” menjadi MUFG EUR bullish dan USD bearish untuk horizon satu minggu dengan alasan tersebut; artikel “MUFG reviews yesterday's CPI” tanpa pandangan ke depan ditolak.
+
+**Sumber:** sesi user 2026-10-26; `api/feeds.js::parseRSSItems/storeNewsHistory`, `api/_smart_bias.js::extractBankStances/buildBanks`, `api/admin.js::smartBiasHandler`, dan `index.html::renderDashSmartBias`.
+
 ### [2026-10-26] Decision tree Momentum, Range, dan Tactical Fade menurut Prime Academy
 
 **Perbedaan inti.** Ketiganya menjawab kondisi pasar yang berbeda, bukan tiga konfirmasi untuk trade yang sama. **Momentum** mengikuti arah dominan ketika makro dan harga mempunyai dorongan jelas. **Range** memperdagangkan rotasi dari tepi ke dalam ketika pasar tidak mempunyai arah bersih dan harga berulang kali tertahan dalam batas yang sama. **Tactical fade** mengambil koreksi jangka pendek melawan pergerakan terbaru yang terlalu cepat dan ditopang cerita tipis/belum terkonfirmasi; pandangan makro besar tidak otomatis berubah.
