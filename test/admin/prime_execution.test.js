@@ -33,7 +33,7 @@ test('Prime: resampling menjaga open pertama, ekstrem, dan close terakhir', () =
   assert.deepEqual(resampleCandles(rows, 6), [{ t:0, o:1, h:4, l:0.5, c:3, v:3 }]);
 });
 
-test('Prime: bullish 3/3 memberi BUY ONLY, konfirmasi tidak jelas tetap WAIT', () => {
+test('Trend: bullish 3/3 otomatis memberi BUY ONLY tanpa konfirmasi pengguna', () => {
   const metrics = computePrimeExecution({
     symbol:'EURUSD=X', label:'EUR/USD',
     d1:candles(260, 1, 0.001, 0.002),
@@ -45,8 +45,8 @@ test('Prime: bullish 3/3 memberi BUY ONLY, konfirmasi tidak jelas tetap WAIT', (
   assert.equal(metrics.trend.relation, 'above');
   assert.equal(metrics.momentum.direction, 'bullish');
   assert.equal(metrics.strength.passed, true);
-  assert.equal(finalPrimeVerdict(metrics, 'above'), 'BUY ONLY');
-  assert.equal(finalPrimeVerdict(metrics, 'unclear'), 'WAIT');
+  assert.equal(metrics.verdict, 'BUY ONLY');
+  assert.equal(finalPrimeVerdict(metrics), 'BUY ONLY');
 });
 
 test('Prime: dua dari tiga selalu WAIT', () => {
@@ -59,7 +59,7 @@ test('Prime: dua dari tiga selalu WAIT', () => {
   assert.equal(metrics.trend.relation, 'above');
   assert.equal(metrics.momentum.direction, 'bullish');
   assert.equal(metrics.strength.passed, false);
-  assert.equal(finalPrimeVerdict(metrics, 'above'), 'WAIT');
+  assert.equal(finalPrimeVerdict(metrics), 'WAIT');
 });
 
 test('Prime: warm-up kurang tidak pernah menghasilkan arah final', () => {
@@ -67,7 +67,7 @@ test('Prime: warm-up kurang tidak pernah menghasilkan arah final', () => {
     symbol:'USDJPY=X', d1:candles(199, 100, 0.1), h4:candles(99, 100, 0.1, 0.2, 14400), h6:candles(14, 100, 0.1, 0.2, 21600),
   });
   assert.equal(metrics.available, false);
-  assert.equal(finalPrimeVerdict(metrics, 'above'), 'WAIT');
+  assert.equal(finalPrimeVerdict(metrics), 'WAIT');
 });
 
 test('Prime: snapshot lama selalu WAIT walau tiga pemeriksaan lolos', () => {
@@ -77,5 +77,6 @@ test('Prime: snapshot lama selalu WAIT walau tiga pemeriksaan lolos', () => {
     h6:candles(60, 1, 0.0001, 0.001, 21600), stale:true,
   });
   assert.equal(metrics.available, true);
-  assert.equal(finalPrimeVerdict(metrics, 'above'), 'WAIT');
+  assert.equal(metrics.verdict, 'WAIT');
+  assert.equal(finalPrimeVerdict(metrics), 'WAIT');
 });

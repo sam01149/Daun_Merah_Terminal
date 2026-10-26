@@ -13,14 +13,15 @@ function between(start, end) {
   return html.slice(from, to);
 }
 
-test('Dashboard memakai tabel Smart Bias enam kolom data dan tidak lagi memakai briefing utama', () => {
+test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi memakai briefing utama', () => {
   const markup = between('<!-- DASHBOARD PANEL -->', '<!-- COT PANEL -->');
-  assert.match(markup, /SMART BIAS · WEEK AHEAD/);
+  assert.match(markup, /ARAH MATA UANG MINGGU INI/);
+  assert.doesNotMatch(markup, /SMART BIAS|WEEK AHEAD/);
   assert.match(markup, /id="dashSmartBiasSection"/);
   assert.doesNotMatch(markup, /id="dashDigestSection"|id="dashBiasList"|id="dashFundStrip"|id="dashRetailStrip"/);
 
   const renderer = between('function renderDashSmartBias()', '\nfunction renderDashPositionAlerts()');
-  for (const heading of ['Growth', 'Inflation', 'Central bank', 'Banks', 'Positioning', 'Overall']) {
+  for (const heading of ['Pertumbuhan', 'Inflasi', 'Bank sentral', 'Pandangan bank', 'Posisi pasar', 'Kesimpulan']) {
     assert.match(renderer, new RegExp(`<th>${heading}</th>`));
   }
   assert.doesNotMatch(renderer, /<th>Trend<\/th>|<th>Seasonality<\/th>/);
@@ -36,23 +37,24 @@ test('Positioning menjaga Institutional dan Retail terpisah serta hanya Dukascop
   assert.doesNotMatch(renderer, /FinancialJuice|FXSSI|Yahoo|Deriv|Twelve Data/);
 });
 
-test('Teknikal mengganti selector MTF dan kartu RSI/SMA dengan pemeriksaan Prime 3 langkah', () => {
+test('Teknikal hanya menampilkan EMA gap, ATR, dan arah otomatis', () => {
   const markup = between('<!-- TEKNIKAL PANEL -->', '<!-- DASHBOARD PANEL -->');
   assert.match(markup, /id="tekPrimePanel"/);
   assert.doesNotMatch(markup, /mtfSelD1|mtfSelH4|mtfSelH1|mtfSelM15|id="tekTaPanel"/);
 
   const renderer = between('function renderPrimeExecution()', '\nasync function fetchPrimeExecution');
-  assert.match(renderer, /Trend D1/);
-  assert.match(renderer, /Arah H4/);
-  assert.match(renderer, /Kekuatan/);
-  assert.match(renderer, /ATR 14 H6/);
-  assert.match(renderer, /Dua dari tiga tetap WAIT/);
+  assert.match(renderer, />EMA GAP</);
+  assert.match(renderer, />ATR</);
+  assert.match(renderer, />ARAH</);
+  assert.match(renderer, /rawVerdict === 'BUY ONLY' \? 'BUY'/);
+  assert.doesNotMatch(renderer, /tek-prime-grid|1 · Trend D1|2 · Arah H4|3 · Kekuatan|Tren kuat:/);
+  assert.doesNotMatch(renderer, /Konfirmasi visual|Jelas di atas|Jelas di bawah|Tidak jelas|momentum Prime/i);
 });
 
-test('Konfirmasi kata jelas terikat snapshot dan data lama tidak bisa memberi BUY/SELL', () => {
-  const verdict = between('function tekPrimeVerdict(', '\nfunction tekPrimeManualFor');
-  const manual = between('function tekPrimeManualFor(', '\nfunction setPrimeTrend');
+test('Kesimpulan tren memakai data sistem dan data lama tetap TUNGGU', () => {
+  const verdict = between('function tekPrimeVerdict(', '\n\nfunction _tekPrimeNum');
   assert.match(verdict, /data\.stale/);
   assert.match(verdict, /return 'WAIT'/);
-  assert.match(manual, /saved\.snapshot_key !== data\?\.trend\?\.snapshot_key/);
+  assert.match(verdict, /data\.trend\?\.relation === 'above'/);
+  assert.doesNotMatch(html, /TEK_PRIME_CONFIRM_KEY|setPrimeTrend\(|tekPrimeManualFor\(/);
 });

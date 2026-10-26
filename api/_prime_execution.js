@@ -83,7 +83,7 @@ function computePrimeExecution({ symbol, label, d1, h4, h6, source = null, align
   const dec = decimalsForSymbol(symbol);
   const lastD1 = daily.at(-1)?.t || null;
   const snapshotKey = available ? `${lastD1}:${ema200.toFixed(dec)}` : null;
-  return {
+  const result = {
     schema_version: 1,
     symbol, label: label || symbol, computed_at: new Date(computedAt).toISOString(), source,
     available, stale: Boolean(stale), unavailable_reason: available ? null : 'warmup_or_data_insufficient',
@@ -98,12 +98,14 @@ function computePrimeExecution({ symbol, label, d1, h4, h6, source = null, align
     strength: { passed: available && strength, atr14_h6: atr14, atr_display: displayDistance(symbol, atr14), rule: 'ema_gap_gt_atr' },
     alignment,
   };
+  result.verdict = finalPrimeVerdict(result);
+  return result;
 }
 
-function finalPrimeVerdict(metrics, manualTrend) {
-  if (!metrics?.available || metrics.stale || !['above', 'below', 'unclear'].includes(manualTrend)) return 'WAIT';
-  if (manualTrend === 'above' && metrics.momentum.direction === 'bullish' && metrics.strength.passed) return 'BUY ONLY';
-  if (manualTrend === 'below' && metrics.momentum.direction === 'bearish' && metrics.strength.passed) return 'SELL ONLY';
+function finalPrimeVerdict(metrics) {
+  if (!metrics?.available || metrics.stale) return 'WAIT';
+  if (metrics.trend?.relation === 'above' && metrics.momentum?.direction === 'bullish' && metrics.strength?.passed) return 'BUY ONLY';
+  if (metrics.trend?.relation === 'below' && metrics.momentum?.direction === 'bearish' && metrics.strength?.passed) return 'SELL ONLY';
   return 'WAIT';
 }
 

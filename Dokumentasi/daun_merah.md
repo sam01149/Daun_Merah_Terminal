@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-25 (Session 414 — Fondasi surprise makro Smart Bias)
+> **Last updated:** 2026-10-26 (Session 415 — Sizing, tren otomatis, dan istilah UI sederhana)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 415 (2026-10-26) — Sizing, tren otomatis, dan istilah UI sederhana
+
+**Sizing Calculator.** Alur mode harga sebelumnya menerima Entry dan SL tetapi membuang TP yang sudah tersedia dari Analisa/Rencana, lalu meminta pengguna mengisi Target R:R lagi. Mode harga kini menerima Entry + SL + TP dan menghitung R:R otomatis dari jaraknya; TP diteruskan dari kedua jalur hulu dan disimpan bersama form. Target R:R hanya tampil pada mode pips karena pada mode itu TP memang belum ada. `Risk %` diganti menjadi `Maksimum rugi dari equity (%)` dengan nominal dolar langsung, sebab persentase ini adalah batas kerugian yang dipilih pengguna untuk menentukan lot—bukan hasil turunan Entry/SL/TP. Ditambahkan validasi sisi harga: LONG wajib `SL < Entry < TP`, SHORT wajib `TP < Entry < SL`.
+
+**Teknikal.** Konfirmasi subjektif “Jelas di atas / Jelas di bawah / Tidak jelas” dan penyimpanannya di `localStorage` dihapus. Server sekarang menetapkan arah sendiri: close D1 terhadap EMA200, EMA21 terhadap EMA100 pada H4, lalu `abs(EMA21 - EMA100) > ATR14 H6`; ketiganya wajib selaras dan data wajib cukup serta segar, selain itu hasil `WAIT`. Panel dipangkas menjadi tiga keluaran saja sesuai kebutuhan pengguna: `EMA GAP`, `ATR`, dan `ARAH` (`BUY`/`SELL`/`TUNGGU`). Nama internal endpoint/key tetap dipertahankan untuk kompatibilitas cache dan data lama, tetapi tidak ditampilkan ke pengguna.
+
+**Bahasa UI.** Label `SMART BIAS · WEEK AHEAD` diganti `ARAH MATA UANG MINGGU INI`, judul kolom Dashboard diterjemahkan menjadi istilah informatif, dan semua kemunculan `Prime` yang terlihat pengguna diganti dengan kata biasa seperti `Rencana Entry` atau dihapus. Istilah internal tetap ada agar kontrak backend, statistik populasi, dan riwayat tersimpan tidak terputus.
+
+**Verifikasi.** Uji baru mengunci perhitungan R:R long/short, penolakan level terbalik, penerusan TP, penjelasan batas rugi, kesimpulan tren otomatis, stale fail-safe, serta absennya istilah/konfirmasi lama di UI. Suite penuh lulus 1.513/1.513. Chromium headless memverifikasi Sizing pada 1280 px dan 390 px tanpa overflow; panel Teknikal final pada kedua ukuran hanya menampilkan EMA gap, ATR, dan arah tanpa tombol manual.
 
 ## Changelog Session 414 (2026-10-25) — Fondasi surprise makro Smart Bias
 

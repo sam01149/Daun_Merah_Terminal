@@ -9661,9 +9661,9 @@ async function smartBiasHandler(req, res) {
 
 const PRIME_EXEC_TTL_SECS = 30 * 60;
 
-// Implementasi persis dua pemeriksaan Prime Academy: D1 EMA200 untuk arah,
-// kemudian relasi EMA21/EMA100 H4 dan gap-nya dibanding ATR14 H6. Kata "clearly"
-// tetap memerlukan konfirmasi visual user di klien; server tidak menciptakan ambang baru.
+// Pemeriksaan tren deterministik: close D1 terhadap EMA200 untuk arah, kemudian
+// relasi EMA21/EMA100 H4 dan gap-nya dibanding ATR14 H6. Ketiga hasil dihitung
+// server; klien tidak meminta konfirmasi visual subjektif dari pengguna.
 async function primeExecutionHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
@@ -9705,7 +9705,7 @@ async function primeExecutionHandler(req, res) {
     return res.status(200).json(payload);
   } catch (e) {
     console.warn(`prime_execution ${symbol} failed:`, e.message);
-    if (cached) return res.status(200).json({ ...cached, stale: true, stale_reason: 'refresh_failed' });
+    if (cached) return res.status(200).json({ ...cached, stale: true, stale_reason: 'refresh_failed', verdict: 'WAIT' });
     return res.status(200).json({ schema_version: 1, symbol, label, available: false, unavailable_reason: 'data_fetch_failed', computed_at: new Date().toISOString() });
   }
 }
