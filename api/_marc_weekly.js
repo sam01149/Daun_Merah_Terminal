@@ -7,11 +7,15 @@
 const crypto = require('node:crypto');
 
 const SCHEMA_VERSION = 1;
-const EXTRACTOR_VERSION = 'marc-weekly-v2';
+const EXTRACTOR_VERSION = 'marc-weekly-v3';
 const NOISE_PCT = 0.15;
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD'];
 const LAYERS = new Set(['policy', 'growth', 'inflation', 'technical', 'risk', 'mixed']);
 const CONFIDENCES = new Set(['low', 'medium', 'high']);
+// Audit 1.951 post (2020-2026) menemukan dua nama editorial yang benar-benar
+// dipakai untuk outlook mingguan: "Week Ahead" dan "Next Week". Jangan pakai
+// kata "weekly" generik karena catatan harian sering menyebut jadwal weekly.
+const WEEKLY_TITLE_RE = /\b(?:week ahead|next week)\b/i;
 const SUPPORTED_PAIRS = {
   'EUR/USD': 'EURUSD=X', 'GBP/USD': 'GBPUSD=X', 'USD/JPY': 'USDJPY=X',
   'AUD/USD': 'AUDUSD=X', 'USD/CAD': 'USDCAD=X', 'USD/CHF': 'USDCHF=X',
@@ -56,7 +60,7 @@ function parseMarcFeed(xml) {
       return cleanHtml((cdata || plain)?.[1] || '');
     };
     const title = tag('title');
-    if (!/\bweek ahead\b/i.test(title)) continue;
+    if (!WEEKLY_TITLE_RE.test(title)) continue;
     const links = [...block.matchAll(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi)];
     const alternate = links.find(x => /rel=["']alternate["']/i.test(x[0]));
     const link = decodeEntities(alternate?.[1] || links[0]?.[1] || block.match(/<link>\s*(https?:\/\/[^<\s]+)\s*<\/link>/i)?.[1] || '');
@@ -292,6 +296,7 @@ function currentStances(report) {
 
 module.exports = {
   SCHEMA_VERSION, EXTRACTOR_VERSION, NOISE_PCT, CURRENCIES, SUPPORTED_PAIRS,
+  WEEKLY_TITLE_RE,
   cleanHtml, parseMarcFeed, extractArticleText, weekWindow, snapshotId,
   normalizePair, validateClaims, symbolsForClaim, evaluateClaim, evaluateSnapshot,
   wilson, aggregateClaims, summarizeTracker, currentStances,

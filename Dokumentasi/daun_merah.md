@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-26 (Session 420 — Tracker bias weekly Marc to Market)
+> **Last updated:** 2026-10-26 (Session 421 — Audit pola arsip outlook Marc)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 421 (2026-10-26) — Audit pola arsip outlook Marc
+
+**Audit arsip.** Script baca-saja `scripts/audit_marc_weekly_patterns.js` ditambahkan agar pola editorial dapat dihitung ulang dari feed Blogger publik tanpa memanggil model atau menulis Redis. Audit 2020–2026 membaca 1.951 post dan menemukan 193 outlook mingguan bernama eksplisit: 181 judul mengandung `Week Ahead`, 12 memakai `Next Week`. Untuk format modern 2024–2026 terdapat 106 edisi; 101 terbit Sabtu UTC, median panjang 16.333 karakter, dan struktur berulang memakai bagian negara/region serta kombinasi `Drivers`, `Data`, dan `Prices`.
+
+**Perbaikan extractor.** Parser produksi sekarang menerima `Week Ahead` dan `Next Week`, tetapi sengaja menolak kata `weekly` generik karena catatan harian juga memakainya. Prompt ekstraksi v3 memperlakukan pembukaan retrospektif, agenda `Drivers/Data`, dan proyeksi harga sebagai konteks berbeda: kejadian minggu lalu, jadwal rilis/rapat, level telanjang, serta support/resistance tanpa proyeksi tidak boleh menjadi arah FX. Klaim yang bergantung pada `if/unless/break` ditandai conditional dan tidak ditampilkan sebagai base case aktif. Nama kolom UI tidak berubah: tetap `Pandangan bank`.
+
+**Verifikasi.** Unit test baru mengunci dukungan `Next Week` dan penolakan judul harian yang hanya memuat kata `weekly`; audit dapat dijalankan ulang untuk rentang tahun pilihan tanpa dependency tambahan. Suite penuh lulus 1.523/1.523; `node --check` untuk helper dan script audit serta `git diff --check` bersih. Verifikasi produksi dicatat setelah deploy pada sesi yang sama.
 
 ## Changelog Session 420 (2026-10-26) — Tracker bias weekly Marc to Market
 

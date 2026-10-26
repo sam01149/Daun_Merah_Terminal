@@ -18,6 +18,17 @@ test('Marc weekly: feed memilih Week Ahead terbaru dan link alternate', () => {
   assert.equal(rows[0].content, 'The dollar is likely to rise next week.');
 });
 
+test('Marc weekly: feed juga menerima variasi judul Next Week tetapi menolak weekly generik', () => {
+  const xml = `<feed>
+    <entry><title>Next Week: Five G10 Central Banks Meet</title><published>2025-12-13T10:00:00Z</published><link rel="alternate" href="https://x/next"/><content type="html">&lt;p&gt;Forward outlook.&lt;/p&gt;</content></entry>
+    <entry><title>Daily note: weekly close</title><published>2025-12-12T10:00:00Z</published><link rel="alternate" href="https://x/daily"/></entry>
+  </feed>`;
+  const rows = parseMarcFeed(xml);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].title, 'Next Week: Five G10 Central Banks Meet');
+  assert.equal(rows[0].link, 'https://x/next');
+});
+
 test('Marc weekly: body artikel dipisahkan dari sidebar dan window dikunci Senin-Jumat', () => {
   const html = `<aside>noise</aside><div class="post-body entry-content"><p>Drivers &amp; Prices</p><p>Dollar likely rises.</p></div><div class="post-footer">share</div>`;
   assert.equal(extractArticleText(html), 'Drivers & Prices\nDollar likely rises.');
