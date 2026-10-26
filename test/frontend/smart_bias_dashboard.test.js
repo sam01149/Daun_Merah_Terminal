@@ -59,8 +59,9 @@ test('Kesimpulan tren memakai data sistem dan data lama tetap TUNGGU', () => {
   assert.doesNotMatch(html, /TEK_PRIME_CONFIRM_KEY|setPrimeTrend\(|tekPrimeManualFor\(/);
 });
 
-test('Chart Teknikal menampilkan EMA 21 dan EMA 100 yang dipakai menghitung gap', () => {
+test('Chart Teknikal memakai EMA 21 dan EMA 100 yang sama untuk seluruh pair', () => {
   const chart = between('function createTVChart()', '\nfunction toggleTekPairDropdown');
+  assert.match(chart, /const sym = TEK_TV_SYM\[tekPair\]/);
   assert.match(chart, /MAExp@tv-basicstudies[^\n]+length: 21/);
   assert.match(chart, /MAExp@tv-basicstudies[^\n]+length: 100/);
   assert.doesNotMatch(chart, /MASimple@tv-basicstudies/);

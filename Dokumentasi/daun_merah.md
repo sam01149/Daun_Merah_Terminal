@@ -20,9 +20,9 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Changelog Session 416 (2026-10-26) — Overlay chart selaras dengan EMA gap
 
-**Perubahan.** Overlay bawaan chart Teknikal sebelumnya masih berupa SMA50 dan SMA200, sehingga tidak menggambarkan angka `EMA GAP` yang baru ditampilkan panel. Keduanya diganti menjadi EMA21 dan EMA100; jarak visual dua garis ini kini sesuai dengan rumus gap pada data H4. RSI tetap dipertahankan. EMA200 D1 tidak dihapus dari mesin perhitungan karena tetap berfungsi sebagai penyaring arah tren besar, tetapi tidak memenuhi tujuan pengguna untuk melihat detail gap H4 pada chart.
+**Perubahan.** Overlay bawaan chart Teknikal sebelumnya masih berupa SMA50 dan SMA200, sehingga tidak menggambarkan angka `EMA GAP` yang baru ditampilkan panel. Keduanya diganti menjadi EMA21 dan EMA100; jarak visual dua garis ini kini sesuai dengan rumus gap pada data H4. Konfigurasi berada di satu `createTVChart()` global, sehingga otomatis berlaku pada seluruh pair mata uang yang dipilih, bukan hanya pair default. RSI tetap dipertahankan. EMA200 D1 tidak dihapus dari mesin perhitungan karena tetap berfungsi sebagai penyaring arah tren besar, tetapi tidak memenuhi tujuan pengguna untuk melihat detail gap H4 pada chart.
 
-**Verifikasi.** Regresi frontend mengunci study TradingView `MAExp` periode 21 dan 100 serta memastikan `MASimple` lama tidak kembali. Versi aplikasi dinaikkan ke `2026.10.26.2`.
+**Verifikasi.** Regresi frontend mengunci study TradingView `MAExp` periode 21 dan 100 pada jalur simbol aktif serta memastikan `MASimple` lama tidak kembali. Suite penuh lulus 1.514/1.514. Versi aplikasi dinaikkan ke `2026.10.26.2`. Production terverifikasi memuat kedua EMA pada XAU/USD dan AUD/JPY; AUD/JPY juga menampilkan `EMA GAP 0,9 pip`, `ATR 31,5 pip`, dan `ARAH TUNGGU` karena gap lebih kecil dari ATR. Screenshot pengguna yang masih memperlihatkan MA50/MA200 dan pesan data tidak cukup berasal dari halaman versi lama; banner `MUAT ULANG` berhasil menggantinya dengan build baru.
 
 ## Changelog Session 415 (2026-10-26) — Sizing, tren otomatis, dan istilah UI sederhana
 
