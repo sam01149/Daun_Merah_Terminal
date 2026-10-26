@@ -22,7 +22,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Masalah dan perbaikan.** Kolom `ARAH` semula menampilkan verdict tindakan `BUY`/`SELL`/`TUNGGU`. Pada kondisi tren selaras tetapi gap belum melampaui ATR, pengguna hanya melihat `TUNGGU` dan tidak mengetahui arah trennya. UI kini memisahkan makna tersebut tanpa menambah kartu: `ARAH` menampilkan `NAIK` bila D1 di atas EMA200 dan EMA21 H4 di atas EMA100, `TURUN` untuk kebalikannya, atau `TIDAK SELARAS` bila D1 dan H4 berbeda. Baris kecil di kartu yang sama menampilkan `KUAT` bila gap lebih besar dari ATR, `LEMAH` bila belum, serta `DATA LAMA` untuk snapshot stale. Verdict backend tetap fail-safe dan tidak diubah.
 
-**Verifikasi.** Regresi frontend memastikan `ARAH` pada data valid tidak kembali memakai kata `TUNGGU` sebagai pengganti arah; fail-safe `TUNGGU` tetap dipertahankan khusus ketika data tidak tersedia. Untuk snapshot live AUD/JPY sesi ini (D1 di bawah EMA200, H4 bearish, gap 0,9 pip < ATR 31,5 pip), hasil yang semestinya tampil adalah `TURUN · LEMAH`. Versi aplikasi dinaikkan ke `2026.10.26.3`.
+**Verifikasi.** Regresi frontend memastikan `ARAH` pada data valid tidak kembali memakai kata `TUNGGU` sebagai pengganti arah; fail-safe `TUNGGU` tetap dipertahankan khusus ketika data tidak tersedia. Production `2026.10.26.3` diverifikasi langsung pada AUD/JPY: D1 berada di bawah EMA200, tetapi EMA21 H4 sedikit di atas EMA100 dengan gap 0,4 pip dibanding ATR 31,6 pip, sehingga UI menampilkan `TIDAK SELARAS · D1 DAN H4 BERBEDA`. Ini juga membuktikan kesimpulan berubah mengikuti data terbaru dan tidak memaksakan arah palsu.
 
 ## Changelog Session 416 (2026-10-26) — Overlay chart selaras dengan EMA gap
 
