@@ -70,8 +70,7 @@ test('Smart Bias Positioning: Asset Manager dan Leveraged Funds konflik menjadi 
   assert.equal(result.institutional.asset_manager.state, 'bullish');
   assert.equal(result.institutional.leveraged_funds.state, 'bearish');
   assert.equal(result.institutional.state, 'mixed');
-  assert.equal(result.retail.source_label, 'Dukascopy');
-  assert.equal(result.retail.state, 'insufficient');
+  assert.equal('retail' in result, false);
 });
 
 test('Smart Bias Overall: tier pendukung tidak dapat membalik arah inti', () => {

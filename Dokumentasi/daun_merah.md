@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-26 (Session 421 — Audit pola arsip outlook Marc)
+> **Last updated:** 2026-10-27 (Session 422 — Retail dikeluarkan dari Smart Bias)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 422 (2026-10-27) — Retail dikeluarkan dari Smart Bias
+
+**Perubahan.** Atas keputusan user, Retail dihapus dulu khusus dari tabel `ARAH MATA UANG MINGGU INI`: baris Retail, label `src: Dukascopy`, detail persentase Retail, catatan ketersediaan, pembacaan key Redis Dukascopy pada endpoint Smart Bias, dan pengaruh Retail terhadap state `Posisi pasar` dicabut. Respons `smart_bias` naik ke schema 3 dan positioning sekarang murni berasal dari CFTC Asset Manager serta Leveraged Funds. Fitur Retail di tab COT, Analisa, dan jalur lain tidak dihapus. User juga menolak penambahan kalimat seperti `konflik dengan Asset Manager, keyakinan rendah`; tidak ada teks atau label baru semacam itu.
+
+**Verifikasi.** Regresi backend memastikan objek positioning Smart Bias tidak lagi membawa field `retail`; regresi frontend melarang `Retail`, `src: Dukascopy`, `retailNote`, dan `p.retail` muncul kembali pada renderer Dashboard. Suite penuh lulus 1.523/1.523; `node --check` dan `git diff --check` bersih. `APP_VERSION` naik ke `2026.10.26.7`.
 
 ## Changelog Session 421 (2026-10-26) — Audit pola arsip outlook Marc
 

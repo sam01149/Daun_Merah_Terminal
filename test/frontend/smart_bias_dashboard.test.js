@@ -32,11 +32,10 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.match(html, /view:'dashboard',\s+label:'Dashboard'/);
 });
 
-test('Positioning menjaga Institutional dan Retail terpisah serta hanya Dukascopy yang menjadi label source', () => {
+test('Positioning Smart Bias hanya menampilkan institutional tanpa Retail', () => {
   const renderer = between('function renderDashSmartBias()', '\nfunction renderDashPositionAlerts()');
   assert.match(renderer, />Inst</);
-  assert.match(renderer, />Retail</);
-  assert.match(renderer, /src: Dukascopy/);
+  assert.doesNotMatch(renderer, />Retail|src: Dukascopy|retailNote|p\.retail/);
   assert.doesNotMatch(renderer, /FinancialJuice|FXSSI|Yahoo|Deriv|Twelve Data/);
 });
 

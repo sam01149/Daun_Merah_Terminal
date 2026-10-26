@@ -9740,13 +9740,12 @@ async function smartBiasHandler(req, res) {
   } catch (e) { /* lanjut hitung fresh */ }
 
   try {
-    const [fundRows, liveRates, rawBias, rawCot, rawMarcTracker, rawRetail] = await Promise.all([
+    const [fundRows, liveRates, rawBias, rawCot, rawMarcTracker] = await Promise.all([
       Promise.all(SMART_BIAS_CURRENCIES.map(cur => redisCmd('HGETALL', `fundamental:${cur}`).catch(() => null))),
       getLiveCbRates().catch(() => []),
       redisCmd('GET', 'cb_bias').catch(() => null),
       redisCmd('GET', 'cot_cache_v2').catch(() => null),
       redisCmd('GET', MARC_TRACKER_KEY).catch(() => null),
-      redisCmd('GET', 'dukascopy_sentiment_v1').catch(() => null),
     ]);
     const fundamentals = Object.fromEntries(SMART_BIAS_CURRENCIES.map((cur, i) => [cur, _hgetallToObj(fundRows[i])]));
     const biasMap = _parseJsonValue(rawBias, {});
@@ -9760,27 +9759,19 @@ async function smartBiasHandler(req, res) {
     const marcTracker = _parseJsonValue(rawMarcTracker, []);
     const marcReport = marcWeekly.summarizeTracker(Array.isArray(marcTracker) ? marcTracker : []);
     const storedStances = marcWeekly.currentStances(marcReport);
-    const retailPayload = _parseJsonValue(rawRetail, {});
-    const retailByCurrency = retailPayload?.currencies || retailPayload?.positions || retailPayload || {};
     const rows = buildSmartBiasRows({
       fundamentals,
       cbBanks,
       cot: _parseJsonValue(rawCot, {}),
       bankItems: [],
       bankStances: storedStances,
-      retailByCurrency,
       nowMs: Date.now(),
     });
-    const retailAvailable = rows.some(row => row.positioning.retail.long_pct != null);
     const payload = {
-      schema_version: 2,
+      schema_version: 3,
       methodology: 'core_first',
       rows,
       computed_at: new Date().toISOString(),
-      retail_status: retailAvailable ? 'available' : 'unavailable',
-      retail_note: retailAvailable
-        ? 'Sampel liquidity consumers SWFX; bukan representasi retail global.'
-        : 'Data Dukascopy belum tersedia. Nilai sengaja dikosongkan, bukan diganti sumber lain.',
       banks_mode: 'marc_weekly_forward_log',
       bank_source: { name: 'Marc to Market', analyst: 'Marc Chandler', report: marcReport },
     };

@@ -261,7 +261,7 @@ function signedPositionState(netPct) {
   return value > 0 ? 'bullish' : 'bearish';
 }
 
-function buildPositioning(currency, cotPayload, retailByCurrency, nowMs = Date.now()) {
+function buildPositioning(currency, cotPayload, _retailByCurrency, nowMs = Date.now()) {
   const p = cotPayload?.positions?.[currency];
   const reportMs = parseDateMs(cotPayload?.report_date);
   const reportAge = reportMs == null ? null : Math.max(0, Math.floor((nowMs - reportMs) / 86400000));
@@ -274,11 +274,10 @@ function buildPositioning(currency, cotPayload, retailByCurrency, nowMs = Date.n
     else if (lev === 'neutral') institutionalState = am;
     else institutionalState = 'mixed';
   }
-  const rawRetail = retailByCurrency?.[currency] || null;
-  const longPct = Number(rawRetail?.long_pct);
-  const retailState = !Number.isFinite(longPct) ? 'insufficient' : longPct >= 55 ? 'bullish' : longPct <= 45 ? 'bearish' : 'neutral';
-  let state = institutionalState;
-  if (['bullish', 'bearish'].includes(institutionalState) && ['bullish', 'bearish'].includes(retailState) && institutionalState !== retailState) state = 'mixed';
+  // Keputusan user 2026-10-26: retail dikeluarkan dulu dari Smart Bias.
+  // Parameter lama tetap diterima agar pemanggil lama tidak rusak, tetapi tidak
+  // boleh lagi mengubah state positioning secara tersembunyi.
+  const state = institutionalState;
   return {
     state,
     confidence: state === 'insufficient' ? 'rendah' : state === 'mixed' ? 'rendah' : 'sedang',
@@ -289,14 +288,6 @@ function buildPositioning(currency, cotPayload, retailByCurrency, nowMs = Date.n
       leveraged_funds: { state: lev, net: p?.lev_net ?? null, net_pct_oi: p?.lev_net_pct_oi ?? null, change_net: p?.lev_change_net ?? null },
       report_date: cotPayload?.report_date || null,
       release_date: cotPayload?.release_date || null,
-    },
-    retail: {
-      state: retailState,
-      long_pct: Number.isFinite(longPct) ? longPct : null,
-      short_pct: Number.isFinite(Number(rawRetail?.short_pct)) ? Number(rawRetail.short_pct) : null,
-      as_of: rawRetail?.as_of || rawRetail?.fetched_at || null,
-      source_label: 'Dukascopy',
-      coverage_note: 'Sampel liquidity consumers SWFX, bukan retail global.',
     },
     evidence: p ? [{ family: 'cftc_tff', report_date: cotPayload?.report_date || null }] : [],
   };

@@ -2839,10 +2839,8 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .sb-state.mixed::before { width:6px; height:2px; border:0; background:currentColor; }
 .sb-state.neutral, .sb-state.insufficient { color:var(--muted); }
 .sb-state.neutral::before, .sb-state.insufficient::before { width:6px; height:1px; border:0; background:currentColor; }
-.sb-pos-lines { display:flex; flex-direction:column; gap:3px; align-items:flex-start; min-width:90px; }
 .sb-pos-line { display:flex; align-items:center; gap:4px; white-space:nowrap; }
 .sb-pos-lbl { color:var(--muted); min-width:28px; text-align:left; font-size:8px; }
-.sb-source { font-size:7px; color:var(--muted); opacity:.75; }
 .smart-bias-detail td { text-align:left; padding:0; background:rgba(var(--fg-rgb),.018); }
 .smart-bias-detail-inner { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; padding:10px 12px 12px 78px; border-bottom:1px solid var(--border); }
 .sb-track-record { display:flex; flex-wrap:wrap; gap:6px 14px; padding:8px 12px; border-top:1px solid rgba(var(--fg-rgb),.06); font:8px 'DM Mono',monospace; color:var(--muted); }
@@ -4937,7 +4935,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.26.6';
+const APP_VERSION = '2026.10.26.7';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -18844,7 +18842,6 @@ function _sbRecordText(record) {
 function _sbDetailHtml(row) {
   const p = row.positioning || {};
   const inst = p.institutional || {};
-  const retail = p.retail || {};
   const am = inst.asset_manager || {};
   const lev = inst.leveraged_funds || {};
   const pct = v => Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}% OI` : '—';
@@ -18854,7 +18851,7 @@ function _sbDetailHtml(row) {
     <div class="sb-detail-group"><div class="sb-detail-title">Inflation</div>${_sbEvidenceText(row.inflation?.evidence)}</div>
     <div class="sb-detail-group"><div class="sb-detail-title">Central bank</div><div class="sb-detail-text">Stance: ${escHtml(row.central_bank?.bias || '—')} · as of ${escHtml(row.central_bank?.as_of || '—')}</div>${_sbEvidenceText(row.central_bank?.evidence)}</div>
     <div class="sb-detail-group"><div class="sb-detail-title">Pandangan bank</div><div class="sb-detail-text">Sumber: Marc to Market · Marc Chandler</div>${_sbEvidenceText(row.banks?.evidence, 'Tidak ada outlook week-ahead eksplisit yang lolos validasi.')}<div class="sb-detail-text">${escHtml(_sbRecordText(row.banks?.track_record))}</div></div>
-    <div class="sb-detail-group"><div class="sb-detail-title">Positioning</div><div class="sb-detail-text">Asset Manager: ${escHtml(am.state || '—')} · ${pct(am.net_pct_oi)}</div><div class="sb-detail-text">Leveraged Funds: ${escHtml(lev.state || '—')} · ${pct(lev.net_pct_oi)}</div><div class="sb-detail-text">Laporan: ${escHtml(inst.report_date || '—')}</div><div class="sb-detail-text">Retail: ${escHtml(retail.state || '—')} · ${Number.isFinite(Number(retail.long_pct)) ? `${Number(retail.long_pct).toFixed(1)}% long` : 'data belum tersedia'} <span class="sb-source">src: Dukascopy</span></div></div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Positioning</div><div class="sb-detail-text">Asset Manager: ${escHtml(am.state || '—')} · ${pct(am.net_pct_oi)}</div><div class="sb-detail-text">Leveraged Funds: ${escHtml(lev.state || '—')} · ${pct(lev.net_pct_oi)}</div><div class="sb-detail-text">Laporan: ${escHtml(inst.report_date || '—')}</div></div>
     <div class="sb-detail-group"><div class="sb-detail-title">Overall</div><div class="sb-detail-text">Keyakinan ${escHtml(row.overall?.confidence || 'rendah')}. ${escHtml(conflicts)} Tier pendukung tidak dapat membalik arah inti.</div></div>
   </div>`;
 }
@@ -18887,11 +18884,10 @@ function renderDashSmartBias() {
       <td>${_sbStateHtml(row.inflation?.state, row.inflation?.confidence)}</td>
       <td>${_sbStateHtml(row.central_bank?.state, row.central_bank?.confidence)}</td>
       <td>${_sbStateHtml(row.banks?.state, row.banks?.confidence)}</td>
-      <td><div class="sb-pos-lines"><div class="sb-pos-line"><span class="sb-pos-lbl">Inst</span>${_sbStateHtml(p.institutional?.state)}</div><div class="sb-pos-line"><span class="sb-pos-lbl">Retail</span>${_sbStateHtml(p.retail?.state)} <span class="sb-source">src: Dukascopy</span></div></div></td>
+      <td><div class="sb-pos-line"><span class="sb-pos-lbl">Inst</span>${_sbStateHtml(p.institutional?.state)}</div></td>
       <td>${_sbStateHtml(row.overall?.state, row.overall?.confidence)}</td>
     </tr>${isOpen ? `<tr class="smart-bias-detail"><td colspan="7">${_sbDetailHtml(row)}</td></tr>` : ''}`;
   }).join('');
-  const retailNote = dashSmartBiasData.retail_note || 'Retail diperlakukan sebagai crowding, bukan suara penentu arah.';
   const report = dashSmartBiasData.bank_source?.report;
   const overall = report?.overall;
   const current = report?.current;
@@ -18899,7 +18895,7 @@ function renderDashSmartBias() {
   const currentLink = current?.url ? `<a href="${escHtml(current.url)}" target="_blank" rel="noopener">Buka artikel minggu ini</a>` : '<span>Artikel minggu ini belum tersimpan</span>';
   const timingNote = current?.status === 'excluded_late_snapshot' ? '<span>Snapshot minggu ini terlambat, jadi tidak masuk rapor</span>' : '';
   const marcRecord = `<div class="sb-track-record"><span><strong>Sumber Pandangan bank:</strong> Marc to Market / Marc Chandler</span><span><strong>Rapor forward:</strong> ${escHtml(_sbRecordLabel(overall?.quality))} · n=${Number(overall?.n) || 0} · akurasi ${hitRate}</span><span>${currentLink}</span>${timingNote}</div>`;
-  el.innerHTML = `<div class="smart-bias-meta"><span>Dasar: pertumbuhan + inflasi + bank sentral</span><span>Klik mata uang untuk melihat bukti</span></div><div class="smart-bias-wrap"><table class="smart-bias-table"><thead><tr><th>Mata uang</th><th>Pertumbuhan</th><th>Inflasi</th><th>Bank sentral</th><th>Pandangan bank</th><th>Posisi pasar</th><th>Kesimpulan</th></tr></thead><tbody>${body}</tbody></table></div>${marcRecord}<div class="tek-prime-note" style="padding:8px 12px">${escHtml(retailNote)}</div>`;
+  el.innerHTML = `<div class="smart-bias-meta"><span>Dasar: pertumbuhan + inflasi + bank sentral</span><span>Klik mata uang untuk melihat bukti</span></div><div class="smart-bias-wrap"><table class="smart-bias-table"><thead><tr><th>Mata uang</th><th>Pertumbuhan</th><th>Inflasi</th><th>Bank sentral</th><th>Pandangan bank</th><th>Posisi pasar</th><th>Kesimpulan</th></tr></thead><tbody>${body}</tbody></table></div>${marcRecord}`;
 }
 
 function renderDashPositionAlerts() {
