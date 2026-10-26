@@ -22,7 +22,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Koreksi kebutuhan.** Keluhan pengguna pada screenshot versi lama adalah EMA gap dan ATR tidak termuat, bukan keberatan terhadap verdict `TUNGGU`. Perubahan Session 417 yang mengganti verdict menjadi `NAIK`/`TURUN`/`TIDAK SELARAS` dibatalkan. Panel kembali mengikuti persamaan referensi secara langsung: `BUY` hanya bila close D1 di atas EMA200, EMA21 H4 di atas EMA100, dan EMA gap lebih besar dari ATR14 H6; `SELL` hanya untuk ketiga kondisi kebalikan yang selaras; semua keadaan lain, data stale, atau data tidak lengkap menghasilkan `TUNGGU`. Tidak ada keterangan kekuatan tambahan di bawah verdict. EMA gap dan ATR tetap selalu ditampilkan ketika datanya tersedia.
 
-**Verifikasi.** Regresi frontend mengunci hanya tiga output `EMA GAP`, `ATR`, dan `ARAH`, memastikan pemetaan `BUY`/`SELL`/`TUNGGU`, serta melarang `TIDAK SELARAS` dan keterangan tambahan kembali ke panel. Versi aplikasi dinaikkan ke `2026.10.26.4`.
+**Verifikasi.** Regresi frontend mengunci hanya tiga output `EMA GAP`, `ATR`, dan `ARAH`, memastikan pemetaan `BUY`/`SELL`/`TUNGGU`, serta melarang `TIDAK SELARAS` dan keterangan tambahan kembali ke panel. Suite penuh lulus 1.514/1.514. Production `2026.10.26.4` diverifikasi langsung pada AUD/JPY dan menampilkan `EMA GAP 0,4 pip`, `ATR 31,6 pip`, serta `ARAH TUNGGU` tanpa teks tambahan.
 
 ## Changelog Session 417 (2026-10-26) — Arah tren eksplisit
 
