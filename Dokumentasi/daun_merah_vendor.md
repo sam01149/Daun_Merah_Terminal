@@ -130,7 +130,7 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret` �
 
 | Vendor | Fungsi | Tier |
 |---|---|---|
-| **FinancialJuice** (`financialjuice.com`) | Sumber RSS berita utama untuk headline real-time | Free, RSS publik |
+| **FinancialJuice** (`financialjuice.com`, `features.financialjuice.com`) | Sumber RSS berita utama untuk headline real-time. **Evaluasi 2026-10-26:** kategori Features `US Week Ahead` diterima sebagai kandidat peta skenario event USD, bukan sumber arah delapan currency atau suara `Pandangan bank`. Halaman kategori dan artikel dapat diakses server-side tanpa akun; edisi mingguan terbit konsisten dan memakai struktur hari/event + `Summary of Last Report` + `What to Expect`. Byline artikel terbaru hanya nama depan tanpa bio terverifikasi, sehingga nilai sumber berasal dari skenario yang dapat diuji terhadap actual/consensus, bukan otoritas penulis. Belum terintegrasi ke backend | Free, halaman/RSS publik; tanpa env var |
 | **ForexFactory data mirror** (`nfs.faireconomy.media`) | Dulu fallback kalender tab CAL saat TradingView gagal (`api/calendar.js`) — **dihapus 2026-07-13** atas permintaan user (swap sumber saat outage bikin UX membingungkan; TradingView jarang benar-benar down, dan kalau gagal sekarang langsung stale-cache, bukan ganti sumber). Masih dipakai sebagai sumber KALENDAR SATU-SATUNYA di `api/market-digest.js` untuk konteks AI Ringkasan — fitur berbeda, tidak disentuh | Free, publik |
 | **InvestingLive** (`investinglive.com`) | RSS berita tambahan | Free, publik |
 | **ActionForex** (`actionforex.com`) | RSS analisis teknikal tambahan | Free, publik |
