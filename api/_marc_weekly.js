@@ -7,7 +7,7 @@
 const crypto = require('node:crypto');
 
 const SCHEMA_VERSION = 1;
-const EXTRACTOR_VERSION = 'marc-weekly-v1';
+const EXTRACTOR_VERSION = 'marc-weekly-v2';
 const NOISE_PCT = 0.15;
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD'];
 const LAYERS = new Set(['policy', 'growth', 'inflation', 'technical', 'risk', 'mixed']);
@@ -107,10 +107,19 @@ function validateClaims(input, meta = {}) {
   const out = [];
   for (const row of raw) {
     const currency = String(row?.currency || '').toUpperCase();
-    const direction = String(row?.direction || '').toLowerCase();
+    let direction = String(row?.direction || '').toLowerCase();
     const pair = normalizePair(row?.pair);
-    if (!CURRENCIES.includes(currency) || !['bullish', 'bearish'].includes(direction)) continue;
+    if (!CURRENCIES.includes(currency)) continue;
     if (pair && !pair.split('/').includes(currency)) continue;
+    if (pair) {
+      const pairDirection = String(row?.pair_direction || '').toLowerCase();
+      if (!['bullish', 'bearish'].includes(pairDirection)) continue;
+      const [base] = pair.split('/');
+      direction = currency === base
+        ? pairDirection
+        : pairDirection === 'bullish' ? 'bearish' : 'bullish';
+    }
+    if (!['bullish', 'bearish'].includes(direction)) continue;
     const quote = String(row?.quote || '').replace(/\s+/g, ' ').trim().slice(0, 320);
     const reason = String(row?.reason || '').replace(/\s+/g, ' ').trim().slice(0, 240);
     if (quote.length < 12 || reason.length < 5) continue;
@@ -120,7 +129,7 @@ function validateClaims(input, meta = {}) {
     out.push({
       id: `${meta.snapshot_id || 'snapshot'}:${out.length + 1}`,
       institution: 'Marc to Market', analyst: 'Marc Chandler', currency, pair,
-      direction, horizon: 'week_ahead',
+      direction, pair_direction: pair ? String(row.pair_direction).toLowerCase() : null, horizon: 'week_ahead',
       layer: LAYERS.has(String(row.layer || '').toLowerCase()) ? String(row.layer).toLowerCase() : 'mixed',
       confidence: CONFIDENCES.has(String(row.confidence || '').toLowerCase()) ? String(row.confidence).toLowerCase() : 'low',
       conditional: row.conditional === true,

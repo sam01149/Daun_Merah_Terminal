@@ -28,13 +28,24 @@ test('Marc weekly: body artikel dipisahkan dari sidebar dan window dikunci Senin
 
 test('Marc weekly: validator menolak pair yang tidak memuat currency dan hanya satu klaim per currency', () => {
   const claims = validateClaims({ claims: [
-    { currency:'EUR', pair:'USD/JPY', direction:'bullish', layer:'policy', confidence:'high', reason:'ECB remains restrictive', quote:'We expect the euro to strengthen next week.' },
-    { currency:'EUR', pair:'EUR/USD', direction:'bullish', layer:'policy', confidence:'high', reason:'ECB remains restrictive', quote:'We expect the euro to strengthen next week.' },
-    { currency:'EUR', pair:'EUR/USD', direction:'bearish', layer:'risk', confidence:'low', reason:'Later duplicate', quote:'The euro may reverse lower in the week.' },
+    { currency:'EUR', pair:'USD/JPY', pair_direction:'bearish', direction:null, layer:'policy', confidence:'high', reason:'ECB remains restrictive', quote:'We expect the euro to strengthen next week.' },
+    { currency:'EUR', pair:'EUR/USD', pair_direction:'bullish', direction:null, layer:'policy', confidence:'high', reason:'ECB remains restrictive', quote:'We expect the euro to strengthen next week.' },
+    { currency:'EUR', pair:'EUR/USD', pair_direction:'bearish', direction:null, layer:'risk', confidence:'low', reason:'Later duplicate', quote:'The euro may reverse lower in the week.' },
   ]}, { snapshot_id:'abc' });
   assert.equal(claims.length, 1);
   assert.equal(claims[0].pair, 'EUR/USD');
+  assert.equal(claims[0].direction, 'bullish');
   assert.equal(claims[0].institution, 'Marc to Market');
+});
+
+test('Marc weekly: arah currency quote selalu diturunkan kode dari arah pair', () => {
+  const [cad] = validateClaims({ claims:[{
+    currency:'CAD', pair:'USD/CAD', pair_direction:'bullish', direction:'bullish',
+    layer:'technical', confidence:'medium', reason:'USD/CAD is expected to rebound',
+    quote:'The pullback appears complete and the dollar may recover against the Canadian dollar.',
+  }]});
+  assert.equal(cad.direction, 'bearish');
+  assert.equal(cad.pair_direction, 'bullish');
 });
 
 test('Marc weekly: outcome pair dinilai dari sudut currency, dengan zona noise dan baseline', () => {
