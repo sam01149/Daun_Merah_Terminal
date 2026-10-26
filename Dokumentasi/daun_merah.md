@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-26 (Session 415 — Sizing, tren otomatis, dan istilah UI sederhana)
+> **Last updated:** 2026-10-26 (Session 416 — Overlay chart selaras dengan EMA gap)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 416 (2026-10-26) — Overlay chart selaras dengan EMA gap
+
+**Perubahan.** Overlay bawaan chart Teknikal sebelumnya masih berupa SMA50 dan SMA200, sehingga tidak menggambarkan angka `EMA GAP` yang baru ditampilkan panel. Keduanya diganti menjadi EMA21 dan EMA100; jarak visual dua garis ini kini sesuai dengan rumus gap pada data H4. RSI tetap dipertahankan. EMA200 D1 tidak dihapus dari mesin perhitungan karena tetap berfungsi sebagai penyaring arah tren besar, tetapi tidak memenuhi tujuan pengguna untuk melihat detail gap H4 pada chart.
+
+**Verifikasi.** Regresi frontend mengunci study TradingView `MAExp` periode 21 dan 100 serta memastikan `MASimple` lama tidak kembali. Versi aplikasi dinaikkan ke `2026.10.26.2`.
 
 ## Changelog Session 415 (2026-10-26) — Sizing, tren otomatis, dan istilah UI sederhana
 
