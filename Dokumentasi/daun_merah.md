@@ -24,7 +24,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perbaikan extractor.** Parser produksi sekarang menerima `Week Ahead` dan `Next Week`, tetapi sengaja menolak kata `weekly` generik karena catatan harian juga memakainya. Prompt ekstraksi v3 memperlakukan pembukaan retrospektif, agenda `Drivers/Data`, dan proyeksi harga sebagai konteks berbeda: kejadian minggu lalu, jadwal rilis/rapat, level telanjang, serta support/resistance tanpa proyeksi tidak boleh menjadi arah FX. Klaim yang bergantung pada `if/unless/break` ditandai conditional dan tidak ditampilkan sebagai base case aktif. Nama kolom UI tidak berubah: tetap `Pandangan bank`.
 
-**Verifikasi.** Unit test baru mengunci dukungan `Next Week` dan penolakan judul harian yang hanya memuat kata `weekly`; audit dapat dijalankan ulang untuk rentang tahun pilihan tanpa dependency tambahan. Suite penuh lulus 1.523/1.523; `node --check` untuk helper dan script audit serta `git diff --check` bersih. Verifikasi produksi dicatat setelah deploy pada sesi yang sama.
+**Verifikasi.** Unit test baru mengunci dukungan `Next Week` dan penolakan judul harian yang hanya memuat kata `weekly`; audit dapat dijalankan ulang untuk rentang tahun pilihan tanpa dependency tambahan. Suite penuh lulus 1.523/1.523; `node --check` untuk helper dan script audit serta `git diff --check` bersih. Workflow produksi `40350618140` sukses pada commit `36697f2`; endpoint live mengembalikan extractor `marc-weekly-v3`, lima klaim, status `excluded_late_snapshot`, dan `n=0/belum_cukup` sesuai aturan fail-closed untuk snapshot minggu pertama yang terlambat.
 
 ## Changelog Session 420 (2026-10-26) — Tracker bias weekly Marc to Market
 
