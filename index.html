@@ -2610,7 +2610,6 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .tek-trend-value { font:700 13px 'DM Mono',monospace; color:var(--text); }
 .tek-trend-value.buy { color:var(--green); }
 .tek-trend-value.sell { color:#f87171; }
-.tek-trend-detail { margin-top:3px; font:600 8px 'DM Mono',monospace; color:var(--muted); letter-spacing:.05em; }
 .tek-prime-note { font:9px 'DM Mono',monospace; color:var(--muted); line-height:1.55; padding:0 0 9px; }
 .tek-yield-strip {
   display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
@@ -4935,7 +4934,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.26.3';
+const APP_VERSION = '2026.10.26.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -17728,11 +17727,9 @@ function renderPrimeExecution() {
     el.innerHTML = `<div class="tek-prime-head"><div class="tek-prime-title">Arah tren</div><div class="tek-prime-verdict">TUNGGU</div></div><div class="tek-prime-note" style="padding-top:9px">${reason} Sistem tidak menerbitkan arah saat data belum layak.</div>`;
     return;
   }
-  const alignedUp = d.trend?.relation === 'above' && d.momentum?.direction === 'bullish';
-  const alignedDown = d.trend?.relation === 'below' && d.momentum?.direction === 'bearish';
-  const direction = d.stale ? '—' : alignedUp ? 'NAIK' : alignedDown ? 'TURUN' : 'TIDAK SELARAS';
-  const directionClass = direction === 'NAIK' ? ' buy' : direction === 'TURUN' ? ' sell' : '';
-  const strengthLabel = d.stale ? 'DATA LAMA' : (alignedUp || alignedDown) ? (d.strength?.passed ? 'KUAT' : 'LEMAH') : 'D1 DAN H4 BERBEDA';
+  const rawVerdict = d.stale ? 'WAIT' : (d.verdict || tekPrimeVerdict(d));
+  const direction = rawVerdict === 'BUY ONLY' ? 'BUY' : rawVerdict === 'SELL ONLY' ? 'SELL' : 'TUNGGU';
+  const directionClass = direction === 'BUY' ? ' buy' : direction === 'SELL' ? ' sell' : '';
   const unit = d.momentum.gap_display?.unit || 'pip';
   const gap = _tekPrimeNum(d.momentum.gap_display?.value, 2);
   const atr = _tekPrimeNum(d.strength.atr_display?.value, 2);
@@ -17742,7 +17739,7 @@ function renderPrimeExecution() {
     <div class="tek-trend-grid">
       <div class="tek-trend-metric"><div class="tek-trend-label">EMA GAP</div><div class="tek-trend-value">${gap} ${unit}</div></div>
       <div class="tek-trend-metric"><div class="tek-trend-label">ATR</div><div class="tek-trend-value">${atr} ${unit}</div></div>
-      <div class="tek-trend-metric"><div class="tek-trend-label">ARAH</div><div class="tek-trend-value${directionClass}">${direction}</div><div class="tek-trend-detail">${strengthLabel}</div></div>
+      <div class="tek-trend-metric"><div class="tek-trend-label">ARAH</div><div class="tek-trend-value${directionClass}">${direction}</div></div>
     </div>`;
 }
 

@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-26 (Session 417 — Arah tren eksplisit)
+> **Last updated:** 2026-10-26 (Session 418 — Verdict kembali mengikuti tiga pemeriksaan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 418 (2026-10-26) — Verdict kembali mengikuti tiga pemeriksaan
+
+**Koreksi kebutuhan.** Keluhan pengguna pada screenshot versi lama adalah EMA gap dan ATR tidak termuat, bukan keberatan terhadap verdict `TUNGGU`. Perubahan Session 417 yang mengganti verdict menjadi `NAIK`/`TURUN`/`TIDAK SELARAS` dibatalkan. Panel kembali mengikuti persamaan referensi secara langsung: `BUY` hanya bila close D1 di atas EMA200, EMA21 H4 di atas EMA100, dan EMA gap lebih besar dari ATR14 H6; `SELL` hanya untuk ketiga kondisi kebalikan yang selaras; semua keadaan lain, data stale, atau data tidak lengkap menghasilkan `TUNGGU`. Tidak ada keterangan kekuatan tambahan di bawah verdict. EMA gap dan ATR tetap selalu ditampilkan ketika datanya tersedia.
+
+**Verifikasi.** Regresi frontend mengunci hanya tiga output `EMA GAP`, `ATR`, dan `ARAH`, memastikan pemetaan `BUY`/`SELL`/`TUNGGU`, serta melarang `TIDAK SELARAS` dan keterangan tambahan kembali ke panel. Versi aplikasi dinaikkan ke `2026.10.26.4`.
 
 ## Changelog Session 417 (2026-10-26) — Arah tren eksplisit
 
