@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-26 (Session 416 — Overlay chart selaras dengan EMA gap)
+> **Last updated:** 2026-10-26 (Session 417 — Arah tren eksplisit)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 417 (2026-10-26) — Arah tren eksplisit
+
+**Masalah dan perbaikan.** Kolom `ARAH` semula menampilkan verdict tindakan `BUY`/`SELL`/`TUNGGU`. Pada kondisi tren selaras tetapi gap belum melampaui ATR, pengguna hanya melihat `TUNGGU` dan tidak mengetahui arah trennya. UI kini memisahkan makna tersebut tanpa menambah kartu: `ARAH` menampilkan `NAIK` bila D1 di atas EMA200 dan EMA21 H4 di atas EMA100, `TURUN` untuk kebalikannya, atau `TIDAK SELARAS` bila D1 dan H4 berbeda. Baris kecil di kartu yang sama menampilkan `KUAT` bila gap lebih besar dari ATR, `LEMAH` bila belum, serta `DATA LAMA` untuk snapshot stale. Verdict backend tetap fail-safe dan tidak diubah.
+
+**Verifikasi.** Regresi frontend memastikan `ARAH` pada data valid tidak kembali memakai kata `TUNGGU` sebagai pengganti arah; fail-safe `TUNGGU` tetap dipertahankan khusus ketika data tidak tersedia. Untuk snapshot live AUD/JPY sesi ini (D1 di bawah EMA200, H4 bearish, gap 0,9 pip < ATR 31,5 pip), hasil yang semestinya tampil adalah `TURUN · LEMAH`. Versi aplikasi dinaikkan ke `2026.10.26.3`.
 
 ## Changelog Session 416 (2026-10-26) — Overlay chart selaras dengan EMA gap
 

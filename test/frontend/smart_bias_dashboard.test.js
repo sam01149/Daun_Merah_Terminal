@@ -46,7 +46,10 @@ test('Teknikal hanya menampilkan EMA gap, ATR, dan arah otomatis', () => {
   assert.match(renderer, />EMA GAP</);
   assert.match(renderer, />ATR</);
   assert.match(renderer, />ARAH</);
-  assert.match(renderer, /rawVerdict === 'BUY ONLY' \? 'BUY'/);
+  assert.match(renderer, /alignedUp \? 'NAIK' : alignedDown \? 'TURUN' : 'TIDAK SELARAS'/);
+  assert.match(renderer, /d\.strength\?\.passed \? 'KUAT' : 'LEMAH'/);
+  assert.doesNotMatch(renderer, /rawVerdict/);
+  assert.doesNotMatch(renderer.slice(renderer.indexOf('const alignedUp')), />TUNGGU</);
   assert.doesNotMatch(renderer, /tek-prime-grid|1 · Trend D1|2 · Arah H4|3 · Kekuatan|Tren kuat:/);
   assert.doesNotMatch(renderer, /Konfirmasi visual|Jelas di atas|Jelas di bawah|Tidak jelas|momentum Prime/i);
 });
