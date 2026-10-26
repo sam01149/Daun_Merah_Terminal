@@ -28,6 +28,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** Uji baru mengunci perhitungan R:R long/short, penolakan level terbalik, penerusan TP, penjelasan batas rugi, kesimpulan tren otomatis, stale fail-safe, serta absennya istilah/konfirmasi lama di UI. Suite penuh lulus 1.513/1.513. Chromium headless memverifikasi Sizing pada 1280 px dan 390 px tanpa overflow; panel Teknikal final pada kedua ukuran hanya menampilkan EMA gap, ATR, dan arah tanpa tombol manual.
 
+**Verifikasi produksi.** Setelah commit `90188ce` ter-deploy, halaman produksi merespons dengan `APP_VERSION 2026.10.26.1`, memuat `ARAH MATA UANG MINGGU INI`, `EMA GAP`, `ATR`, dan `ARAH`, serta tidak lagi memuat judul lama atau konfirmasi visual. Pembacaan live EUR/USD mengembalikan data segar: EMA gap 15,3 pip, ATR14 H6 18,9 pip, arah H4 bearish, dan verdict `WAIT` karena syarat kekuatan `gap > ATR` tidak lolos; ini memverifikasi fail-safe bahwa sistem tidak memaksakan arah ketika ketiga pemeriksaan belum selaras.
+
 ## Changelog Session 414 (2026-10-25) — Fondasi surprise makro Smart Bias
 
 **Masalah.** Formula awal Growth/Inflation memperlakukan setiap rilis sebagai suara penuh berdasarkan actual di atas/bawah forecast dengan toleransi tetap 0,5%. Itu membuat sel mudah terlihat `Campur` dan menyamakan miss 0,1 poin dengan kejutan besar. Cache `fundamental:<CUR>` juga hanya menyimpan observasi terbaru, sehingga tidak mempunyai distribusi kesalahan forecast untuk menilai besar-kecilnya surprise secara sah.
