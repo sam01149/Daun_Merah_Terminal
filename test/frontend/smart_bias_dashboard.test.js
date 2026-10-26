@@ -43,7 +43,7 @@ test('Teknikal hanya menampilkan EMA gap, ATR, dan arah otomatis', () => {
   assert.doesNotMatch(markup, /mtfSelD1|mtfSelH4|mtfSelH1|mtfSelM15|id="tekTaPanel"/);
 
   const renderer = between('function renderPrimeExecution()', '\nasync function fetchPrimeExecution');
-  assert.match(renderer, />EMA GAP</);
+  assert.match(renderer, />EMA GAP \(EMA 21 &amp; 100\)</);
   assert.match(renderer, />ATR</);
   assert.match(renderer, />ARAH</);
   assert.match(renderer, /rawVerdict === 'BUY ONLY' \? 'BUY'/);
@@ -61,10 +61,11 @@ test('Kesimpulan tren memakai data sistem dan data lama tetap TUNGGU', () => {
   assert.doesNotMatch(html, /TEK_PRIME_CONFIRM_KEY|setPrimeTrend\(|tekPrimeManualFor\(/);
 });
 
-test('Chart Teknikal memakai EMA 21 dan EMA 100 yang sama untuk seluruh pair', () => {
+test('Chart Teknikal memakai EMA 200 dan RSI sebagai dua indikator untuk seluruh pair', () => {
   const chart = between('function createTVChart()', '\nfunction toggleTekPairDropdown');
   assert.match(chart, /const sym = TEK_TV_SYM\[tekPair\]/);
-  assert.match(chart, /MAExp@tv-basicstudies[^\n]+length: 21/);
-  assert.match(chart, /MAExp@tv-basicstudies[^\n]+length: 100/);
+  assert.match(chart, /MAExp@tv-basicstudies[^\n]+length: 200/);
+  assert.match(chart, /RSI@tv-basicstudies/);
+  assert.doesNotMatch(chart, /MAExp@tv-basicstudies[^\n]+length: (?:21|100)/);
   assert.doesNotMatch(chart, /MASimple@tv-basicstudies/);
 });

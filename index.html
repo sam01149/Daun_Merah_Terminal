@@ -4934,7 +4934,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.26.4';
+const APP_VERSION = '2026.10.26.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -17737,7 +17737,7 @@ function renderPrimeExecution() {
       <div class="tek-prime-title">Tren dan momentum</div>
     </div>
     <div class="tek-trend-grid">
-      <div class="tek-trend-metric"><div class="tek-trend-label">EMA GAP</div><div class="tek-trend-value">${gap} ${unit}</div></div>
+      <div class="tek-trend-metric"><div class="tek-trend-label">EMA GAP (EMA 21 &amp; 100)</div><div class="tek-trend-value">${gap} ${unit}</div></div>
       <div class="tek-trend-metric"><div class="tek-trend-label">ATR</div><div class="tek-trend-value">${atr} ${unit}</div></div>
       <div class="tek-trend-metric"><div class="tek-trend-label">ARAH</div><div class="tek-trend-value${directionClass}">${direction}</div></div>
     </div>`;
@@ -17928,8 +17928,7 @@ function createTVChart() {
         'move_logo_to_main_pane',
       ],
       studies: [
-        { id: 'MAExp@tv-basicstudies', version: 60, inputs: { length: 21 } },
-        { id: 'MAExp@tv-basicstudies', version: 60, inputs: { length: 100 } },
+        { id: 'MAExp@tv-basicstudies', version: 60, inputs: { length: 200 } },
         { id: 'RSI@tv-basicstudies', version: 60 },
       ],
     });

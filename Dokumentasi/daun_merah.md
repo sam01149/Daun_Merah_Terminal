@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-26 (Session 418 — Verdict kembali mengikuti tiga pemeriksaan)
+> **Last updated:** 2026-10-26 (Session 419 — Dua indikator chart dan label gap eksplisit)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 419 (2026-10-26) — Dua indikator chart dan label gap eksplisit
+
+**Perubahan.** Label metrik diperjelas dari `EMA GAP` menjadi `EMA GAP (EMA 21 & 100)` agar sumber perhitungannya terlihat tanpa harus menampilkan kedua garis tersebut. Chart TradingView kini hanya memasang dua indikator bawaan: EMA200 untuk pemeriksaan arah tren besar dan RSI14; overlay EMA21 serta EMA100 dihapus dari chart. Rumus server tidak berubah: EMA21/EMA100 H4 tetap dihitung untuk gap dan arah momentum, sedangkan close D1 tetap dibandingkan dengan EMA200 D1. Konfigurasi chart global membuat susunan ini berlaku untuk seluruh pair.
+
+**Verifikasi.** Regresi frontend mengunci label lengkap, satu study EMA200, satu study RSI, serta memastikan EMA21/EMA100 dan SMA lama tidak kembali ke chart. Versi aplikasi dinaikkan ke `2026.10.26.5`.
 
 ## Changelog Session 418 (2026-10-26) — Verdict kembali mengikuti tiga pemeriksaan
 
