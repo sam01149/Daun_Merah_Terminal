@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-27 (Session 424 — Kalibrasi ulang temuan audit tabel bias)
+> **Last updated:** 2026-10-27 (Session 425 — Label Kesimpulan menjadi Bias)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 425 (2026-10-27) — Label Kesimpulan menjadi Bias
+
+**Perubahan.** Atas koreksi user bahwa tabel adalah pembacaan bias objektif dan bukan saran investasi, judul kolom terakhir `Kesimpulan` diganti menjadi `Bias`. Judul pada detail baris `Overall` juga diganti menjadi `Bias` agar istilah permukaan dan rincian konsisten. Field backend `overall`, rumus, state, confidence, dan data tidak diubah sehingga kontrak API tetap kompatibel. `APP_VERSION` naik ke `2026.10.27.1` agar PWA mengambil label baru.
+
+**Verifikasi.** Regresi frontend mengunci header dan judul detail `Bias`, sekaligus melarang `Kesimpulan`/`Overall` kembali pada renderer tabel. Tes fokus lulus 5/5 dan suite penuh lulus 1.523/1.523. Chromium headless 1.365×768 merender tujuh header sampai `Bias`, detail baris berjudul `Bias`, dan tidak menghasilkan overflow horizontal.
 
 ## Changelog Session 424 (2026-10-27) — Kalibrasi ulang temuan audit tabel bias
 

@@ -4935,7 +4935,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.26.7';
+const APP_VERSION = '2026.10.27.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -18852,7 +18852,7 @@ function _sbDetailHtml(row) {
     <div class="sb-detail-group"><div class="sb-detail-title">Central bank</div><div class="sb-detail-text">Stance: ${escHtml(row.central_bank?.bias || '—')} · as of ${escHtml(row.central_bank?.as_of || '—')}</div>${_sbEvidenceText(row.central_bank?.evidence)}</div>
     <div class="sb-detail-group"><div class="sb-detail-title">Pandangan bank</div><div class="sb-detail-text">Sumber: Marc to Market · Marc Chandler</div>${_sbEvidenceText(row.banks?.evidence, 'Tidak ada outlook week-ahead eksplisit yang lolos validasi.')}<div class="sb-detail-text">${escHtml(_sbRecordText(row.banks?.track_record))}</div></div>
     <div class="sb-detail-group"><div class="sb-detail-title">Positioning</div><div class="sb-detail-text">Asset Manager: ${escHtml(am.state || '—')} · ${pct(am.net_pct_oi)}</div><div class="sb-detail-text">Leveraged Funds: ${escHtml(lev.state || '—')} · ${pct(lev.net_pct_oi)}</div><div class="sb-detail-text">Laporan: ${escHtml(inst.report_date || '—')}</div></div>
-    <div class="sb-detail-group"><div class="sb-detail-title">Overall</div><div class="sb-detail-text">Keyakinan ${escHtml(row.overall?.confidence || 'rendah')}. ${escHtml(conflicts)} Tier pendukung tidak dapat membalik arah inti.</div></div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Bias</div><div class="sb-detail-text">Keyakinan ${escHtml(row.overall?.confidence || 'rendah')}. ${escHtml(conflicts)} Tier pendukung tidak dapat membalik arah inti.</div></div>
   </div>`;
 }
 
@@ -18895,7 +18895,7 @@ function renderDashSmartBias() {
   const currentLink = current?.url ? `<a href="${escHtml(current.url)}" target="_blank" rel="noopener">Buka artikel minggu ini</a>` : '<span>Artikel minggu ini belum tersimpan</span>';
   const timingNote = current?.status === 'excluded_late_snapshot' ? '<span>Snapshot minggu ini terlambat, jadi tidak masuk rapor</span>' : '';
   const marcRecord = `<div class="sb-track-record"><span><strong>Sumber Pandangan bank:</strong> Marc to Market / Marc Chandler</span><span><strong>Rapor forward:</strong> ${escHtml(_sbRecordLabel(overall?.quality))} · n=${Number(overall?.n) || 0} · akurasi ${hitRate}</span><span>${currentLink}</span>${timingNote}</div>`;
-  el.innerHTML = `<div class="smart-bias-meta"><span>Dasar: pertumbuhan + inflasi + bank sentral</span><span>Klik mata uang untuk melihat bukti</span></div><div class="smart-bias-wrap"><table class="smart-bias-table"><thead><tr><th>Mata uang</th><th>Pertumbuhan</th><th>Inflasi</th><th>Bank sentral</th><th>Pandangan bank</th><th>Posisi pasar</th><th>Kesimpulan</th></tr></thead><tbody>${body}</tbody></table></div>${marcRecord}`;
+  el.innerHTML = `<div class="smart-bias-meta"><span>Dasar: pertumbuhan + inflasi + bank sentral</span><span>Klik mata uang untuk melihat bukti</span></div><div class="smart-bias-wrap"><table class="smart-bias-table"><thead><tr><th>Mata uang</th><th>Pertumbuhan</th><th>Inflasi</th><th>Bank sentral</th><th>Pandangan bank</th><th>Posisi pasar</th><th>Bias</th></tr></thead><tbody>${body}</tbody></table></div>${marcRecord}`;
 }
 
 function renderDashPositionAlerts() {

@@ -21,9 +21,12 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.doesNotMatch(markup, /id="dashDigestSection"|id="dashBiasList"|id="dashFundStrip"|id="dashRetailStrip"/);
 
   const renderer = between('function renderDashSmartBias()', '\nfunction renderDashPositionAlerts()');
-  for (const heading of ['Pertumbuhan', 'Inflasi', 'Bank sentral', 'Pandangan bank', 'Posisi pasar', 'Kesimpulan']) {
+  for (const heading of ['Pertumbuhan', 'Inflasi', 'Bank sentral', 'Pandangan bank', 'Posisi pasar', 'Bias']) {
     assert.match(renderer, new RegExp(`<th>${heading}</th>`));
   }
+  assert.match(html, /<div class="sb-detail-title">Bias<\/div>/);
+  assert.doesNotMatch(renderer, /<th>Kesimpulan<\/th>/);
+  assert.doesNotMatch(html, /<div class="sb-detail-title">Overall<\/div>/);
   assert.match(renderer, /Marc to Market \/ Marc Chandler/);
   assert.match(renderer, /Rapor forward/);
   assert.match(html, /Belum cukup sampel/);
