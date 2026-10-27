@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-27 (Session 422 — Retail dikeluarkan dari Smart Bias)
+> **Last updated:** 2026-10-27 (Session 423 — Audit akurasi tabel bias Dashboard)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 423 (2026-10-27) — Audit akurasi tabel bias Dashboard
+
+**Verdict.** Tabel `ARAH MATA UANG MINGGU INI` belum cukup akurat untuk dipakai sebagai penentu arah trading; statusnya masih ringkasan eksperimental berkeyakinan rendah. Audit mengikuti `audit_daun_merah.md` §1 dan §3.1/3.3/3.5/3.7, membaca alur `fundamental:<CUR>` / `cb_bias` / `cot_cache_v2` / tracker Marc sampai renderer, lalu memaksa hitung ulang endpoint produksi pada 27 Oktober 2026 sekitar 20:37 WIB. Output live memang konservatif—7/8 `Overall` menjadi `mixed` dan hanya AUD `bearish`, semuanya `confidence: rendah`—tetapi konservatif tidak sama dengan metodologinya sudah benar.
+
+**Temuan berdampak tinggi.** (1) Growth/Inflation produksi masih memakai formula awal `api/_smart_bias.js`: setiap field menjadi satu suara, toleransi tetap 0,5%, dan bila forecast kosong ia membandingkan terhadap previous. Fondasi lima tahun di `api/_macro_surprise.js`—standardized surprise, equal-family weighting, first-print only, dedupe family, penolakan rilis nasional EUR, dan sensitivity 30/45/60/90 hari—belum dibaca endpoint Dashboard. Dampak live terlihat langsung: EUR menghitung empat PMI dan tiga komponen Ifo sebagai suara terpisah; GBP memakai `Average Weekly Earnings YoY` serta `Wage Growth` di Growth dan Inflation sekaligus; 1–6 bukti per currency masih memakai previous sebagai pengganti konsensus. AUD satu-satunya arah aktif dibentuk antara lain oleh Composite PMI + Services PMI dari rilis sama serta beberapa ukuran CPI dari rilis sama, jadi bukti tidak independen. (2) Detail `Bank sentral` tidak merupakan citation trail keluaran model. Setelah model memberi label, kode mengisi `source_headlines` dengan lima headline terbaru yang sekadar cocok keyword currency/CB. Produksi menampilkan lelang Treasury AS, CFTC GBP, tarif Kanada, polling keputusan masa depan, dan `Interest Rate Probabilities` sebagai “bukti” stance; label stance mungkin masuk akal, tetapi bukti yang ditampilkan tidak dapat membuktikannya. (3) Positioning produksi masih menyetarakan Asset Manager dan Leveraged Funds lalu menghasilkan `mixed` saat berlawanan. Ini bertentangan dengan kontrak fondasi Session 414/PLAN AH: arah taktis harus mengikuti Leveraged Funds, sedangkan Asset Manager hanya menurunkan kualitas.
+
+**Yang terbukti bekerja.** Seed/stale tidak menjadi sinyal; layer kosong menjadi `—`/`insufficient`; Retail sudah tidak masuk payload maupun state; COT lebih dari 14 hari gagal tertutup; outlook Marc yang `n=0/belum_cukup` tetap tampil untuk informasi tetapi `eligible_for_overall:false`, sehingga tidak mengonfirmasi/menentang kesimpulan; tier pendukung tidak dapat membalik arah inti; endpoint dan UI memakai delapan currency yang sama. Snapshot Marc minggu ini juga berstatus `excluded_late_snapshot`, sehingga tidak mencemari rapor forward.
+
+**Keputusan sesi audit.** Tidak ada formula yang diubah diam-diam. PLAN AH secara eksplisit membekukan UI produksi sampai hasil fondasi direview, dan menyambungkan standardized surprise serta mengganti semantik positioning akan mengubah metodologi/label seluruh tabel—bukan bug parsing kecil yang aman dipatch dari audit read-only. Perbaikan yang benar adalah menuntaskan tahap integrasi PLAN AH: gunakan histori macro surprise untuk Growth/Inflation, gunakan `buildCftcFoundation` untuk Positioning, dan simpan evidence ID yang benar-benar dipakai untuk stance CB sebelum tabel boleh disebut akurat. Sampai itu dilakukan, `Overall` tidak boleh diperlakukan sebagai sinyal entry mandiri.
 
 ## Changelog Session 422 (2026-10-27) — Retail dikeluarkan dari Smart Bias
 
