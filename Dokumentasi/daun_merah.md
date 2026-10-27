@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-27 (Session 423 — Audit akurasi tabel bias Dashboard)
+> **Last updated:** 2026-10-27 (Session 424 — Kalibrasi ulang temuan audit tabel bias)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 424 (2026-10-27) — Kalibrasi ulang temuan audit tabel bias
+
+**Koreksi terhadap tingkat keparahan Session 423.** Audit kedua sengaja menguji apakah kelemahan metodologi lama benar-benar mengubah informasi yang diterima trader, bukan menganggap setiap ketidaksempurnaan sebagai bug. Dry-run baca-saja mengambil ulang 60 bulan kalender TradingView sampai timestamp snapshot produksi dan merekonstruksi 4.819 rilis dengan fondasi `api/_macro_surprise.js`. Hasil sensitivity empat half-life menunjukkan AUD tetap `growth down` dan `inflation down`; ini searah dengan satu-satunya `Overall` directional produksi (`AUD bearish`). Tujuh currency lain di produksi hanya `mixed`, bukan arahan buy/sell. Karena itu tidak ada bukti bahwa kesimpulan arah live pada snapshot ini salah atau memaksa trader ke arah keliru. Verdict Session 423 “belum layak menjadi penentu arah mandiri” tetap benar sebagai batas penggunaan, tetapi rumusan yang menyiratkan label live telah terbukti tidak akurat terlalu keras.
+
+**Klasifikasi final.** Satu masalah penyesatan yang benar-benar terbukti adalah provenance `Central bank`: UI mengajak pengguna membuka “bukti”, tetapi `source_headlines` disusun setelah label model keluar dengan mengambil lima headline terbaru yang sekadar cocok keyword. Daftar live memuat lelang Treasury, CFTC, tarif Kanada, polling masa depan, dan `Interest Rate Probabilities`; daftar itu bukan citation trail klaim model. Ini dapat menyesatkan trader profesional saat memverifikasi alasan stance, walau belum membuktikan stance-nya sendiri salah. Duplikasi PMI/Ifo, fallback previous, dan belum tersambungnya standardized surprise adalah kelemahan metodologi/ketidaksesuaian kontrak PLAN AH, tetapi pada snapshot ini belum terbukti membalik `Overall`. Positioning `mixed` juga bukan fakta palsu: detail memperlihatkan Asset Manager dan Leveraged Funds yang memang berbeda; memilih Leveraged Funds sebagai arah utama adalah keputusan horizon strategi, bukan kebenaran universal CFTC.
+
+**Implikasi perbaikan.** Perbaikan minimum yang terjustifikasi oleh bukti adalah membetulkan provenance Bank Sentral: simpan headline/ID yang benar-benar dijadikan dasar atau ubah label daftar menjadi “headline terkait” dan jangan menyebutnya bukti. Integrasi fondasi macro surprise dan semantik Leveraged Funds tetap layak untuk menuntaskan kontrak PLAN AH, tetapi tidak boleh dijual sebagai perbaikan bug arah yang sudah terbukti; dampak label final harus diuji lagi karena modul fondasi baru menghasilkan impulse makro, sedangkan mapping Inflation ke dukungan currency masih memerlukan konteks kebijakan.
 
 ## Changelog Session 423 (2026-10-27) — Audit akurasi tabel bias Dashboard
 
