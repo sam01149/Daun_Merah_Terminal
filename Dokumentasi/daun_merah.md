@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-27 (Session 425 — Label Kesimpulan menjadi Bias)
+> **Last updated:** 2026-10-27 (Session 426 — Petunjuk diselaraskan dengan alur Bias)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 426 (2026-10-27) — Petunjuk diselaraskan dengan alur Bias
+
+**Perubahan.** Panel Petunjuk yang masih memakai alur lama diperbarui menjadi panduan membaca data dari Dashboard sampai evaluasi Jurnal. Bagian awal kini menjelaskan tabel `ARAH MATA UANG MINGGU INI`, arti `Naik`/`Turun`/`Campur`/`—`, kewajiban membaca kedua kaki pair, dan pemisahan Bias dari konfirmasi harga tiga syarat (D1 terhadap EMA200, EMA21/EMA100 H4, serta gap terhadap ATR14 H6). Urutan aktif menjadi Dashboard, CAL, Ringkasan, NEWS, Analisa, Rencana, Sizing, dan Jurnal. Panduan juga mencatat bahwa headline terkait Bank sentral bukan jejak sitasi lengkap stance dan harus diverifikasi ke rilis resmi.
+
+**Koreksi klaim dan konsistensi.** Klaim lama yang terlalu pasti dihapus: keunggulan notifikasi 5–15 detik, COT dianggap berlaku otomatis untuk minggu depan, Ringkasan selalu berisi 80+ headline dan valid sekitar empat jam, level algoritmik disebut bukan perkiraan, serta batas risiko universal 2%. Petunjuk sekarang membedakan data kosong dari sinyal, menekankan freshness dan sumber, serta menjelaskan keluaran AI dan sizing sebagai informasi yang tetap perlu diverifikasi. Simbol dekoratif pada panel Petunjuk dihapus sesuai aturan UI. `APP_VERSION` naik ke `2026.10.27.2`; logika tabel Bias, Analisa, Rencana, dan Sizing tidak diubah.
+
+**Verifikasi.** Regresi baru mengunci penjelasan Bias, urutan fitur aktif, tiga pemeriksaan harga, batas rapor Pandangan bank, disclaimer provenance Bank sentral, penghapusan klaim lama, dan ketiadaan simbol dekoratif pada panel. Tes fokus lulus 3/3 dan suite penuh lulus 1.526/1.526. Chromium nyata pada 1.365×768 dan 390×844 menampilkan Petunjuk tanpa overflow horizontal; desktop merender delapan langkah alur dan tujuh aturan kunci, sedangkan layout ponsel tetap menyederhanakan kolom alasan tanpa menyembunyikan langkah utama.
 
 ## Changelog Session 425 (2026-10-27) — Label Kesimpulan menjadi Bias
 

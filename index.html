@@ -2435,10 +2435,8 @@ body.light-theme .cal-date-input { color-scheme: light; }
   padding: 3px 8px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; min-width: 72px; text-align: center;
 }
 .pt-flow-desc { font-size: 10px; color: var(--text-mid); line-height: 1.5; }
-.pt-flow-arrow { color: var(--border); font-size: 10px; padding: 2px 0; }
 .pt-rules { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .pt-rule { display: flex; gap: 10px; align-items: flex-start; }
-.pt-rule-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
 .pt-rule-text { font-size: 10px; line-height: 1.6; color: var(--text-mid); }
 .pt-rule-text strong { color: var(--text); font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700; display: block; margin-bottom: 1px; }
 .pt-note { background: rgba(96,165,250,0.07); border: 1px solid rgba(96,165,250,0.2); border-radius: 6px; padding: 12px 14px; font-size: 10px; color: #93c5fd; line-height: 1.7; }
@@ -2457,9 +2455,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
   .pt-flow-item { padding: 6px 0; gap: 8px; }
   .pt-flow-tag { font-size: 7px; padding: 3px 6px; min-width: 62px; }
   .pt-flow-desc { font-size: 10px; }
-  .pt-flow-arrow { padding-left: 70px; font-size: 9px; }
   .pt-rules { padding: 10px 12px; gap: 8px; }
-  .pt-rule-icon { font-size: 13px; }
   .pt-rule-text { font-size: 10px; }
   .pt-rule-text strong { font-size: 9px; }
   .pt-note { font-size: 9px; padding: 10px 12px; line-height: 1.6; }
@@ -4193,65 +4189,55 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <div class="pt-wrap">
 
   <div class="pt-hero">
-    <div class="pt-hero-title">Panduan End-to-End</div>
-    <div class="pt-hero-sub">SOP penggunaan Daun Merah untuk sesi trading harian</div>
+    <div class="pt-hero-title">Panduan Membaca Data</div>
+    <div class="pt-hero-sub">Alur penggunaan Daun Merah dari konteks sampai evaluasi</div>
   </div>
 
   <!-- MULAI DARI SINI -->
   <div class="pt-section">
-    <div class="pt-section-hdr" style="color:var(--green)">
-      <span>👋</span> Mulai dari Sini
-    </div>
+    <div class="pt-section-hdr" style="color:var(--green)">Mulai dari Sini</div>
     <div style="padding:14px;font-size:11px;line-height:1.75;color:var(--text-mid)">
-      <p style="margin:0 0 12px"><strong style="color:var(--text)">Baru pertama kali pakai?</strong> Tab paling atas yang kebuka otomatis (NEWS) itu stream berita mentah real-time — paling berguna kalau kamu SUDAH punya konteks, bukan titik mulai yang enak. Urutan yang lebih nyaman buat pemula: buka <strong style="color:var(--green)">CAL</strong> dulu (jadwal event hari ini, ada jam + level dampak HIGH/MED) lalu <strong style="color:#e57373">RINGKASAN</strong> (ringkasan AI driver pasar hari ini). Setelah dua itu kebaca, baru NEWS bakal masuk akal — kamu sudah tahu apa yang sedang dicari. Nggak harus paham semua tab sekaligus; ikuti alur "Alur Keputusan" di bawah satu per satu, satu sesi cukup fokus ke beberapa langkah pertama saja.</p>
-      <p style="margin:0"><strong style="color:var(--text)">Sudah biasa pakai app ini?</strong> Tidak ada yang berubah dari cara kerja atau urutan tab kamu sehari-hari — bagian ini cuma ditambahkan untuk orang yang baru pertama kali buka app, supaya nggak nyasar duluan ke NEWS tanpa konteks.</p>
+      <p style="margin:0 0 12px"><strong style="color:var(--text)">Mulai dari Dashboard.</strong> Baca tabel <strong style="color:var(--green)">ARAH MATA UANG MINGGU INI</strong> untuk melihat kondisi Pertumbuhan, Inflasi, Bank sentral, Pandangan bank, Posisi pasar, dan Bias setiap mata uang. Klik satu mata uang untuk membuka rincian data pendukung dan tingkat keyakinannya.</p>
+      <p style="margin:0 0 12px"><strong style="color:var(--text)">Bias bukan perintah entry.</strong> <strong style="color:var(--green)">Naik</strong> atau <strong style="color:#e57373">Turun</strong> hanya merangkum arah data mata uang tersebut. <strong style="color:var(--yellow)">Campur</strong> berarti komponennya tidak searah, sedangkan tanda <strong style="color:var(--muted)">—</strong> berarti data belum cukup. Arah pair tetap harus mempertimbangkan kedua mata uang, harga, kalender, dan risiko.</p>
+      <p style="margin:0"><strong style="color:var(--text)">Konfirmasi harga secara terpisah.</strong> Panel arah harga hanya menampilkan BUY atau SELL ketika close D1 terhadap EMA200, arah EMA21/EMA100 H4, dan kekuatan EMA gap terhadap ATR semuanya searah. Selain itu statusnya TUNGGU. Tabel Bias dan panel harga adalah dua pembacaan berbeda; salah satunya tidak menggantikan yang lain.</p>
     </div>
   </div>
 
   <!-- ALUR KEPUTUSAN -->
   <div class="pt-section">
-    <div class="pt-section-hdr" style="color:#60a5fa">
-      <span>⚡</span> Alur Keputusan (Quick Reference)
-    </div>
+    <div class="pt-section-hdr" style="color:#60a5fa">Alur Penggunaan</div>
     <div class="pt-flow">
       <div class="pt-flow-item">
-        <div class="pt-flow-tag" style="background:rgba(96,165,250,0.12);color:#60a5fa">COT</div>
-        <div class="pt-flow-desc">Bias minggu ini — institusi net long atau short di pair kamu?</div>
+        <div class="pt-flow-tag" style="background:rgba(96,165,250,0.12);color:#60a5fa">DASHBOARD</div>
+        <div class="pt-flow-desc">Baca bias per mata uang dan konfirmasi harga sebagai dua lapisan terpisah.</div>
       </div>
-      <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
-      <div class="pt-flow-item">
-        <div class="pt-flow-tag" style="background:rgba(var(--accent-rgb),0.12);color:#e57373">RINGKASAN</div>
-        <div class="pt-flow-desc">Driver harian + bias sesi + risiko spike XAU/USD</div>
-      </div>
-      <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
         <div class="pt-flow-tag" style="background:rgba(var(--green-rgb),0.12);color:var(--green)">CAL</div>
-        <div class="pt-flow-desc">Jam berapa high-impact news? Tandai sebagai no-trade zone</div>
+        <div class="pt-flow-desc">Periksa jadwal serta dampak event sebelum menilai peluang.</div>
       </div>
-      <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
+      <div class="pt-flow-item">
+        <div class="pt-flow-tag" style="background:rgba(var(--accent-rgb),0.12);color:#e57373">RINGKASAN</div>
+        <div class="pt-flow-desc">Baca konteks makro harian; verifikasi klaim penting ke data asal.</div>
+      </div>
       <div class="pt-flow-item">
         <div class="pt-flow-tag" style="background:rgba(var(--accent-rgb),0.12);color:#e57373">NEWS</div>
-        <div class="pt-flow-desc">Monitor real-time — tangkap headline sebelum chart bergerak</div>
+        <div class="pt-flow-desc">Pantau perubahan informasi yang relevan dengan mata uang dan pair pilihan.</div>
       </div>
-      <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
         <div class="pt-flow-tag" style="background:rgba(167,139,250,0.12);color:#a78bfa">ANALISA</div>
-        <div class="pt-flow-desc">Konfirmasi level teknikal (SL/TP/trigger) dari multi-timeframe AI — Daily, H4, H1</div>
+        <div class="pt-flow-desc">Nilai struktur, trigger, entry zone, SL, dan TP pada pair pilihan.</div>
       </div>
-      <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
-        <div class="pt-flow-tag" style="background:rgba(230,126,34,0.12);color:#f39c12">RENCANA ENTRY</div>
-        <div class="pt-flow-desc">Ikuti gate makro, strategi, trigger, risiko, dan pengaman; tidak ada sistem skor</div>
+        <div class="pt-flow-tag" style="background:rgba(230,126,34,0.12);color:#f39c12">RENCANA</div>
+        <div class="pt-flow-desc">Lengkapi gate secara berurutan; satu gate wajib yang gagal berarti menunggu.</div>
       </div>
-      <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
         <div class="pt-flow-tag" style="background:rgba(var(--accent-rgb),0.12);color:#e57373">SIZING</div>
-        <div class="pt-flow-desc">Hitung lot dari equity, stop pips, dan % risk kamu</div>
+        <div class="pt-flow-desc">Hitung ukuran lot dari equity, batas rugi, serta jarak stop aktual.</div>
       </div>
-      <div class="pt-flow-arrow" style="padding-left:36px">↓</div>
       <div class="pt-flow-item">
         <div class="pt-flow-tag" style="background:rgba(244,114,182,0.12);color:#f472b6">JURNAL</div>
-        <div class="pt-flow-desc">Catat setiap trade — pair, arah, alasan, hasil</div>
+        <div class="pt-flow-desc">Simpan alasan, level, hasil, dan evaluasi setelah posisi ditutup.</div>
       </div>
     </div>
   </div>
@@ -4260,33 +4246,33 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <div class="pt-section">
     <div class="pt-section-hdr" style="color:#60a5fa">
       <span class="pt-num" style="background:rgba(96,165,250,0.15);color:#60a5fa">1</span>
-      Pre-Session — Sebelum Market Buka
+      Sebelum Sesi
     </div>
     <div class="pt-section-body">
       <div class="pt-row">
         <div class="pt-step-num">1.1</div>
-        <div class="pt-step-action"><strong>Cek Tab COT</strong>Lihat posisi institusi (Leveraged Money & Asset Manager) untuk pair yang akan ditrade. Perhatikan kolom NET dan perubahan minggu ini.</div>
-        <div class="pt-step-why">COT dirilis tiap Jumat, berlaku untuk minggu depan. Jika institusi net short tapi kamu mau buy — kamu melawan arus. Pertimbangkan ulang atau kurangi size.</div>
+        <div class="pt-step-action"><strong>Baca Bias di Dashboard</strong>Buka rincian mata uang yang relevan. Periksa Pertumbuhan, Inflasi, Bank sentral, Pandangan bank, Posisi pasar, Bias, tingkat keyakinan, dan umur datanya.</div>
+        <div class="pt-step-why">Status akhir hanya merangkum komponen yang tersedia. Campur bukan arah, tanda — bukan data nol, dan keyakinan rendah tidak boleh dibaca sebagai kepastian.</div>
       </div>
       <div class="pt-row">
         <div class="pt-step-num">1.2</div>
-        <div class="pt-step-action"><strong>Ringkas Berita</strong>Buka tab RINGKASAN → tap "Ringkas Berita". Baca hasil AI dari atas ke bawah: driver pasar, pairs yang bergerak, bias sesi, dan paragraf XAUUSD di bagian bawah.</div>
-        <div class="pt-step-why">Ringkasan mengagregasi 80+ headline terakhir + event kalender. Lebih cepat dari baca satu-satu. Hasilnya hanya valid ~4 jam — generate ulang setelah itu.</div>
+        <div class="pt-step-action"><strong>Bandingkan Kedua Mata Uang</strong>Untuk FX, baca base dan quote secara terpisah. Bias satu mata uang saja belum cukup untuk menentukan arah pair.</div>
+        <div class="pt-step-why">Pair bergerak secara relatif. Bias USD Naik, misalnya, mempunyai arti berbeda pada EUR/USD dan USD/JPY karena posisi USD berbeda.</div>
       </div>
       <div class="pt-row">
         <div class="pt-step-num">1.3</div>
-        <div class="pt-step-action"><strong>Baca Regime Banner</strong>Lihat banner di bawah header: RISK-ON, NEUTRAL, atau RISK-OFF. Ini mempengaruhi pair mana yang lebih relevan hari ini.</div>
-        <div class="pt-step-why">Risk-Off → JPY, CHF, Gold cenderung kuat. Risk-On → AUD, NZD, pasangan risiko tinggi lebih aktif. Sesuaikan fokus pair.</div>
+        <div class="pt-step-action"><strong>Cek Tab CAL</strong>Lihat waktu, mata uang, tingkat dampak, actual, forecast, dan previous. Tandai event yang berdekatan dengan rencana entry atau posisi terbuka.</div>
+        <div class="pt-step-why">Kalender memberi risiko waktu. Jarak aman dari event harus mengikuti rencana dan kondisi pasar; label dampak tidak menjamin besar atau arah pergerakan.</div>
       </div>
       <div class="pt-row">
         <div class="pt-step-num">1.4</div>
-        <div class="pt-step-action"><strong>Cek Tab CAL</strong>Lihat event High-impact hari ini dan jam rilisnya (sudah dikonversi ke WIB). Buat "no-trade window" 15 menit sebelum dan sesudah rilis.</div>
-        <div class="pt-step-why">Spread melebar dan pergerakan tidak terprediksi saat news rilis. Trading di dalam window ini adalah gambling, bukan edge.</div>
+        <div class="pt-step-action"><strong>Baca Ringkasan</strong>Gunakan "Ringkas Berita" untuk menyusun konteks dari berita dan data yang tersedia. Perhatikan sumber, waktu pembaruan, ketidakpastian, serta konflik antar-driver.</div>
+        <div class="pt-step-why">Ringkasan dibuat oleh model bahasa dan dapat keliru. Angka, jadwal, serta klaim penting tetap harus cocok dengan data asal sebelum dipakai.</div>
       </div>
       <div class="pt-row">
         <div class="pt-step-num">1.5</div>
-        <div class="pt-step-action"><strong>Opsional: Cek Korelasi Cross-Asset (tab TEKNIKAL)</strong>Buka tab TEKNIKAL → scroll ke bawah, korelasi termuat otomatis. Lihat tabel XAU/USD dan bagian Anomali. Cache server 24 jam.</div>
-        <div class="pt-step-why">Korelasi 20d vs 60d memperlihatkan apakah hubungan yang biasanya stabil mulai breakdown — misal Gold tidak bergerak bersama DXY seperti biasa (bearish real yield sedang disconnect). Ini bukan sinyal entry, tapi konteks konfirmasi.</div>
+        <div class="pt-step-action"><strong>Periksa Data Pendukung</strong>Gunakan Fundamental untuk data ekonomi dan COT untuk positioning. Di rincian Bias, Pandangan bank belum memengaruhi Bias sebelum rapor forward memiliki sampel yang cukup.</div>
+        <div class="pt-step-why">Jenis data mempunyai horizon berbeda. Data ekonomi, positioning mingguan, outlook bank, dan harga tidak boleh dianggap sebagai bukti yang sama atau digabung tanpa konteks.</div>
       </div>
     </div>
   </div>
@@ -4295,33 +4281,33 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <div class="pt-section">
     <div class="pt-section-hdr" style="color:var(--green)">
       <span class="pt-num" style="background:rgba(var(--green-rgb),0.15);color:var(--green)">2</span>
-      Live Session — Saat Trading Aktif
+      Saat Sesi Berjalan
     </div>
     <div class="pt-section-body">
       <div class="pt-row">
         <div class="pt-step-num">2.1</div>
-        <div class="pt-step-action"><strong>Aktifkan AUTO di tab NEWS</strong>Toggle AUTO ON → feed refresh otomatis tiap 50 detik. Aktifkan juga notifikasi push agar headline market-moving masuk ke HP.</div>
-        <div class="pt-step-why">Berita bergerak sebelum chart bergerak. Notifikasi memberikan ~5-15 detik head start sebelum retail trader lain bereaksi.</div>
+        <div class="pt-step-action"><strong>Pantau NEWS Secara Selektif</strong>Aktifkan AUTO bila perlu dan gunakan filter kategori. Cocokkan headline baru dengan mata uang, event, serta driver yang sedang dipantau.</div>
+        <div class="pt-step-why">Kecepatan notifikasi tidak menjamin keunggulan. Headline dapat terlambat, tidak lengkap, atau belum terkonfirmasi.</div>
       </div>
       <div class="pt-row">
         <div class="pt-step-num">2.2</div>
-        <div class="pt-step-action"><strong>Filter NEWS per kategori</strong>Gunakan tombol filter: Forex, Macro, Energy, Geopolit. Fokus pada kategori yang relevan dengan pair yang sedang ditrade.</div>
-        <div class="pt-step-why">100+ berita per hari — filter mencegah information overload dan menjaga fokus.</div>
+        <div class="pt-step-action"><strong>Periksa Konfirmasi Harga</strong>Di Dashboard atau Teknikal, baca close D1 terhadap EMA200, EMA gap EMA21/EMA100 H4, ATR14 H6, dan status ARAH.</div>
+        <div class="pt-step-why">BUY atau SELL hanya muncul saat tiga pemeriksaan selaras. TUNGGU berarti syarat belum lengkap, tidak selaras, lemah, basi, atau datanya tidak tersedia.</div>
       </div>
       <div class="pt-row">
         <div class="pt-step-num">2.3</div>
-        <div class="pt-step-action"><strong>Buka tab ANALISA — bentuk keputusan</strong>Pilih pair yang ingin ditrade lalu tap "Analisa Pair Ini". Baca arah makro, strategi, level <strong>entry_zone, SL, TP, dan trigger</strong>. Hasil analisa menentukan Momentum, Range, Tactical Fade, atau No Trade sebelum masuk ke Rencana. <em>Shortcut: G → A</em></div>
-        <div class="pt-step-why">Analisa memadukan OHLCV multi-timeframe + indikator (MACD H4, ATR H1, RSI Daily) + konteks makro dari Ringkasan. Level SL/TP didasarkan pada swing struktural H4 yang terdeteksi secara algoritma — bukan perkiraan. Cache berlaku 8 jam; generate ulang jika harga sudah bergerak jauh.</div>
+        <div class="pt-step-action"><strong>Jalankan Analisa Pair Ini</strong>Baca arah makro, strategi, trigger, entry zone, SL, TP, konflik, dan status kesegaran. Jangan gunakan hasil yang ditandai lama sebagai setup aktif.</div>
+        <div class="pt-step-why">Analisa menggabungkan data makro, positioning, harga, dan keluaran model bahasa. Verifikasi level terhadap chart serta kondisi pasar saat ini.</div>
       </div>
       <div class="pt-row">
         <div class="pt-step-num">2.4</div>
-        <div class="pt-step-action"><strong>Bangun RENCANA ENTRY</strong>Dari hasil Analisa, buka RENCANA. Pilih <strong>Momentum</strong>, <strong>Range</strong>, <strong>Tactical Fade</strong>, atau <strong>No Trade</strong>. Konfirmasi setiap tahap secara berurutan; kotak centang hanya mencatat verifikasi, bukan menambah skor.</div>
-        <div class="pt-step-why">Gate mencegah setup yang belum lengkap terlihat layak hanya karena banyak kondisi tambahan tercentang. Satu gate wajib yang gagal berarti tunggu.</div>
+        <div class="pt-step-action"><strong>Bangun Rencana Entry</strong>Kirim hasil Analisa ke Rencana Entry, pilih setup yang sesuai, lalu konfirmasi setiap gate secara berurutan. Kotak centang mencatat verifikasi, bukan menambah skor.</div>
+        <div class="pt-step-why">Momentum, Range, dan Tactical Fade mempunyai syarat berbeda. No Trade hanya muncul bila Analisa terbaru memilihnya; kondisi kosong berarti menunggu data atau pilihan pair.</div>
       </div>
       <div class="pt-row">
         <div class="pt-step-num">2.5</div>
-        <div class="pt-step-action"><strong>Semua gate lulus → hitung SIZING</strong>Input: total equity akun, jarak stop loss (pips), dan persentase risk yang mau kamu ambil (maksimal 2%). Output: lot size yang tepat.</div>
-        <div class="pt-step-why">Sizing yang salah adalah penyebab utama account blow. 1 trade dengan lot 5x terlalu besar bisa menghapus 20 trade profit sebelumnya.</div>
+        <div class="pt-step-action"><strong>Hitung Sizing Setelah Level Final</strong>Isi pair, arah, equity, batas kerugian, entry, dan stop aktual. Periksa peringatan event, ATR, margin, serta hasil lot sebelum meneruskan.</div>
+        <div class="pt-step-why">Kalkulator mengikuti input dan asumsi kontrak yang tersedia. Nilai pip, margin, spread, slippage, serta aturan broker tetap perlu dicocokkan sebelum eksekusi.</div>
       </div>
     </div>
   </div>
@@ -4330,18 +4316,18 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <div class="pt-section">
     <div class="pt-section-hdr" style="color:#f472b6">
       <span class="pt-num" style="background:rgba(244,114,182,0.15);color:#f472b6">3</span>
-      Post-Trade — Setelah Posisi Ditutup
+      Setelah Posisi Ditutup
     </div>
     <div class="pt-section-body">
       <div class="pt-row">
         <div class="pt-step-num">3.1</div>
-        <div class="pt-step-action"><strong>Catat ke JURNAL</strong>Buka tab JURNAL → "+ BARU". Isi pair, direction, lot, entry/exit price, P&L, dan alasan masuk. Jika trade berasal dari RINGKASAN thesis, gunakan tombol "Gunakan untuk mulai jurnal →".</div>
-        <div class="pt-step-why">Jurnal adalah satu-satunya cara tahu apakah strategy kamu profitable secara sistematis, bukan hanya beruntung.</div>
+        <div class="pt-step-action"><strong>Catat ke Jurnal</strong>Buka Jurnal lalu pilih "+ BARU". Isi pair, arah, thesis, entry, stop, target, lot, dan horizon. Setelah posisi selesai, isi exit, R aktual, alasan exit, serta catatan atribusi.</div>
+        <div class="pt-step-why">Catatan terstruktur memungkinkan hasil dibandingkan dengan alasan dan rencana awal, bukan hanya dinilai dari untung atau rugi.</div>
       </div>
       <div class="pt-row">
         <div class="pt-step-num">3.2</div>
-        <div class="pt-step-action"><strong>Review mingguan</strong>Tiap akhir minggu, buka JURNAL → tab DAFTAR. Review trade mana yang profit/loss dan apakah alasannya valid. Bandingkan dengan COT minggu itu.</div>
-        <div class="pt-step-why">Trader yang tidak review journal hanya mengulangi kesalahan yang sama. Pattern error biasanya terlihat setelah 10-20 trade terjurnal.</div>
+        <div class="pt-step-action"><strong>Review dengan Sampel yang Cukup</strong>Gunakan Daftar Trade, Kurva, Hasil per Tahap Rencana, dan Diagnosa Perilaku. Pisahkan hasil berdasarkan strategi, horizon, dan kondisi pasar.</div>
+        <div class="pt-step-why">Jangan menyimpulkan pola dari satu atau dua trade. Nilai proses, konsistensi eksekusi, dan distribusi hasil pada kelompok yang sebanding.</div>
       </div>
     </div>
   </div>
@@ -4353,37 +4339,32 @@ body:not(.light-theme) .ringkasan-gen-btn {
     </div>
     <div class="pt-rules">
       <div class="pt-rule">
-        <div class="pt-rule-icon" style="color:var(--accent)">✗</div>
-        <div class="pt-rule-text"><strong>Jangan lewati gate</strong>Kalau satu gate wajib belum lulus, status tetap TUNGGU. Keputusan No Trade tidak boleh diubah hanya dengan mencentang kondisi lain.</div>
+        <div class="pt-rule-text"><strong>Bias bukan keputusan entry</strong>Bias menjelaskan arah data mata uang. Entry tetap membutuhkan pasangan mata uang, konfirmasi harga, trigger, level risiko, dan gate yang lengkap.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon" style="color:var(--accent)">✗</div>
-        <div class="pt-rule-text"><strong>Jangan trade di no-trade window</strong>15 menit sebelum dan sesudah high-impact news = dilarang entry. Cek CAL setiap pagi.</div>
+        <div class="pt-rule-text"><strong>Jangan ubah data kosong menjadi sinyal</strong>Tanda — berarti data belum cukup. Campur berarti komponen tidak searah. Keduanya bukan Naik atau Turun.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon" style="color:var(--accent)">✗</div>
-        <div class="pt-rule-text"><strong>Jangan abaikan COT divergence</strong>Jika COT institusi berlawanan dengan arah trade kamu, kurangi size atau skip. Jangan fight the flow.</div>
+        <div class="pt-rule-text"><strong>Periksa umur dan sumber</strong>Data ekonomi, COT, outlook bank, harga, berita, dan output AI mempunyai jadwal pembaruan berbeda. Baca tanggal, status basi, sampel, dan tingkat keyakinan.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon" style="color:var(--green)">✓</div>
-        <div class="pt-rule-text"><strong>Ringkas Berita tiap pagi</strong>Jangan trade tanpa konteks hari ini. Ringkasan butuh &lt;30 detik untuk dibaca dan bisa mencegah entry yang salah arah.</div>
+        <div class="pt-rule-text"><strong>Bedakan data pendukung dan sumber resmi</strong>Rincian Bank sentral dapat memuat headline terkait, tetapi daftar itu bukan jejak sitasi lengkap untuk label stance. Verifikasi keputusan dan pernyataan bank sentral ke rilis resminya.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon" style="color:var(--green)">✓</div>
-        <div class="pt-rule-text"><strong>Risk max 2% per trade</strong>Input ke SIZING setiap kali, jangan hafal lot "kira-kira". Equity berubah setelah setiap trade — hitung ulang selalu.</div>
+        <div class="pt-rule-text"><strong>Verifikasi keluaran AI</strong>Cocokkan angka, jadwal, level harga, dan klaim penting dengan data yang ditampilkan atau sumber resmi.</div>
       </div>
       <div class="pt-rule">
-        <div class="pt-rule-icon" style="color:var(--green)">✓</div>
-        <div class="pt-rule-text"><strong>Jurnal setiap trade, bukan hanya yang profit</strong>Trade loss yang terjurnal sama nilainya dengan trade profit — keduanya adalah data untuk improvement.</div>
+        <div class="pt-rule-text"><strong>Gunakan gate sesuai urutan</strong>Satu gate wajib yang belum lulus mempertahankan status TUNGGU. Banyak kondisi tambahan tidak menggantikan satu syarat wajib.</div>
+      </div>
+      <div class="pt-rule">
+        <div class="pt-rule-text"><strong>Hitung ulang risiko setiap setup</strong>Gunakan equity dan jarak stop aktual. Jangan mengandalkan lot dari trade sebelumnya karena harga, stop, dan kondisi akun dapat berubah.</div>
       </div>
     </div>
   </div>
 
   <!-- UNTUK PENGGUNA LAPTOP -->
   <div class="pt-section">
-    <div class="pt-section-hdr" style="color:#60a5fa">
-      <span>⌨</span> Untuk Pengguna Laptop
-    </div>
+    <div class="pt-section-hdr" style="color:#60a5fa">Untuk Pengguna Laptop</div>
     <div style="padding:14px">
       <div style="font-size:10px;color:var(--text-mid);line-height:1.7;margin-bottom:14px">
         Swipe antar tab (seperti di HP) tidak berlaku dengan mouse/trackpad. Di laptop, pakai <strong style="color:var(--text)">keyboard shortcut</strong> di bawah ini untuk pindah tab dan navigasi lebih cepat tanpa menyentuh mouse. Tekan <span class="kb-key">?</span> kapan saja untuk membuka/menutup kotak referensi cepat ini.
@@ -4391,7 +4372,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <button onclick="openKbHelp()" style="padding:8px 12px;background:rgba(96,165,250,0.12);border:1px solid #60a5fa;color:#60a5fa;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;cursor:pointer;border-radius:4px;margin-bottom:14px">BUKA REFERENSI CEPAT (?)</button>
 
       <div class="kb-sec">
-        <div class="kb-sec-title">Navigasi — tekan G lalu huruf</div>
+        <div class="kb-sec-title">Navigasi: tekan G lalu huruf</div>
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">N</span></div><span class="kb-desc">News</span></div>
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">B</span></div><span class="kb-desc">Artikel / CB Watch</span></div>
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">G</span><span class="kb-key">R</span></div><span class="kb-desc">Ringkasan</span></div>
@@ -4408,7 +4389,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </div>
       <div class="kb-sec">
         <div class="kb-sec-title">Di tab News</div>
-        <div class="kb-row"><div class="kb-keys"><span class="kb-key">1</span>–<span class="kb-key">7</span></div><span class="kb-desc">Ganti filter kategori (All → Geopolitical)</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">1</span>–<span class="kb-key">7</span></div><span class="kb-desc">Ganti filter kategori dari All sampai Geopolitical</span></div>
       </div>
       <div class="kb-sec">
         <div class="kb-sec-title">Di tab Teknikal</div>
@@ -4416,7 +4397,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
       </div>
       <div class="kb-sec">
         <div class="kb-sec-title">Di Rencana Entry</div>
-        <div class="kb-row"><div class="kb-keys"><span class="kb-key">↑</span><span class="kb-key">↓</span></div><span class="kb-desc">Navigasi item</span></div>
+        <div class="kb-row"><div class="kb-keys"><span class="kb-key">Up</span><span class="kb-key">Down</span></div><span class="kb-desc">Navigasi item</span></div>
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">Space</span></div><span class="kb-desc">Centang / uncentang</span></div>
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">Enter</span></div><span class="kb-desc">Centang / uncentang</span></div>
         <div class="kb-row"><div class="kb-keys"><span class="kb-key">Esc</span></div><span class="kb-desc">Lepas fokus item</span></div>
@@ -4440,7 +4421,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
     </div>
     <div style="padding:14px">
       <div style="font-size:10px;color:var(--text-mid);line-height:1.7;margin-bottom:14px">
-        Kalau link aplikasi ini bocor, orang asing bisa memicu fitur AI dan menghabiskan kuota harian. Untuk mencegahnya, set environment variable <strong style="color:var(--text)">APP_KEY</strong> di dashboard Vercel (Settings → Environment Variables) lalu redeploy — sejak itu semua endpoint menolak request tanpa kunci, dan aplikasi akan meminta kunci <strong style="color:var(--text)">sekali per device</strong> (tersimpan di device, tidak dikirim ke mana-mana selain server sendiri). Selama APP_KEY belum diset, aplikasi berjalan terbuka seperti biasa. Notifikasi background (cek berita service worker) dan cron GitHub Actions tetap jalan tanpa kunci.
+        Kalau link aplikasi ini bocor, orang asing bisa memicu fitur AI dan menghabiskan kuota harian. Untuk mencegahnya, set environment variable <strong style="color:var(--text)">APP_KEY</strong> di dashboard Vercel melalui Settings, lalu Environment Variables, lalu redeploy — sejak itu semua endpoint menolak request tanpa kunci, dan aplikasi akan meminta kunci <strong style="color:var(--text)">sekali per device</strong> (tersimpan di device, tidak dikirim ke mana-mana selain server sendiri). Selama APP_KEY belum diset, aplikasi berjalan terbuka seperti biasa. Notifikasi background (cek berita service worker) dan cron GitHub Actions tetap jalan tanpa kunci.
       </div>
       <button onclick="ptOpenAppKey()" style="padding:8px 12px;background:rgba(245,166,35,0.10);border:1px solid #f5a623;color:#f5a623;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.05em;cursor:pointer;border-radius:4px">MASUKKAN / UBAH KUNCI AKSES</button>
       <div style="font-size:9px;color:var(--muted);margin-top:10px;line-height:1.65">
@@ -4451,9 +4432,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
 
   <!-- SINKRONISASI DEVICE -->
   <div class="pt-section">
-    <div class="pt-section-hdr" style="color:#a78bfa">
-      <span>⚙</span> Sinkronisasi Device
-    </div>
+    <div class="pt-section-hdr" style="color:#a78bfa">Sinkronisasi Device</div>
     <div style="padding:14px">
       <div style="font-size:10px;color:var(--text-mid);line-height:1.7;margin-bottom:14px">
         Jurnal dan riwayat sizing tersimpan di cloud berdasarkan <strong style="color:var(--text)">Device ID</strong>. Untuk mengakses data yang sama dari HP dan laptop, gunakan Device ID yang sama di kedua device.
@@ -4935,7 +4914,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.27.1';
+const APP_VERSION = '2026.10.27.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
