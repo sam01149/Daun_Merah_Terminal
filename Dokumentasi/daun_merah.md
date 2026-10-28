@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-28 (Session 428 — Verifikasi pengaruh harga pada tabel Bias)
+> **Last updated:** 2026-10-28 (Session 429 — Replay rilis inflasi AUD pada tabel Bias)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 429 (2026-10-28) — Replay rilis inflasi AUD pada tabel Bias
+
+**Replay gambar pengguna.** Empat rilis AUD pada kalender dimasukkan ke fungsi produksi `buildInflation`: Trimmed Mean CPI MoM 0,3% vs 0,3% dan Trimmed Mean CPI YoY 3,6% vs 3,6% menghasilkan netral; Inflation Rate MoM 0,8% vs 0,7% dan Inflation Rate YoY 4,3% vs 4,2% menghasilkan dua surprise positif. Impulse inflasi mentah menjadi `bullish`, tetapi dengan state Bank sentral AUD pada snapshot tabel sebelumnya masih `bearish`, lapisan Inflation final menjadi `mixed` berkeyakinan rendah. Dengan Growth `bearish`, Inflation `mixed`, dan Bank sentral `bearish`, `buildOverall` tetap menghasilkan AUD `bearish`/`Turun` berkeyakinan rendah; Pandangan bank `bullish` tidak eligible karena rapor belum cukup dan Positioning `mixed` dicatat sebagai konflik. Jadi setelah data gambar diproses, perubahan yang diharapkan adalah kolom Inflasi `Turun` menjadi `Campur`, sedangkan Bias akhir belum berubah. Jika stance RBA kemudian benar-benar diperbarui menjadi hawkish/bullish, hasil perlu dihitung ulang dan dapat menjadi `Campur`; gambar kalender saja belum membuktikan perubahan stance tersebut. Tidak ada kode runtime yang diubah.
 
 ## Changelog Session 428 (2026-10-28) — Verifikasi pengaruh harga pada tabel Bias
 
