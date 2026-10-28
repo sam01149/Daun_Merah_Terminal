@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-28 (Session 430 — Interpretasi snapshot Bias dominan Campur)
+> **Last updated:** 2026-10-28 (Session 432 — Penjelasan verdict TUNGGU USD/CHF)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 432 (2026-10-28) — Penjelasan verdict TUNGGU USD/CHF
+
+**Hasil verifikasi.** Screenshot USD/CHF menunjukkan close D1 sekitar 0,82978 berada di atas EMA200 sekitar 0,80863, tetapi EMA gap (jarak EMA21 terhadap EMA100 pada H4) hanya 4,8 pip sementara ATR14 H6 sebesar 16,1 pip. Rumus produksi `finalPrimeVerdict` memerlukan tiga syarat sekaligus: close D1 di atas/bawah EMA200, arah EMA21/EMA100 H4 searah, dan `EMA gap > ATR`. Karena 4,8 < 16,1, gate kekuatan pasti gagal sehingga verdict tetap `TUNGGU`, terlepas dari apakah arah H4 sudah bullish. ATR tidak dibandingkan dengan nilai EMA mentah; ATR dibandingkan dengan jarak antara EMA21 dan EMA100. Tidak ada kode runtime yang diubah.
+
+## Changelog Session 431 (2026-10-28) — Label Pandangan ekonom dan footer Dashboard dihapus
+
+**Perubahan.** Atas permintaan user, seluruh label UI aktif `Pandangan bank` pada tabel Bias, rincian baris, dan panel Petunjuk diganti menjadi `Pandangan ekonom`. Blok footer di bawah tabel yang memuat `Sumber Pandangan bank`, `Rapor forward`, jumlah sampel, akurasi, tautan artikel minggu ini, serta catatan snapshot terlambat dihapus seluruhnya beserta CSS yang tidak lagi terpakai. Detail mata uang tetap menyebut sumber aktual `Marc to Market · Marc Chandler`, evidence, dan rapor per-currency ketika baris dibuka; backend, tracker, formula Bias, dan eligibility rapor tidak diubah. `APP_VERSION` naik ke `2026.10.28.1` agar PWA mengambil UI baru.
+
+**Verifikasi.** Regresi frontend diperbarui untuk mengunci label `Pandangan ekonom`, melarang label lama dan seluruh isi footer kembali, serta mempertahankan sumber aktual di detail baris. Tes fokus lulus 8/8. Chromium headless 1.365×768 dengan payload mock merender tujuh header lengkap, detail `PANDANGAN EKONOM`, tanpa footer lama, tanpa overflow dokumen, dan tanpa teks `Pandangan bank`. Tidak ada emoji UI baru.
 
 ## Changelog Session 430 (2026-10-28) — Interpretasi snapshot Bias dominan Campur
 

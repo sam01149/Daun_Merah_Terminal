@@ -31,7 +31,7 @@ test('Petunjuk mengikuti alur fitur aktif dan batas data saat ini', () => {
   assert.match(guide, /close D1 terhadap EMA200/);
   assert.match(guide, /EMA gap EMA21\/EMA100 H4/);
   assert.match(guide, /ATR14 H6/);
-  assert.match(guide, /Pandangan bank belum memengaruhi Bias sebelum rapor forward memiliki sampel yang cukup/);
+  assert.match(guide, /Pandangan ekonom belum memengaruhi Bias sebelum rapor forward memiliki sampel yang cukup/);
   assert.match(guide, /headline terkait, tetapi daftar itu bukan jejak sitasi lengkap/);
 });
 

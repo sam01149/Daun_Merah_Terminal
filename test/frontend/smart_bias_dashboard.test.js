@@ -21,14 +21,15 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.doesNotMatch(markup, /id="dashDigestSection"|id="dashBiasList"|id="dashFundStrip"|id="dashRetailStrip"/);
 
   const renderer = between('function renderDashSmartBias()', '\nfunction renderDashPositionAlerts()');
-  for (const heading of ['Pertumbuhan', 'Inflasi', 'Bank sentral', 'Pandangan bank', 'Posisi pasar', 'Bias']) {
+  for (const heading of ['Pertumbuhan', 'Inflasi', 'Bank sentral', 'Pandangan ekonom', 'Posisi pasar', 'Bias']) {
     assert.match(renderer, new RegExp(`<th>${heading}</th>`));
   }
   assert.match(html, /<div class="sb-detail-title">Bias<\/div>/);
   assert.doesNotMatch(renderer, /<th>Kesimpulan<\/th>/);
   assert.doesNotMatch(html, /<div class="sb-detail-title">Overall<\/div>/);
-  assert.match(renderer, /Marc to Market \/ Marc Chandler/);
-  assert.match(renderer, /Rapor forward/);
+  assert.match(html, /<div class="sb-detail-title">Pandangan ekonom<\/div><div class="sb-detail-text">Sumber: Marc to Market · Marc Chandler<\/div>/);
+  assert.doesNotMatch(html, /Pandangan bank/);
+  assert.doesNotMatch(renderer, /Sumber Pandangan bank|Rapor forward|Buka artikel minggu ini|Snapshot minggu ini terlambat|sb-track-record|marcRecord/);
   assert.match(html, /Belum cukup sampel/);
   assert.doesNotMatch(renderer, /<th>Trend<\/th>|<th>Seasonality<\/th>/);
   assert.match(html, /@media \(max-width: 1023px\)[\s\S]*?#dashboardPanel\.visible \{ display:flex;/);
