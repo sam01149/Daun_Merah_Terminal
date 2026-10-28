@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-27 (Session 426 — Petunjuk diselaraskan dengan alur Bias)
+> **Last updated:** 2026-10-28 (Session 427 — Verifikasi ritme pembaruan Dashboard)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 427 (2026-10-28) — Verifikasi ritme pembaruan Dashboard
+
+**Hasil verifikasi.** Kalender dan tabel `ARAH MATA UANG MINGGU INI` tidak memakai satu jadwal pembaruan. Tab CAL aktif meminta ulang data setiap 90 detik; endpoint kalender hanya mengambil ulang TradingView bila cache berumur setidaknya 60 detik, sehingga perubahan `actual` normalnya terlihat dalam kisaran sekitar 1–2,5 menit selama tab CAL tetap terbuka. Widget kalender Dashboard tidak menjalankan polling 90 detik tersebut: ia mengambil data saat Dashboard dibuka bila cache klien kosong atau berumur lebih dari satu jam. Tombol refresh CAL tetap dapat meminta ulang secara manual, tetapi cache server 60 detik mencegah fetch vendor berlebihan.
+
+**Tabel arah.** Dashboard mencoba merender ulang setiap menit, tetapi klien dan endpoint `smart_bias` sama-sama menahan hasil selama 15 menit; secara efektif tabel dihitung ulang paling cepat sekitar setiap 15 menit ketika Dashboard aktif. Ini bukan berarti seluruh isi menjadi data 15-menitan: Growth/Inflation berubah ketika rilis baru diproses (otomatis pada pipeline Ringkasan tiga sesi per hari atau saat refresh Fundamental), Bank sentral mengikuti pembaruan Ringkasan, Posisi pasar berasal dari COT mingguan, dan Pandangan bank dibekukan dari outlook akhir pekan Marc to Market melalui tiga kesempatan cron Minggu–Senin. Jadi judul “minggu ini” adalah horizon analisis, bukan frekuensi refresh tunggal. Tidak ada kode runtime yang diubah dalam sesi verifikasi ini.
 
 ## Changelog Session 426 (2026-10-27) — Petunjuk diselaraskan dengan alur Bias
 
