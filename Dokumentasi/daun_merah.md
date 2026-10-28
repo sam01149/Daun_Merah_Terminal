@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-28 (Session 429 — Replay rilis inflasi AUD pada tabel Bias)
+> **Last updated:** 2026-10-28 (Session 430 — Interpretasi snapshot Bias dominan Campur)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 430 (2026-10-28) — Interpretasi snapshot Bias dominan Campur
+
+**Kesimpulan penggunaan.** Snapshot dengan tujuh currency `Campur` dan hanya AUD `Turun` tidak menyediakan bias pair yang bersih. `Campur` berarti komponen inti tidak searah dan bukan arah yang boleh dipaksa menjadi Naik/Turun. Arah pair dari tabel baru kuat bila kedua kaki berlawanan secara jelas: base Naik + quote Turun menghasilkan pair Naik, atau base Turun + quote Naik menghasilkan pair Turun. AUD Turun melawan currency lain yang Campur hanya layak menjadi watchlist lemah; tabel sendiri tidak dapat memilih countercurrency atau membuktikan strong-vs-weak. Dengan snapshot ini keluaran yang jujur adalah tidak ada bias pair dari tabel dan keputusan tetap `TUNGGU`, bukan mencari sinyal dari satu-satunya warna berbeda.
+
+**Batas fitur.** Dominasi `Campur` sebagian merupakan abstention konservatif yang benar ketika Growth, Inflation, dan Bank sentral konflik, tetapi audit Session 423–424 juga sudah membuktikan metodologi tabel belum cukup matang untuk penentu arah mandiri. `Campur` juga tidak membuktikan pasar sedang choppy: itu label konflik fundamental, sedangkan choppy adalah keadaan harga bolak-balik/range yang harus dibuktikan dari struktur dan volatilitas harga. Harga tetap dapat trending kuat walau fundamental Campur karena satu driver dominan, risk sentiment, atau berita baru. Karena itu tabel saat ini berfungsi sebagai filter konteks: memilih hanya kontras dua kaki yang benar-benar jelas dan menolak keadaan ambigu. Analisa/konfirmasi harga tidak boleh dipakai untuk memaksa `Campur` menjadi arah; ia dipakai untuk membedakan tren, range/choppy, dan kesiapan trigger setelah kandidat pair makro yang sah tersedia. Tidak ada kode runtime yang diubah.
 
 ## Changelog Session 429 (2026-10-28) — Replay rilis inflasi AUD pada tabel Bias
 
