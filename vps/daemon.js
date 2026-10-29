@@ -35,7 +35,7 @@ function resolveRedis() {
     if (url1 && token1) return { url: url1, token: token1, account: 1 };
     if (url2 && token2) return { url: url2, token: token2, account: 2 };
   }
-  if (process.env.UPSTASH_REDIS_REST_URL_2 && url2 && token2) {
+  if (url2 && token2) {
     return { url: url2, token: token2, account: 2 };
   }
   if (url1 && token1) return { url: url1, token: token1, account: 1 };

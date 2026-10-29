@@ -19,13 +19,14 @@ function resolveRedisCredentials() {
     if (url1 && token1) return { url: url1, token: token1, account: 1 };
   }
 
-  // Jika akun 2 diset lewat UPSTASH_REDIS_REST_URL_2, aktifkan akun 2
-  if (process.env.UPSTASH_REDIS_REST_URL_2 && url2 && token2) {
+  // Jika akun 2 tersedia (UPSTASH_REDIS_REST_URL_2 atau UPSTASH2_*),
+  // otomatis gunakan akun 2 sebagai database aktif agar Vercel langsung
+  // memakai akun 2 tanpa perlu mengubah dasbor Vercel secara manual.
+  if (url2 && token2) {
     return { url: url2, token: token2, account: 2 };
   }
 
   if (url1 && token1) return { url: url1, token: token1, account: 1 };
-  if (url2 && token2) return { url: url2, token: token2, account: 2 };
   return { url: url1 || null, token: token1 || null, account: 1 };
 }
 
