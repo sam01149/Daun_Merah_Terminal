@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 434 — Sel tabel Bias hanya menampilkan arah)
+> **Last updated:** 2026-10-29 (Session 435 — Warna arah tabel disederhanakan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 435 (2026-10-29) — Warna arah tabel disederhanakan
+
+**Perubahan.** Seluruh kolom tabel Bias sekarang memakai satu bahasa visual: arah naik/bullish/hawkish adalah segitiga hijau, sedangkan arah turun/bearish/dovish adalah segitiga merah. Override lama yang membuat Inflasi naik merah, Inflasi turun biru, Hawkish oranye, dan Dovish hijau dihapus. State `mixed`, `neutral`, dan `insufficient` tidak lagi menggambar garis atau simbol; selnya dibiarkan kosong. Detail baris dan label aksesibilitas tetap menyimpan makna lengkap. `APP_VERSION` naik ke `2026.10.29.3`.
+
+**Verifikasi lokal.** Regresi frontend mengunci hanya dua warna directional dan melarang pseudo-element untuk state non-directional maupun override warna berdasarkan jenis kolom. Suite penuh lulus 1.531/1.531. Chromium nyata pada 1.365×768 dan 390×844 memverifikasi 20 kombinasi state/jenis kolom: delapan arah directional berwarna benar, sedangkan 12 kombinasi campur/netral/tidak cukup kosong; tidak ada overflow dokumen.
 
 ## Changelog Session 434 (2026-10-29) — Sel tabel Bias hanya menampilkan arah
 

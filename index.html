@@ -2831,14 +2831,6 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .sb-state.bullish::before { border-bottom:6px solid currentColor; }
 .sb-state.bearish { color:#f87171; }
 .sb-state.bearish::before { border-top:6px solid currentColor; }
-.sb-state.mixed { color:#fbbf24; }
-.sb-state.mixed::before { width:6px; height:2px; border:0; background:currentColor; }
-.sb-state.neutral, .sb-state.insufficient { color:var(--muted); }
-.sb-state.neutral::before, .sb-state.insufficient::before { width:6px; height:1px; border:0; background:currentColor; }
-.sb-state.sb-kind-inflation.bullish { color:#f87171; }
-.sb-state.sb-kind-inflation.bearish { color:#60a5fa; }
-.sb-state.sb-kind-policy.bullish { color:var(--orange); }
-.sb-state.sb-kind-policy.bearish { color:var(--green); }
 .sb-pos-line { display:flex; align-items:center; gap:4px; white-space:nowrap; }
 .sb-pos-lbl { color:var(--muted); min-width:28px; text-align:left; font-size:8px; }
 .smart-bias-detail td { text-align:left; padding:0; background:rgba(var(--fg-rgb),.018); }
@@ -4915,7 +4907,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.29.2';
+const APP_VERSION = '2026.10.29.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
