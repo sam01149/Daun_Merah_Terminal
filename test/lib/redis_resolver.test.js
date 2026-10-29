@@ -1,15 +1,18 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveRedisCredentials, syncActiveRedisEnv } = require('../../api/_redis.js');
+const { resolveRedisCredentials, syncActiveRedisEnv, _resetOriginals } = require('../../api/_redis.js');
 
 test('api/_redis: resolveRedisCredentials dan syncActiveRedisEnv', () => {
   const origUrl = process.env.UPSTASH_REDIS_REST_URL;
   const origTok = process.env.UPSTASH_REDIS_REST_TOKEN;
   const origUrl2 = process.env.UPSTASH_REDIS_REST_URL_2;
   const origTok2 = process.env.UPSTASH_REDIS_REST_TOKEN_2;
+  const origLegacyUrl2 = process.env.UPSTASH2_REDIS_REST_URL;
+  const origLegacyTok2 = process.env.UPSTASH2_REDIS_REST_TOKEN;
   const origAct = process.env.REDIS_ACTIVE_ACCOUNT;
 
   try {
+    _resetOriginals();
     delete process.env.UPSTASH_REDIS_REST_URL_2;
     delete process.env.UPSTASH_REDIS_REST_TOKEN_2;
     delete process.env.UPSTASH2_REDIS_REST_URL;
@@ -39,16 +42,20 @@ test('api/_redis: resolveRedisCredentials dan syncActiveRedisEnv', () => {
     process.env.REDIS_ACTIVE_ACCOUNT = '1';
     creds = resolveRedisCredentials();
     assert.equal(creds.account, 1);
+    assert.equal(creds.url, 'https://r1.test');
 
     // Explicit switch ke akun 2
     process.env.REDIS_ACTIVE_ACCOUNT = '2';
     creds = resolveRedisCredentials();
     assert.equal(creds.account, 2);
   } finally {
+    _resetOriginals();
     if (origUrl !== undefined) process.env.UPSTASH_REDIS_REST_URL = origUrl; else delete process.env.UPSTASH_REDIS_REST_URL;
     if (origTok !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN = origTok; else delete process.env.UPSTASH_REDIS_REST_TOKEN;
     if (origUrl2 !== undefined) process.env.UPSTASH_REDIS_REST_URL_2 = origUrl2; else delete process.env.UPSTASH_REDIS_REST_URL_2;
     if (origTok2 !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN_2 = origTok2; else delete process.env.UPSTASH_REDIS_REST_TOKEN_2;
+    if (origLegacyUrl2 !== undefined) process.env.UPSTASH2_REDIS_REST_URL = origLegacyUrl2; else delete process.env.UPSTASH2_REDIS_REST_URL;
+    if (origLegacyTok2 !== undefined) process.env.UPSTASH2_REDIS_REST_TOKEN = origLegacyTok2; else delete process.env.UPSTASH2_REDIS_REST_TOKEN;
     if (origAct !== undefined) process.env.REDIS_ACTIVE_ACCOUNT = origAct; else delete process.env.REDIS_ACTIVE_ACCOUNT;
   }
 });
