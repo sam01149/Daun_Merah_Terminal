@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 439 — Alarm Telegram Redis degraded dinonaktifkan)
+> **Last updated:** 2026-10-29 (Session 440 — Dukungan Akun Redis Cadangan Terpadu _2 & Selector)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 440 (2026-10-29) — Dukungan Akun Redis Cadangan Terpadu (_2 & Selector)
+
+**Perubahan.** Menindaklanjuti usulan user untuk mempermudah penggantian akun database tanpa menghapus kredensial lama, sistem backend (`api/_redis.js`) dan daemon Railway (`vps/daemon.js`) kini mendukung konfigurasi multi-akun Upstash secara terpadu:
+1. Format variabel lingkungan: Akun 1 (`UPSTASH_REDIS_REST_URL` & `TOKEN`) dan Akun 2 (`UPSTASH_REDIS_REST_URL_2` & `TOKEN_2`, beserta alias `UPSTASH2_*`).
+2. Selector akun: `REDIS_ACTIVE_ACCOUNT=1` atau `2`. Jika variabel `UPSTASH_REDIS_REST_URL_2` sengaja ditambahkan oleh user, sistem otomatis memprioritaskan Akun 2 sebagai database aktif tanpa perlu menghapus variabel Akun 1.
+3. Transparansi Vercel: Modul bootstrap `api/_redis.js` menyinkronkan kredensial aktif ke lingkungan runtime sehingga seluruh 15 fungsi serverless (`api/feeds.js`, `api/journal.js`, `api/admin.js`, dll.) langsung beralih ke database yang dipilih.
+4. Skrip penggabungan riwayat: Ditambahkan `scripts/merge_redis_history.js` untuk menarik data historis (`setup_log_auto:v1`, `journal:index`, `journal:entries:*`, `sizing:history`, dan `push_subs`) dari Redis 1 pasca-reset tanggal 1 November dan menggabungkannya ke Redis 2 tanpa menimpa transaksi baru.
+
+**Verifikasi.** Unit test baru ditambahkan di `test/lib/redis_resolver.test.js` dan `test/vps/self_healing.test.js` untuk menguji skenario default akun 1, switch otomatis via `_2`, selektor eksplisit `REDIS_ACTIVE_ACCOUNT=1|2`, dan alias legacy `UPSTASH2_*`. Suite penuh lulus 1.534/1.534.
 
 ## Changelog Session 439 (2026-10-29) — Alarm Telegram Redis degraded dinonaktifkan
 

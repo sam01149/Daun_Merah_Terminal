@@ -20,8 +20,35 @@
 const http = require('node:http');
 const crypto = require('node:crypto');
 
-const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+function resolveRedis() {
+  const url1 = process.env.UPSTASH_REDIS_REST_URL;
+  const token1 = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const url2 = process.env.UPSTASH_REDIS_REST_URL_2 || process.env.UPSTASH2_REDIS_REST_URL;
+  const token2 = process.env.UPSTASH_REDIS_REST_TOKEN_2 || process.env.UPSTASH2_REDIS_REST_TOKEN;
+
+  const active = (process.env.REDIS_ACTIVE_ACCOUNT || '').trim();
+  if (active === '2') {
+    if (url2 && token2) return { url: url2, token: token2, account: 2 };
+    if (url1 && token1) return { url: url1, token: token1, account: 1 };
+  }
+  if (active === '1') {
+    if (url1 && token1) return { url: url1, token: token1, account: 1 };
+    if (url2 && token2) return { url: url2, token: token2, account: 2 };
+  }
+  if (process.env.UPSTASH_REDIS_REST_URL_2 && url2 && token2) {
+    return { url: url2, token: token2, account: 2 };
+  }
+  if (url1 && token1) return { url: url1, token: token1, account: 1 };
+  if (url2 && token2) return { url: url2, token: token2, account: 2 };
+  return { url: url1, token: token1, account: 1 };
+}
+
+const activeRedis = resolveRedis();
+const REDIS_URL   = activeRedis.url;
+const REDIS_TOKEN = activeRedis.token;
+if (activeRedis.account === 2) {
+  console.log('daemon: aktif menggunakan Redis Akun 2 (UPSTASH_REDIS_REST_URL_2 / REDIS_ACTIVE_ACCOUNT=2)');
+}
 const PORT        = process.env.PORT || 3000;
 const BEAT_INTERVAL_MS = 60 * 1000;
 const BEAT_TTL_SECS    = 300;
@@ -2097,7 +2124,7 @@ module.exports = {
   // Q-7 (pure/testable):
   priceCrossesLevel, parseOpenSetupWatchlist, AUTO_SETUP_WATCH_KEY,
   // Self-healing (pure/testable):
-  createRedisGuard, shouldForceReconnect, isFxMarketOpen, newestCandleEpoch, isCandleStale,
+  createRedisGuard, shouldForceReconnect, resolveRedis, isFxMarketOpen, newestCandleEpoch, isCandleStale,
   // U-3 (pure/testable):
   legsFromLabel, calEventMsWib, findHardNewsEvent, findRecentHardNewsEvent, firstNumber, levelsWithinTolerance,
   computeConsistency, AUTO_ENTRY_SYMBOL_MAP, AUTO_ENTRY_PAIRS, AUTO_ENTRY_HOURS_UTC,

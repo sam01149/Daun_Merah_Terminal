@@ -20,6 +20,7 @@
 //   if (requireAppKey(req, res)) return;   // true = sudah dibalas 401, hentikan handler
 
 const crypto = require('crypto');
+require('./_redis');
 
 function safeEqual(a, b) {
   const ba = Buffer.from(String(a)), bb = Buffer.from(String(b));

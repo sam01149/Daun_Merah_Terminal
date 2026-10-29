@@ -79,8 +79,8 @@ async function redisCmd(url, token, ...args) {
 module.exports = async function rateLimit(req, res, opts = {}) {
   const { limit = 60, windowSecs = 60, endpoint } = opts;
 
-  const REDIS_URL   = process.env.UPSTASH2_REDIS_REST_URL;
-  const REDIS_TOKEN = process.env.UPSTASH2_REDIS_REST_TOKEN;
+  const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL_2 || process.env.UPSTASH2_REDIS_REST_URL;
+  const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN_2 || process.env.UPSTASH2_REDIS_REST_TOKEN;
 
   // If Redis is unavailable, fail open (don't block legitimate traffic)
   if (!REDIS_URL || !REDIS_TOKEN) return false;

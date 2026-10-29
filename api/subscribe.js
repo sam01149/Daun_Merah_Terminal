@@ -1,8 +1,7 @@
 // api/subscribe.js
 const crypto      = require('crypto');
 const rateLimit   = require('./_ratelimit');
-const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+// REDIS_URL resolved dynamically in redisCmd
 
 // Harus cocok dengan output detectPushCat() di admin.js
 const VALID_CATEGORIES = new Set(['market-moving', 'forex', 'energy', 'macro', 'geopolitical', 'econ-data', 'news']);
@@ -27,6 +26,9 @@ function subKey(endpoint) {
 }
 
 async function redisCmd(...args) {
+  const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
+  const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!REDIS_URL || !REDIS_TOKEN) return null;
   const res = await fetch(REDIS_URL, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },

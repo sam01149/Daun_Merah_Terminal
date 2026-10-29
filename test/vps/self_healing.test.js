@@ -61,6 +61,36 @@ test('redisGuard: sukses me-reset penuh dan melaporkan recovery sekali', () => {
   assert.equal(g.onFailure(t0 + 3), false, 'counter gagal harus mulai dari 0 lagi setelah sukses');
 });
 
+
+test('resolveRedis: mendeteksi akun 1 vs akun 2 dengan UPSTASH_REDIS_REST_URL_2 dan REDIS_ACTIVE_ACCOUNT', () => {
+  const origEnv = { ...process.env };
+  try {
+    delete process.env.UPSTASH_REDIS_REST_URL_2;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN_2;
+    delete process.env.UPSTASH2_REDIS_REST_URL;
+    delete process.env.UPSTASH2_REDIS_REST_TOKEN;
+    delete process.env.REDIS_ACTIVE_ACCOUNT;
+    process.env.UPSTASH_REDIS_REST_URL = 'https://r1.test';
+    process.env.UPSTASH_REDIS_REST_TOKEN = 't1';
+
+    assert.equal(daemon.resolveRedis().account, 1);
+    assert.equal(daemon.resolveRedis().url, 'https://r1.test');
+
+    process.env.UPSTASH_REDIS_REST_URL_2 = 'https://r2.test';
+    process.env.UPSTASH_REDIS_REST_TOKEN_2 = 't2';
+    assert.equal(daemon.resolveRedis().account, 2);
+    assert.equal(daemon.resolveRedis().url, 'https://r2.test');
+
+    process.env.REDIS_ACTIVE_ACCOUNT = '1';
+    assert.equal(daemon.resolveRedis().account, 1);
+
+    process.env.REDIS_ACTIVE_ACCOUNT = '2';
+    assert.equal(daemon.resolveRedis().account, 2);
+  } finally {
+    process.env = origEnv;
+  }
+});
+
 test('redisGuard: Telegram degraded dimatikan, tetapi alarm pemulihan tetap aktif', () => {
   const source = fs.readFileSync(path.join(__dirname, '../../vps/daemon.js'), 'utf8');
   assert.doesNotMatch(source, /sendTelegram\(`\*Redis degraded\*/,
