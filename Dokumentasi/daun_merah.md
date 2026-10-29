@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 442 — Lindungi kuota Redis 2 saat menjadi fallback utama)
+> **Last updated:** 2026-10-29 (Session 443 — Jadwalkan pemulihan aman Redis 1)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 443 (2026-10-29) — Jadwalkan pemulihan aman Redis 1
+
+Atas permintaan user, otomasi satu kali disiapkan untuk 1 November 2026 pukul 07.00 WIB. Otomasi tidak boleh langsung cutover berdasarkan waktu: Redis 1 harus lolos probe, kedua akun dicadangkan dan direkonsiliasi secara conflict-safe, lalu Vercel dan Railway baru diubah ke `REDIS_ACTIVE_ACCOUNT=1`. Data baru yang lahir di Redis 2 selama fallback wajib dipertahankan. Health produksi diverifikasi setelah deploy dan kegagalan wajib rollback ke Redis 2. Detail pekerjaan tertunda dicatat di `daun_merah_progress.md` S443.
 
 ## Changelog Session 442 (2026-10-29) — Lindungi kuota Redis 2 saat menjadi fallback utama
 
