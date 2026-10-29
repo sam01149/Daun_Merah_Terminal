@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 443 — Jadwalkan pemulihan aman Redis 1)
+> **Last updated:** 2026-10-29 (Session 444 — Otomasi sinkronisasi penuh Redis dua tahap)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 444 (2026-10-29) — Otomasi sinkronisasi penuh Redis dua tahap
+
+Otomasi satu kali `pulihkan-dan-sinkronkan-seluruh-redis` aktif untuk 1 November 2026 pukul 07.00 WIB. Sesudah Redis 1 terbukti pulih, otomasi mencadangkan kedua akun, memindahkan seluruh data bernilai Redis 1 ke Redis 2 secara type-aware tanpa menimpa data Redis 2 yang lebih baru, lalu menyinkronkan hasil gabungan terbaru Redis 2 kembali ke Redis 1. Key fundamental/cache yang hanya ada di Redis 1 ikut dibawa; counter rate-limit, lock kedaluwarsa, dedup singkat, dan heartbeat basi dikecualikan. Redis 1 baru dijadikan aktif di Vercel dan Railway setelah data penting kedua akun terverifikasi setara; kegagalan wajib rollback ke Redis 2 dan tidak menghapus sumber.
 
 ## Changelog Session 443 (2026-10-29) — Jadwalkan pemulihan aman Redis 1
 
