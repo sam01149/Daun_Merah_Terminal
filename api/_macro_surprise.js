@@ -1,9 +1,9 @@
 'use strict';
 
-// Fondasi Growth/Inflation Smart Bias. Modul ini sengaja belum menentukan label
-// UI. Ia hanya: (1) memilih rilis makro yang definisinya jelas, (2) menyimpan
-// histori actual-vs-consensus, dan (3) menghitung standardized surprise kontinu.
-// Arah final baru boleh dipasang ke tabel setelah coverage/sensitivitas tervalidasi.
+// Fondasi Growth/Inflation Smart Bias. Modul ini: (1) memilih rilis makro yang
+// definisinya jelas, (2) menyimpan histori actual-vs-consensus, dan (3) menghitung
+// standardized surprise kontinu. UI hanya menerima arah yang lolos syarat
+// coverage serta sensitivity check; label presentasi tetap menjadi urusan klien.
 
 const MACRO_HISTORY_INDEX_KEY = 'macro_surprise_history:v1';
 const MACRO_HISTORY_DATA_KEY = 'macro_surprise_events:v1';
@@ -40,6 +40,7 @@ const RULES = [
   { re: /\bhousehold spending\b/i, pillar: 'growth', family: 'consumption', series: 'household_spending' },
   { re: /\b(?:non.?farm payrolls?|nfp)\b/i, pillar: 'growth', family: 'labour', series: 'payrolls' },
   { re: /\bemployment change\b/i, pillar: 'growth', family: 'labour', series: 'employment_change' },
+  { re: /\b(wage growth|average hourly earnings|average weekly earnings|earnings growth)\b/i, pillar: 'growth', family: 'labour', series: 'wages' },
   { re: /\bunemployment rate\b/i, pillar: 'growth', family: 'labour', series: 'unemployment_rate', inverse: true },
   { re: /\b(?:initial )?jobless claims?\b/i, pillar: 'growth', family: 'labour', series: 'jobless_claims', inverse: true, cadence: 'weekly' },
   { re: /\bclaimant count(?: change)?\b/i, pillar: 'growth', family: 'labour', series: 'claimant_count', inverse: true },
@@ -184,6 +185,23 @@ function weightedMean(items) {
   return valid.reduce((sum, item) => sum + item.value * item.weight, 0) / weight;
 }
 
+function scoreDirection(score) {
+  if (!Number.isFinite(score) || score === 0) return null;
+  return score > 0 ? 'up' : 'down';
+}
+
+function summarizeFamilyBucket(families) {
+  const score = families.length
+    ? families.reduce((sum, family) => sum + family.score, 0) / families.length
+    : null;
+  return {
+    score,
+    direction: scoreDirection(score),
+    family_count: families.length,
+    families: families.map(family => family.family),
+  };
+}
+
 function buildMacroPillarScores(releases, {
   asOfMs = Date.now(),
   lookbackDays = SCORE_LOOKBACK_DAYS,
@@ -212,22 +230,61 @@ function buildMacroPillarScores(releases, {
           weight: 2 ** (-Math.max(0, asOfMs - row.time_ms) / (halfLifeDays * 86400000)),
         }));
         const score = weightedMean(values);
-        if (score != null) seriesScores.push({ series, family: rows[0].family, score, observations: rows.length, latest_at: Math.max(...rows.map(r => r.time_ms)) });
+        if (score != null) {
+          const latest = rows.reduce((best, row) => !best || row.time_ms > best.time_ms ? row : best, null);
+          seriesScores.push({
+            series,
+            family: rows[0].family,
+            score,
+            observations: rows.length,
+            latest_at: latest.time_ms,
+            latest: {
+              indicator: latest.title,
+              date: latest.date,
+              actual: latest.actual,
+              forecast: latest.forecast,
+              standardized_surprise: latest.standardized_surprise,
+              prior_n: latest.prior_n,
+            },
+          });
+        }
       }
       const families = [];
       for (const family of [...new Set(seriesScores.map(item => item.family))]) {
         const members = seriesScores.filter(item => item.family === family);
         const score = members.reduce((sum, item) => sum + item.score, 0) / members.length;
-        families.push({ family, score, series: members });
+        families.push({
+          family,
+          score,
+          latest_at: Math.max(...members.map(item => item.latest_at)),
+          series: members,
+        });
       }
       const score = families.length ? families.reduce((sum, family) => sum + family.score, 0) / families.length : null;
+      let ready = families.length >= 1;
+      let directionCandidate = scoreDirection(score);
+      let status = !ready ? 'insufficient' : directionCandidate || 'neutral';
+      let buckets = null;
+      if (pillarName === 'growth') {
+        const activity = summarizeFamilyBucket(families.filter(family => family.family !== 'labour'));
+        const labour = summarizeFamilyBucket(families.filter(family => family.family === 'labour'));
+        buckets = { activity, labour };
+        ready = activity.family_count >= 1 && labour.family_count >= 1;
+        const aligned = ready && activity.direction && activity.direction === labour.direction;
+        directionCandidate = aligned ? activity.direction : null;
+        status = !ready ? 'insufficient'
+          : aligned ? directionCandidate
+            : activity.direction && labour.direction && activity.direction !== labour.direction ? 'mixed' : 'neutral';
+      }
       pillars[pillarName] = {
         score,
-        direction_candidate: score == null || score === 0 ? null : score > 0 ? 'up' : 'down',
-        ready: pillarName === 'growth' ? families.length >= 2 : families.length >= 1,
+        direction_candidate: directionCandidate,
+        status,
+        ready,
         family_count: families.length,
         series_count: seriesScores.length,
         families,
+        buckets,
       };
     }
     byCurrency[currency] = pillars;
@@ -250,13 +307,23 @@ function assessMacroScoreStability(releases, { asOfMs = Date.now(), halfLives = 
     for (const pillar of ['growth', 'inflation']) {
       const variants = runs.map(run => {
         const item = run.result.currencies[currency][pillar];
-        return { half_life_days: run.half_life_days, ready: item.ready, score: item.score, direction: item.direction_candidate };
+        return {
+          half_life_days: run.half_life_days,
+          ready: item.ready,
+          score: item.score,
+          direction: item.direction_candidate,
+          status: item.status,
+          buckets: item.buckets,
+        };
       });
       const directions = variants.filter(item => item.ready && item.direction).map(item => item.direction);
       const stableDirection = directions.length === variants.length && new Set(directions).size === 1 ? directions[0] : null;
+      const status = stableDirection || (variants.some(item => !item.ready) ? 'insufficient'
+        : variants.every(item => item.status === 'neutral') ? 'neutral' : 'mixed');
       currencies[currency][pillar] = {
         direction: stableDirection,
         stable: stableDirection != null,
+        status,
         variants,
       };
     }

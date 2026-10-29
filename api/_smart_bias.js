@@ -56,12 +56,8 @@ function releaseSignal(name, entry, nowMs = Date.now()) {
 
   const actual = parseEconomicValue(entry.actual);
   const forecast = parseEconomicValue(entry.forecast);
-  const previous = parseEconomicValue(entry.previous);
-  if (actual == null) return null;
-  const reference = forecast != null ? forecast : previous;
-  if (reference == null) return null;
-  const tolerance = Math.max(Math.abs(reference) * 0.005, 1e-9);
-  let signal = Math.abs(actual - reference) <= tolerance ? 0 : actual > reference ? 1 : -1;
+  if (actual == null || forecast == null) return null;
+  let signal = actual === forecast ? 0 : actual > forecast ? 1 : -1;
   if (INVERSE_RX.test(name)) signal *= -1;
   return {
     indicator: name,
@@ -71,8 +67,65 @@ function releaseSignal(name, entry, nowMs = Date.now()) {
     previous: entry.previous ?? null,
     date: entry.date || null,
     age_days: ageDays,
-    comparison: forecast != null ? 'forecast' : 'previous',
+    comparison: 'forecast',
     family: LABOUR_RX.test(name) ? 'labour' : INFLATION_RX.test(name) ? 'inflation' : 'activity',
+  };
+}
+
+function macroStatusState(status) {
+  if (status === 'up') return 'bullish';
+  if (status === 'down') return 'bearish';
+  if (status === 'mixed') return 'mixed';
+  if (status === 'neutral') return 'neutral';
+  return 'insufficient';
+}
+
+function macroFamilyEvidence(pillar) {
+  return [...(pillar?.families || [])]
+    .sort((a, b) => Math.abs(Number(b.score || 0)) - Math.abs(Number(a.score || 0)) || Number(b.latest_at || 0) - Number(a.latest_at || 0))
+    .map(family => {
+      const members = [...(family.series || [])].sort((a, b) => Number(b.latest_at || 0) - Number(a.latest_at || 0));
+      const latest = members[0]?.latest || {};
+      return {
+        indicator: latest.indicator || family.family,
+        family: family.family,
+        family_score: family.score,
+        series_count: members.length,
+        standardized_surprise: latest.standardized_surprise ?? null,
+        prior_n: latest.prior_n ?? null,
+        actual: latest.actual ?? null,
+        forecast: latest.forecast ?? null,
+        previous: null,
+        date: latest.date || null,
+        comparison: 'forecast',
+      };
+    });
+}
+
+function macroConfidence(state, familyCount) {
+  if (!['bullish', 'bearish'].includes(state)) return 'rendah';
+  if (familyCount >= 4) return 'tinggi';
+  return familyCount >= 2 ? 'sedang' : 'rendah';
+}
+
+function buildGrowthFromMacro(pillar, stability) {
+  const state = macroStatusState(stability?.status);
+  const activity = macroStatusState(pillar?.buckets?.activity?.direction || (pillar?.buckets?.activity?.family_count ? 'neutral' : 'insufficient'));
+  const labour = macroStatusState(pillar?.buckets?.labour?.direction || (pillar?.buckets?.labour?.family_count ? 'neutral' : 'insufficient'));
+  return {
+    state,
+    confidence: macroConfidence(state, pillar?.family_count || 0),
+    freshness: pillar?.family_count ? 'fresh' : 'insufficient',
+    evidence: macroFamilyEvidence(pillar).slice(0, 10),
+    buckets: { activity, labour },
+    score: Number.isFinite(pillar?.score) ? pillar.score : null,
+    methodology: 'standardized_forecast_surprise',
+    sensitivity: stability?.variants || [],
+    reason_codes: [
+      pillar?.ready ? 'activity_labour_covered' : 'activity_or_labour_missing',
+      stability?.stable ? 'direction_stable_30_45_60_90' : 'direction_not_stable',
+      'economic_family_deduped',
+    ],
   };
 }
 
@@ -168,6 +221,36 @@ function buildInflation(indicators, centralBank, nowMs = Date.now()) {
     evidence: evidence.sort((x, y) => String(y.date).localeCompare(String(x.date))).slice(0, 8),
     inflation_impulse: impulse.state,
     policy_context: centralBank.state,
+  };
+}
+
+function buildInflationFromMacro(pillar, stability, centralBank) {
+  const impulseState = macroStatusState(stability?.status);
+  let state = impulseState;
+  if (impulseState === 'bullish') state = centralBank.state === 'bullish' ? 'bullish' : 'mixed';
+  else if (impulseState === 'bearish') state = centralBank.state === 'bearish' ? 'bearish' : 'mixed';
+  const impulseConfidence = macroConfidence(impulseState, pillar?.family_count || 0);
+  return {
+    state,
+    currency_support: state,
+    confidence: impulseConfidence,
+    impulse_confidence: impulseConfidence,
+    currency_support_confidence: macroConfidence(state, pillar?.family_count || 0),
+    freshness: pillar?.family_count ? 'fresh' : 'insufficient',
+    evidence: macroFamilyEvidence(pillar).slice(0, 8),
+    inflation_impulse: impulseState,
+    policy_context: centralBank.state,
+    score: Number.isFinite(pillar?.score) ? pillar.score : null,
+    methodology: 'standardized_forecast_surprise',
+    sensitivity: stability?.variants || [],
+    reason_codes: [
+      pillar?.ready ? 'inflation_family_covered' : 'inflation_family_missing',
+      stability?.stable ? 'direction_stable_30_45_60_90' : 'direction_not_stable',
+      ['bullish', 'bearish'].includes(impulseState)
+        ? (state === impulseState ? 'policy_context_aligned' : 'policy_context_not_aligned')
+        : 'inflation_impulse_not_directional',
+      'economic_family_deduped',
+    ],
   };
 }
 
@@ -337,12 +420,19 @@ function buildOverall({ growth, inflation, central_bank: centralBank, banks, pos
   };
 }
 
-function buildSmartBiasRows({ fundamentals = {}, cbBanks = [], cot = {}, bankItems = [], bankStances = null, retailByCurrency = {}, nowMs = Date.now() } = {}) {
+function buildSmartBiasRows({ fundamentals = {}, cbBanks = [], cot = {}, bankItems = [], bankStances = null, retailByCurrency = {}, macroFoundation, nowMs = Date.now() } = {}) {
   const extracted = Array.isArray(bankStances) ? bankStances : extractBankStances(bankItems, nowMs);
   return CURRENCIES.map(currency => {
     const central_bank = buildCentralBank(cbBanks.find(x => x.currency === currency), nowMs);
-    const growth = buildGrowth(fundamentals[currency], nowMs);
-    const inflation = buildInflation(fundamentals[currency], central_bank, nowMs);
+    const macroScore = macroFoundation?.scores?.currencies?.[currency];
+    const macroStability = macroFoundation?.stability?.currencies?.[currency];
+    const useFoundation = macroFoundation !== undefined;
+    const growth = useFoundation
+      ? buildGrowthFromMacro(macroScore?.growth, macroStability?.growth)
+      : buildGrowth(fundamentals[currency], nowMs);
+    const inflation = useFoundation
+      ? buildInflationFromMacro(macroScore?.inflation, macroStability?.inflation, central_bank)
+      : buildInflation(fundamentals[currency], central_bank, nowMs);
     const banks = buildBanks(currency, extracted);
     const positioning = buildPositioning(currency, cot, retailByCurrency, nowMs);
     const overall = buildOverall({ growth, inflation, central_bank, banks, positioning });
@@ -353,5 +443,6 @@ function buildSmartBiasRows({ fundamentals = {}, cbBanks = [], cot = {}, bankIte
 module.exports = {
   CURRENCIES, VALID_STATES, cleanText, parseEconomicValue, releaseSignal,
   summarizeSignals, buildGrowth, buildInflation, buildCentralBank,
+  buildGrowthFromMacro, buildInflationFromMacro,
   extractBankStances, buildBanks, buildPositioning, buildOverall, buildSmartBiasRows,
 };

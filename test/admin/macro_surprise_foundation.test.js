@@ -22,6 +22,9 @@ test('macro classifier keeps currency-area data and rejects EUR national release
   assert.equal(classifyMacroRelease('ECB President Speaks', 'EUR'), null);
   assert.equal(classifyMacroRelease('GDP QoQ Final', 'USD'), null);
   assert.ok(classifyMacroRelease('GDP QoQ Advance', 'USD'));
+  assert.deepEqual(classifyMacroRelease('Average Hourly Earnings YoY', 'USD'), {
+    pillar:'growth', family:'labour', series:'wages:yoy', inverse:false, cadence:'monthly',
+  });
 });
 
 test('normalization requires actual and forecast and preserves inverse semantics', () => {
@@ -70,6 +73,29 @@ test('pillar score weights economic families equally, not the number of releases
   assert.equal(growth.family_count, 2);
   assert.equal(growth.series_count, 3);
   assert.ok(Math.abs(growth.score) < 1e-12, `expected equal-family cancellation, got ${growth.score}`);
+});
+
+test('Growth foundation requires both activity and labour and exposes their alignment', () => {
+  const asOf = Date.parse('2026-10-25T00:00:00Z');
+  const rows = [];
+  for (const [series, family, latest] of [
+    ['composite_pmi:level', 'activity_survey', 2],
+    ['services_pmi:level', 'activity_survey', 2],
+    ['employment_change:level', 'labour', 1],
+  ]) {
+    for (let i = 0; i < 12; i++) rows.push({
+      id:`${series}-prior-${i}`, currency:'USD', series, pillar:'growth', family,
+      actual:i % 2 ? 1 : -1, forecast:0, inverse:false, time_ms:asOf - (30 - i) * 86400000,
+    });
+    rows.push({ id:`${series}-latest`, currency:'USD', series, pillar:'growth', family, actual:latest, forecast:0, inverse:false, time_ms:asOf - 86400000, title:series, date:'2026-10-24' });
+  }
+  const growth = buildMacroPillarScores(rows, { asOfMs:asOf, halfLifeDays:1000 }).currencies.USD.growth;
+  assert.equal(growth.family_count, 2, 'dua PMI tetap satu family aktivitas');
+  assert.equal(growth.buckets.activity.family_count, 1);
+  assert.equal(growth.buckets.labour.family_count, 1);
+  assert.equal(growth.ready, true);
+  assert.equal(growth.direction_candidate, 'up');
+  assert.equal(growth.status, 'up');
 });
 
 test('sensitivity returns no direction when reasonable decay choices disagree', () => {

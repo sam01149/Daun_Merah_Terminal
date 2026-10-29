@@ -31,6 +31,13 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.doesNotMatch(html, /Pandangan bank/);
   assert.doesNotMatch(renderer, /Sumber Pandangan bank|Rapor forward|Buka artikel minggu ini|Snapshot minggu ini terlambat|sb-track-record|marcRecord/);
   assert.match(html, /Belum cukup sampel/);
+  assert.match(html, /growth:[^}]*bullish:'Menguat'[^}]*bearish:'Melemah'/);
+  assert.match(html, /inflation:[^}]*bullish:'Memanas'[^}]*bearish:'Mendingin'/);
+  assert.match(html, /policy:[^}]*bullish:'Hawkish'[^}]*bearish:'Dovish'/);
+  assert.match(html, /row\.inflation\?\.inflation_impulse/);
+  assert.match(html, /Tekanan harga dipisahkan dari dampaknya terhadap mata uang/);
+  assert.match(html, /riwayat forecast lima tahun; data dalam keluarga yang sama dihitung satu kali/);
+  assert.match(html, /kekuatan kejutan/);
   assert.doesNotMatch(renderer, /<th>Trend<\/th>|<th>Seasonality<\/th>/);
   assert.match(html, /@media \(max-width: 1023px\)[\s\S]*?#dashboardPanel\.visible \{ display:flex;/);
   assert.match(html, /view:'dashboard',\s+label:'Dashboard'/);

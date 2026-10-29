@@ -27,6 +27,7 @@ const { isDeepSeekDisabled, getDeepSeekApiKey } = require('./_deepseek');
 const { requireAppKey, safeEqual } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, mapYahooSymbolToTwelveData, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { CURRENCIES: SMART_BIAS_CURRENCIES, buildSmartBiasRows } = require('./_smart_bias');
+const { loadMacroReleases, buildMacroPillarScores, assessMacroScoreStability } = require('./_macro_surprise');
 const marcWeekly = require('./_marc_weekly');
 const { computePrimeExecution, resampleCandles } = require('./_prime_execution');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
@@ -9736,16 +9737,20 @@ async function smartBiasHandler(req, res) {
   let cached = null;
   try {
     cached = _parseJsonValue(await redisCmd('GET', SMART_BIAS_CACHE_KEY), null);
-    if (!force && cached) return res.status(200).json(cached);
+    if (!force && cached?.schema_version === 4) return res.status(200).json(cached);
   } catch (e) { /* lanjut hitung fresh */ }
 
   try {
-    const [fundRows, liveRates, rawBias, rawCot, rawMarcTracker] = await Promise.all([
+    const [fundRows, liveRates, rawBias, rawCot, rawMarcTracker, macroReleases] = await Promise.all([
       Promise.all(SMART_BIAS_CURRENCIES.map(cur => redisCmd('HGETALL', `fundamental:${cur}`).catch(() => null))),
       getLiveCbRates().catch(() => []),
       redisCmd('GET', 'cb_bias').catch(() => null),
       redisCmd('GET', 'cot_cache_v2').catch(() => null),
       redisCmd('GET', MARC_TRACKER_KEY).catch(() => null),
+      loadMacroReleases(redisCmd).catch(error => {
+        console.warn('smart_bias macro history unavailable:', error.message);
+        return [];
+      }),
     ]);
     const fundamentals = Object.fromEntries(SMART_BIAS_CURRENCIES.map((cur, i) => [cur, _hgetallToObj(fundRows[i])]));
     const biasMap = _parseJsonValue(rawBias, {});
@@ -9759,19 +9764,31 @@ async function smartBiasHandler(req, res) {
     const marcTracker = _parseJsonValue(rawMarcTracker, []);
     const marcReport = marcWeekly.summarizeTracker(Array.isArray(marcTracker) ? marcTracker : []);
     const storedStances = marcWeekly.currentStances(marcReport);
+    const macroFoundation = macroReleases.length ? {
+      scores: buildMacroPillarScores(macroReleases, { asOfMs: Date.now() }),
+      stability: assessMacroScoreStability(macroReleases, { asOfMs: Date.now() }),
+      release_count: macroReleases.length,
+    } : { scores: null, stability: null, release_count: 0 };
     const rows = buildSmartBiasRows({
       fundamentals,
       cbBanks,
       cot: _parseJsonValue(rawCot, {}),
       bankItems: [],
       bankStances: storedStances,
+      macroFoundation,
       nowMs: Date.now(),
     });
     const payload = {
-      schema_version: 3,
-      methodology: 'core_first',
+      schema_version: 4,
+      methodology: 'standardized_surprise_core_first',
       rows,
       computed_at: new Date().toISOString(),
+      macro_foundation: {
+        available: macroFoundation.release_count > 0,
+        release_count: macroFoundation.release_count,
+        history_years: 5,
+        sensitivity_half_lives_days: [30, 45, 60, 90],
+      },
       banks_mode: 'marc_weekly_forward_log',
       bank_source: { name: 'Marc to Market', analyst: 'Marc Chandler', report: marcReport },
     };

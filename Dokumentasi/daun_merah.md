@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-28 (Session 432 — Penjelasan verdict TUNGGU USD/CHF)
+> **Last updated:** 2026-10-29 (Session 433 — Surprise makro aktif pada Pertumbuhan dan Inflasi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 433 (2026-10-29) — Surprise makro aktif pada Pertumbuhan dan Inflasi
+
+**Perubahan metodologi.** Tabel Dashboard tidak lagi memakai voting per-field, toleransi surprise tetap 0,5%, atau `previous` sebagai pengganti forecast untuk Pertumbuhan/Inflasi. Endpoint sekarang membaca histori forecast error lima tahun, menilai besar kejutan tiap seri terhadap simpangan baku historis yang hanya berasal dari observasi sebelumnya, meredam data lama, dan menguji kestabilan arah dengan half-life 30/45/60/90 hari. Seri terkait lebih dulu digabung menjadi satu family ekonomi dengan bobot setara, sehingga Composite/Services/Manufacturing PMI atau beberapa ukuran CPI tidak memperoleh suara ganda. Wage/earnings ditempatkan hanya pada Growth/labour agar tidak dihitung ulang sebagai Inflasi. Bila histori atau coverage tidak cukup, sistem menghasilkan `insufficient` dan tidak kembali ke rumus lama.
+
+**Makna keluaran dan audit.** Growth kini wajib mempunyai activity dan labour yang searah sebelum menjadi directional. UI memakai istilah keadaan ekonomi yang eksplisit: `Menguat/Melemah` untuk Pertumbuhan, `Memanas/Mendingin` untuk impulse Inflasi, serta `Hawkish/Dovish` untuk Bank sentral; `Naik/Turun` hanya dipakai pada arah mata uang dan Bias. Dampak inflasi terhadap currency tetap dipisahkan sebagai `currency_support` bersama konteks stance bank sentral. Detail setiap mata uang menampilkan family paling berpengaruh, actual versus konsensus, besar standardized surprise, skor family, tanggal, dan jumlah seri yang digabung. `APP_VERSION` naik ke `2026.10.29.1` dan payload Smart Bias menjadi schema 4.
+
+**Verifikasi lokal.** `node --check` lulus untuk ketiga modul backend. Suite penuh lulus tanpa kegagalan, termasuk regresi baru untuk larangan fallback previous, syarat activity+labour, dedupe family, pemisahan impulse inflasi, serta fail-closed ketika histori kosong. Chromium nyata pada 1.365×768 dan 390×844 merender label semantik serta alasan baru tanpa overflow dokumen; tabel ponsel tetap memakai gulir horizontal di dalam wadahnya. Tidak ada emoji UI baru.
 
 ## Changelog Session 432 (2026-10-28) — Penjelasan verdict TUNGGU USD/CHF
 
