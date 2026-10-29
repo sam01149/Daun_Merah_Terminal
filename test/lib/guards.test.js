@@ -92,6 +92,42 @@ test('rateLimit whitelist IP internal/lokal', async () => {
   }
 });
 
+test('rateLimit tidak menguras Redis 2 ketika akun itu sedang menjadi database utama fallback', async () => {
+  const saved = {
+    mainUrl: process.env.UPSTASH_REDIS_REST_URL,
+    mainToken: process.env.UPSTASH_REDIS_REST_TOKEN,
+    url2: process.env.UPSTASH_REDIS_REST_URL_2,
+    token2: process.env.UPSTASH_REDIS_REST_TOKEN_2,
+    fetch: global.fetch,
+  };
+  let fetchCalls = 0;
+  try {
+    process.env.UPSTASH_REDIS_REST_URL = 'https://redis-2.test';
+    process.env.UPSTASH_REDIS_REST_TOKEN = 'token-2';
+    process.env.UPSTASH_REDIS_REST_URL_2 = 'https://redis-2.test';
+    process.env.UPSTASH_REDIS_REST_TOKEN_2 = 'token-2';
+    global.fetch = async () => {
+      fetchCalls++;
+      throw new Error('rate limiter tidak boleh menyentuh Redis fallback');
+    };
+
+    const { req, res } = fakeReqRes('203.0.113.7');
+    assert.strictEqual(await rateLimit(req, res, { limit: 1, windowSecs: 60 }), false);
+    assert.strictEqual(fetchCalls, 0);
+  } finally {
+    for (const [key, value] of [
+      ['UPSTASH_REDIS_REST_URL', saved.mainUrl],
+      ['UPSTASH_REDIS_REST_TOKEN', saved.mainToken],
+      ['UPSTASH_REDIS_REST_URL_2', saved.url2],
+      ['UPSTASH_REDIS_REST_TOKEN_2', saved.token2],
+    ]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    global.fetch = saved.fetch;
+  }
+});
+
 // ── _circuit_breaker ────────────────────────────────────────────────────────
 
 test('circuit breaker canCall fail-open tanpa Redis env', async () => {

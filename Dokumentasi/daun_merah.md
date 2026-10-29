@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 441 — Sistem pulih penuh ke Redis 2; candle FX terisi ulang)
+> **Last updated:** 2026-10-29 (Session 442 — Lindungi kuota Redis 2 saat menjadi fallback utama)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 442 (2026-10-29) — Lindungi kuota Redis 2 saat menjadi fallback utama
+
+**Temuan audit.** Cutover S440 berhasil membuat Redis 2 menjadi database utama sementara, tetapi `_ratelimit.js` juga tetap mengirim counter hampir setiap request publik ke Redis 2. Ini menyatukan beban terbesar dengan data penting di akun fallback dan berisiko mempercepat habisnya kuota akun 2.
+
+**Perbaikan.** Rate limiter sekarang otomatis fail-open tanpa akses Redis ketika URL penyimpanan counter sama dengan URL database utama aktif. APP_KEY, autentikasi cron/admin, dan seluruh fitur utama tetap berjalan; yang dinonaktifkan sementara hanya counter rate-limit terdistribusi. Setelah `REDIS_ACTIVE_ACCOUNT=1`, URL kembali berbeda dan rate limiter otomatis memakai Redis 2 seperti semula. Ditambahkan tes regresi yang memastikan jalur fallback tidak melakukan network call ke Redis 2.
+
+**Verifikasi.** Suite penuh lulus 1.535/1.535; working tree diperiksa bersih sebelum push.
 
 ## Changelog Session 441 (2026-10-29) — Sistem pulih penuh ke Redis 2; candle FX terisi ulang
 

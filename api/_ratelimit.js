@@ -85,6 +85,12 @@ module.exports = async function rateLimit(req, res, opts = {}) {
   // If Redis is unavailable, fail open (don't block legitimate traffic)
   if (!REDIS_URL || !REDIS_TOKEN) return false;
 
+  // Saat akun 2 sedang menjadi database utama/fallback, jangan bebani database
+  // yang sama dengan counter rate-limit berfrekuensi tinggi. Hampir semua endpoint
+  // sudah dilindungi APP_KEY; fail-open sementara di sini menjaga kuota akun fallback
+  // untuk heartbeat, cache, journal, dan state auto-entry yang lebih penting.
+  if (REDIS_URL === process.env.UPSTASH_REDIS_REST_URL) return false;
+
   const ip = getClientIp(req);
   if (isWhitelisted(ip)) return false;
 
