@@ -22,7 +22,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perubahan.** Seluruh kolom tabel Bias sekarang memakai satu bahasa visual: arah naik/bullish/hawkish adalah segitiga hijau, sedangkan arah turun/bearish/dovish adalah segitiga merah. Override lama yang membuat Inflasi naik merah, Inflasi turun biru, Hawkish oranye, dan Dovish hijau dihapus. State `mixed`, `neutral`, dan `insufficient` tidak lagi menggambar garis atau simbol; selnya dibiarkan kosong. Detail baris dan label aksesibilitas tetap menyimpan makna lengkap. `APP_VERSION` naik ke `2026.10.29.3`.
 
-**Verifikasi lokal.** Regresi frontend mengunci hanya dua warna directional dan melarang pseudo-element untuk state non-directional maupun override warna berdasarkan jenis kolom. Suite penuh lulus 1.531/1.531. Chromium nyata pada 1.365×768 dan 390×844 memverifikasi 20 kombinasi state/jenis kolom: delapan arah directional berwarna benar, sedangkan 12 kombinasi campur/netral/tidak cukup kosong; tidak ada overflow dokumen.
+**Verifikasi.** Regresi frontend mengunci hanya dua warna directional dan melarang pseudo-element untuk state non-directional maupun override warna berdasarkan jenis kolom. Suite penuh lulus 1.531/1.531. Chromium nyata pada 1.365×768 dan 390×844 memverifikasi 20 kombinasi state/jenis kolom: delapan arah directional berwarna benar, sedangkan 12 kombinasi campur/netral/tidak cukup kosong; tidak ada overflow dokumen. Commit `9107ef9` terdeploy dengan `APP_VERSION 2026.10.29.3`; HTML produksi memuat aturan bullish hijau dan bearish merah, tanpa marker mixed maupun override warna Inflation/Bank sentral lama.
 
 ## Changelog Session 434 (2026-10-29) — Sel tabel Bias hanya menampilkan arah
 
