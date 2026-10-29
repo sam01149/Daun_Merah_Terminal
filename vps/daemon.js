@@ -101,7 +101,6 @@ function createRedisGuard({ threshold = 5, baseCooldownMs = 60 * 1000, maxCooldo
 }
 
 const redisGuard = createRedisGuard();
-let lastRedisAlertAt = 0; // dedup alert in-memory — Redis lagi down, tidak bisa dedup di sana
 
 async function redisCmd(...args) {
   try {
@@ -123,11 +122,10 @@ async function redisCmd(...args) {
   } catch (e) {
     if (redisGuard.onFailure()) {
       console.warn(`daemon: Redis DEGRADED — ${redisGuard.state().failures} gagal beruntun (${e.message}); operasi non-esensial di-backoff, heartbeat tetap jadi probe`);
-      const now = Date.now();
-      if (now - lastRedisAlertAt > 6 * 60 * 60 * 1000) {
-        lastRedisAlertAt = now;
-        sendTelegram(`*Redis degraded* — daemon backoff tulis (gagal beruntun: ${e.message}). Heartbeat tetap probe tiap 60 detik; jalur Plan P/cron tidak terpengaruh.`).catch(() => {});
-      }
+      // Alarm Telegram degraded sengaja dimatikan 2026-10-29: saat limit
+      // bulanan Upstash tercapai, restart proses me-reset dedup in-memory dan
+      // pesan yang sama membuat operator tertekan tanpa tindakan baru. Guard,
+      // backoff, heartbeat probe, log internal, dan alarm pemulihan tetap aktif.
     }
     throw e;
   }

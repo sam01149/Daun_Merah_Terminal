@@ -6,6 +6,8 @@
 //            DAN api/_market_hours.js, duplikasi sadar yang dijaga drift-guard)
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const daemon = require('../../vps/daemon.js');
 const marketHours = require('../../api/_market_hours.js');
@@ -57,6 +59,16 @@ test('redisGuard: sukses me-reset penuh dan melaporkan recovery sekali', () => {
   assert.equal(g.isDegraded(t0 + 2), false);
   assert.equal(g.onSuccess(), false, 'sukses berikutnya bukan recovery lagi (anti spam alert)');
   assert.equal(g.onFailure(t0 + 3), false, 'counter gagal harus mulai dari 0 lagi setelah sukses');
+});
+
+test('redisGuard: Telegram degraded dimatikan, tetapi alarm pemulihan tetap aktif', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../../vps/daemon.js'), 'utf8');
+  assert.doesNotMatch(source, /sendTelegram\(`\*Redis degraded\*/,
+    'outage kuota tidak boleh mengirim alarm Telegram berulang');
+  assert.match(source, /sendTelegram\('\*Redis pulih\*/,
+    'operator tetap harus mendapat satu kabar saat Redis kembali sehat');
+  assert.doesNotMatch(source, /lastRedisAlertAt/,
+    'dedup in-memory lama tidak boleh tersisa karena reset setiap restart Railway');
 });
 
 // ── Lapis 2: shouldForceReconnect ────────────────────────────────────────────

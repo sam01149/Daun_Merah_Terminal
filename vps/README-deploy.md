@@ -273,7 +273,9 @@ komentar `daemon.js`, changelog `daun_merah.md`):
 - **Lapis 1 — Redis**: gagal beruntun >=5 (network/429 quota Upstash) → mode
   degraded: tulis candle, poll berita, GET zona, dan supervisor di-backoff
   (cooldown 60s menggandakan diri s/d 30 menit); heartbeat tetap jadi probe
-  pemulihan tiap 60 detik. Alert Telegram saat masuk degraded & saat pulih.
+  pemulihan tiap 60 detik. Alarm Telegram saat masuk degraded dinonaktifkan
+  2026-10-29 agar outage kuota tidak mengirim pesan berulang setelah restart;
+  log internal, guard, heartbeat probe, dan alarm saat Redis pulih tetap aktif.
 - **Lapis 2 — WebSocket zombie**: ping aplikasi Deriv (`{"ping":1}`) tiap 60
   detik; kalau TIDAK ada pesan apa pun >3 menit padahal status masih OPEN
   (TCP putus diam-diam), koneksi dibunuh paksa dan reconnect backoff jalan.

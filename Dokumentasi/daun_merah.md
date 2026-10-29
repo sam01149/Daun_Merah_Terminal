@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 437 — Diagnosis Redis ditolak batas paket Upstash)
+> **Last updated:** 2026-10-29 (Session 439 — Alarm Telegram Redis degraded dinonaktifkan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 439 (2026-10-29) — Alarm Telegram Redis degraded dinonaktifkan
+
+**Perubahan.** Atas permintaan user karena pesan berulang membuat cemas, daemon tidak lagi mengirim notifikasi Telegram `Redis degraded`. Guard keselamatan, backoff operasi non-esensial, heartbeat probe 60 detik, dan log internal tetap berjalan; perubahan ini hanya menghentikan alarm yang tidak membawa tindakan baru. Pesan Telegram `Redis pulih` tetap aktif agar user menerima satu kabar ketika Upstash benar-benar dapat dipakai kembali. Alarm crash dan kegagalan lain tidak diubah.
+
+**Penyebab spam.** Dedup alarm lama hanya disimpan di memori proses karena Redis sedang tidak dapat dipakai. Setiap restart Railway menghapus dedup tersebut sehingga outage kuota yang sama dapat mengirim pesan lagi. Menghapus pengiriman pada cabang degraded menutup sumber spam tanpa mematikan mekanisme pemulihan.
+
+**Verifikasi.** `node --check vps/daemon.js` lulus; pencarian regresi memastikan teks pengiriman `Redis degraded` dan state `lastRedisAlertAt` sudah tidak ada, sedangkan `Redis pulih`, `redisGuard`, dan interval heartbeat tetap ada. Suite penuh lulus 1.531/1.531.
 
 ## Changelog Session 437 (2026-10-29) — Diagnosis Redis ditolak batas paket Upstash
 
