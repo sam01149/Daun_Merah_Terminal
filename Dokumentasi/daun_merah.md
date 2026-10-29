@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 444 — Otomasi sinkronisasi penuh Redis dua tahap)
+> **Last updated:** 2026-10-29 (Session 445 — Estimasi risiko limit Redis pasca-reset)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 445 (2026-10-29) — Estimasi risiko limit Redis pasca-reset
+
+Riset ulang batas Upstash dan pola akses aplikasi menyimpulkan penyebab bandwidth lama kemungkinan tidak berulang: pembacaan sekitar 804 KB setiap dua menit yang secara teori mencapai 17,4 GB/bulan sudah diganti key ringkas dengan pengurangan transfer setidaknya sekitar 800 kali. Estimasi konservatif bandwidth baru 1–4 GB/bulan selama tidak ada regresi payload besar. Risiko terdekat berpindah ke command: 315 ribu hingga 23 Oktober memproyeksikan sekitar 411 ribu/30 hari atau 82% dari batas 500 ribu, sehingga kenaikan trafik sekitar 22% dapat tetap memicu limit. Pagar hari ke-3/hari ke-7 dan ambang operasional dicatat di `daun_merah_riset.md`.
 
 ## Changelog Session 444 (2026-10-29) — Otomasi sinkronisasi penuh Redis dua tahap
 

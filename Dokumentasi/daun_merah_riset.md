@@ -24,6 +24,20 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-10-29] Estimasi risiko limit Redis 1 terulang setelah reset November
+
+**Batas vendor terkini.** Halaman harga resmi Upstash masih menetapkan Free Redis sebesar 256 MB data, 10 GB bandwidth bulanan, dan 500 ribu command bulanan. Management API mendefinisikan `total_monthly_bandwidth` dan `total_monthly_requests` sebagai penggunaan bulan berjalan. Karena itu reset kuota tidak memperbaiki pola boros; risiko berulang ditentukan oleh laju baru sesudah optimasi.
+
+**Perbandingan penyebab lama dan baru.** Penyebab dominan lama adalah pembacaan `setup_log_auto:v1` sekitar 804 KB setiap dua menit. Secara teoritis itu sendiri menghasilkan sekitar 579 MB/hari atau 17,4 GB/30 hari, cukup untuk menembus batas 10 GB tanpa beban lain. Sejak S408 daemon membaca `setup_watch_open:v1` yang berisi hanya setup open ringkas; dengan batas konservatif 1 KB per respons, jalur yang sama menjadi maksimum sekitar 0,72 MB/hari. Penurunan transfer jalur ini setidaknya sekitar 800 kali dan cocok dengan diagnosis mengapa bandwidth lama habis pada akhir bulan walaupun bug sudah diperbaiki menjelang akhir siklus.
+
+**Estimasi sesudah reset.** Jika optimasi bertahan, rate-limit kembali terisolasi di Redis 2, dan tidak muncul key besar baru yang dibaca berulang, bandwidth Redis 1 diperkirakan berada di kisaran rendah beberapa GB per bulan, konservatif sekitar 1–4 GB, bukan 10+ GB. Ini bukan pengukuran billing live karena kredensial Management API tidak tersedia; kisaran berasal dari penghapusan beban 17,4 GB/bulan, ukuran key aktif, heartbeat/watchlist, candle close, serta sinkronisasi OHLCV per jam. Kesimpulan: peluang masalah **bandwidth yang sama** terulang rendah, tetapi bukan nol bila terjadi regresi polling payload besar atau frekuensi sync bertambah.
+
+**Risiko yang kini paling ketat adalah command.** Catatan 23 Oktober menunjukkan sekitar 315 ribu dari 500 ribu command. Laju linear 13,7 ribu/hari memproyeksikan sekitar 411 ribu/30 hari atau 82% kuota. Optimasi watcher memang memangkas byte, tetapi tidak menghapus GET dua-menitnya; ruang pertumbuhan command hanya sekitar 22% sebelum menyentuh 500 ribu. Dengan pola trafik sama limit command seharusnya tidak tercapai, tetapi lonjakan trafik/cron lebih dari sekitar 20% dapat memunculkan blokir plan meskipun bandwidth aman.
+
+**Pagar operasional November.** Verifikasi pada hari ke-3 dan ke-7 melalui Usage Upstash. Laju maksimum linear untuk bertahan di bawah batas adalah sekitar 116,7 ribu command dan 2,33 GB bandwidth per tujuh hari; target dengan margin 20% adalah maksimal sekitar 93 ribu command dan 1,87 GB per tujuh hari. Jika command melewati target margin, audit `Top Commands` sebelum mengubah interval fitur; jika bandwidth melewati target, cari respons/key besar yang dipoll berulang. Jangan menunggu HTTP 403.
+
+**Sumber:** Upstash Redis Pricing, https://upstash.com/pricing/redis (diakses 2026-10-29); Upstash Get Database Stats, https://upstash.com/docs/devops/developer-api/redis/get_database_stats (diakses 2026-10-29); Upstash Metrics and Charts, https://upstash.com/docs/redis/howto/metrics-and-charts (diakses 2026-10-29); `vps/daemon.js`; `api/_ratelimit.js`; `Dokumentasi/daun_merah.md` S408 dan S438.
+
 ### [2026-10-29] Perbandingan materi Markets dengan Pertumbuhan/Inflasi Dashboard
 
 **Bagian yang sudah selaras.** Kolom Pertumbuhan produksi memisahkan `activity` dan `labour`, membalik arti unemployment/jobless claims, menolak seed serta data basi, dan baru memberi arah penuh bila bucket aktivitas serta tenaga kerja konsisten. Ini sesuai urutan materi: GDP/PMI membaca siklus, jobs mengonfirmasi kesehatan ekonomi. Kolom Inflasi memakai CPI/PCE/PPI, sementara wage/earnings hanya masuk Growth/labour agar tidak dihitung dua kali; Bank sentral dipertahankan sebagai core terpisah. Detail baris menampilkan actual versus konsensus, tanggal, besar kejutan terstandardisasi, dan skor family sehingga pengguna dapat mengaudit angka.
