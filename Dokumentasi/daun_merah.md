@@ -22,7 +22,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perubahan.** Atas permintaan user, teks arah seperti `Menguat`, `Memanas`, `Hawkish`, `Naik`, dan padanannya dihapus dari sel tabel Dashboard. Sel directional sekarang hanya menampilkan segitiga atas atau bawah yang sudah dibentuk dengan CSS; state campur/netral/data tidak cukup memakai garis. Teks penjelasan, arti ekonomi, keyakinan, dan evidence tetap tersedia setelah baris mata uang dibuka. Nama kolom tidak berubah agar pengguna tetap mengetahui konteks tiap simbol. Label aksesibilitas nonvisual dipertahankan untuk pembaca layar. `APP_VERSION` naik ke `2026.10.29.2`.
 
-**Verifikasi.** Regresi frontend mengunci bahwa elemen state tabel kosong dari teks terlihat dan hanya memakai pseudo-element CSS, sementara label semantik tetap tersedia di detail serta `aria-label`. Suite penuh lulus 1.531/1.531. Chromium nyata pada 1.365×768 dan 390×844 merender panah/garis tanpa teks state dan tanpa overflow dokumen. Verifikasi produksi dilakukan setelah deploy.
+**Verifikasi.** Regresi frontend mengunci bahwa elemen state tabel kosong dari teks terlihat dan hanya memakai pseudo-element CSS, sementara label semantik tetap tersedia di detail serta `aria-label`. Suite penuh lulus 1.531/1.531. Chromium nyata pada 1.365×768 dan 390×844 merender panah/garis tanpa teks state dan tanpa overflow dokumen. Commit `6fadcec` terdeploy; produksi mengembalikan `APP_VERSION 2026.10.29.2` dan markup state kosong dari teks terlihat.
 
 ## Changelog Session 433 (2026-10-29) — Surprise makro aktif pada Pertumbuhan dan Inflasi
 
