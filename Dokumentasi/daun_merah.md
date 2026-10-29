@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 436 — Penanda Campur dan Netral dikembalikan)
+> **Last updated:** 2026-10-29 (Session 437 — Diagnosis Redis ditolak batas paket Upstash)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 437 (2026-10-29) — Diagnosis Redis ditolak batas paket Upstash
+
+**Diagnosis.** Notifikasi Telegram `Redis degraded` berasal dari guard yang memang disengaja di `vps/daemon.js`: sesudah lima operasi Redis gagal beruntun, daemon menghentikan operasi Redis non-esensial dan mempertahankan heartbeat sebagai probe pemulihan. Error aktual `HTTP 403: ERR This database has reached current Fixed plan limits` berasal dari Upstash, bukan dari Railway, token salah, atau kerusakan koneksi. Berdasarkan status produksi 23 Oktober (bandwidth 7/10 GB, storage hanya 5/250 MB, command 315K/500K) dan dokumentasi resmi Upstash bahwa batas bandwidth memblokir traffic sedangkan batas storage hanya menolak write, penyebab paling kuat adalah bandwidth bulanan mencapai batas. Konfirmasi metrik mana yang penuh tetap harus dibaca dari tab Usage Upstash; data-plane aplikasi tidak mengekspos angka billing itu.
+
+**Mengapa baru muncul sekarang.** Pada 23 Oktober sisa bandwidth sekitar 3 GB dan laju sebelum perbaikan 382–500 MB/hari, sehingga proyeksi lama memang habis dalam 6–8 hari; 29 Oktober tepat berada dalam jendela tersebut. Penyumbang dominan yang sudah ditemukan adalah watcher daemon yang dahulu membaca `setup_log_auto:v1` sekitar 804 KB setiap dua menit, sampai diperbaiki pada Session 408 menjadi key ringkas `setup_watch_open:v1`. Perbaikan mengurangi beban berikutnya tetapi tidak mengembalikan kuota yang sudah terpakai pada siklus berjalan. Tidak ada perubahan runtime dalam sesi diagnosis ini.
+
+**Dampak yang diluruskan.** WebSocket Deriv dan proses Railway dapat tetap hidup, tetapi operasi yang membutuhkan Redis utama akan gagal atau memakai fallback sampai kuota pulih/reset atau paket diubah. Kalimat alert `jalur Plan P/cron tidak terpengaruh` hanya berarti guard daemon tidak mematikan scheduler dan jalur fallback tersebut; bila endpoint fallback perlu membaca/menulis Redis utama, request Redis-nya tetap dapat menerima 403 yang sama. Heartbeat 60 detik juga tidak dapat memulihkan kuota; ia hanya mendeteksi kapan Upstash kembali menerima request.
 
 ## Changelog Session 436 (2026-10-29) — Penanda Campur dan Netral dikembalikan
 
