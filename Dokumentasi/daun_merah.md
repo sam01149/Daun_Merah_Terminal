@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 435 — Warna arah tabel disederhanakan)
+> **Last updated:** 2026-10-29 (Session 436 — Penanda Campur dan Netral dikembalikan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 436 (2026-10-29) — Penanda Campur dan Netral dikembalikan
+
+**Perubahan.** Menindaklanjuti koreksi user, state `mixed` kembali menampilkan garis kuning setebal 2 px, sedangkan `neutral` dan `insufficient` kembali menampilkan garis abu-abu tipis. Arah naik/hawkish tetap memakai segitiga hijau dan arah turun/dovish tetap segitiga merah seperti keputusan terakhir. Sel tetap tanpa teks state; detail dan label aksesibilitas tidak berubah. `APP_VERSION` naik ke `2026.10.29.4`.
+
+**Verifikasi lokal.** Regresi frontend diperbarui untuk mengunci empat keadaan visual tersebut dan tetap melarang override warna khusus Inflation atau Bank sentral. Suite penuh lulus 1.531/1.531. Chromium nyata pada 1.365×768 dan 390×844 memverifikasi warna, bentuk, ketebalan, serta ketiadaan teks untuk kelima state tanpa perbedaan antarukuran layar.
 
 ## Changelog Session 435 (2026-10-29) — Warna arah tabel disederhanakan
 

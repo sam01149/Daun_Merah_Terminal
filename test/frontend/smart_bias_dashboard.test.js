@@ -38,7 +38,9 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.doesNotMatch(html, /<span class="sb-state \$\{valid\} sb-kind-\$\{kind\}"[^>]*>\$\{_sbStateLabel/);
   assert.match(html, /\.sb-state\.bullish \{ color:var\(--green\); \}/);
   assert.match(html, /\.sb-state\.bearish \{ color:#f87171; \}/);
-  assert.doesNotMatch(html, /\.sb-state\.(?:mixed|neutral|insufficient)::before|\.sb-state\.sb-kind-(?:inflation|policy)\.(?:bullish|bearish)/);
+  assert.match(html, /\.sb-state\.mixed::before \{ width:6px; height:2px; border:0; background:currentColor; \}/);
+  assert.match(html, /\.sb-state\.neutral::before, \.sb-state\.insufficient::before \{ width:6px; height:1px; border:0; background:currentColor; \}/);
+  assert.doesNotMatch(html, /\.sb-state\.sb-kind-(?:inflation|policy)\.(?:bullish|bearish)/);
   assert.match(html, /row\.inflation\?\.inflation_impulse/);
   assert.match(html, /Tekanan harga dipisahkan dari dampaknya terhadap mata uang/);
   assert.match(html, /riwayat forecast lima tahun; data dalam keluarga yang sama dihitung satu kali/);
