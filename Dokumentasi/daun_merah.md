@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 445 — Estimasi risiko limit Redis pasca-reset)
+> **Last updated:** 2026-10-29 (Session 446 — Migrator penuh Redis dua tahap siap)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 446 (2026-10-29) — Migrator penuh Redis dua tahap siap
+
+**Implementasi.** Ditambahkan `scripts/sync_redis_accounts.js` untuk migrasi seluruh keyspace bernilai, bukan hanya jurnal/setup/sizing. Skrip menginventaris key melalui SCAN, membaca TYPE dan TTL, mendukung string/hash/list/set/zset/stream/Redis JSON, membuat backup lokal lengkap kedua akun, serta mengecualikan hanya state sementara seperti rate-limit, lock, dedup singkat, dan heartbeat basi. Fundamental hash digabung per field dengan nilai bertanggal lebih baru menang; histori setup/sizing digabung berdasarkan identitas/timestamp; set/zset/list/stream memiliki aturan union tersendiri.
+
+**Alur keselamatan.** Default selalu dry-run. Mode tulis membutuhkan `--execute --confirm=SYNC_BOTH_REDIS_ACCOUNTS`. Tahap pertama menggabungkan Redis 1 ke Redis 2, tahap kedua mencerminkan hasil gabungan Redis 2 kembali ke Redis 1, lalu menjalankan delta pass dan verifikasi SHA-256 per key. Cutover dilarang bila ada key hilang atau checksum berbeda. Penulisan memakai temporary key + RENAME agar penggantian per key atomik; sumber tidak dihapus. `merge_redis_history.js` dijadikan alias kompatibilitas agar perintah lama tidak lagi menjalankan migrasi parsial.
+
+**Otomasi dan verifikasi.** Heartbeat `pulihkan-dan-sinkronkan-seluruh-redis` diperbarui untuk menjalankan dry-run lalu perintah eksekusi skrip ini pada 1 November 2026 pukul 07.00 WIB, hanya setelah SCAN Redis 1 membuktikan data-plane pulih. Unit test baru mencakup konflik fundamental, histori, set, zset, stream, digest stabil, pengecualian key sementara, dan pagar konfirmasi. Suite penuh lulus 1.544/1.544.
 
 ## Changelog Session 445 (2026-10-29) — Estimasi risiko limit Redis pasca-reset
 
