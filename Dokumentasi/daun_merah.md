@@ -22,7 +22,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Perubahan.** Menindaklanjuti koreksi user, state `mixed` kembali menampilkan garis kuning setebal 2 px, sedangkan `neutral` dan `insufficient` kembali menampilkan garis abu-abu tipis. Arah naik/hawkish tetap memakai segitiga hijau dan arah turun/dovish tetap segitiga merah seperti keputusan terakhir. Sel tetap tanpa teks state; detail dan label aksesibilitas tidak berubah. `APP_VERSION` naik ke `2026.10.29.4`.
 
-**Verifikasi lokal.** Regresi frontend diperbarui untuk mengunci empat keadaan visual tersebut dan tetap melarang override warna khusus Inflation atau Bank sentral. Suite penuh lulus 1.531/1.531. Chromium nyata pada 1.365×768 dan 390×844 memverifikasi warna, bentuk, ketebalan, serta ketiadaan teks untuk kelima state tanpa perbedaan antarukuran layar.
+**Verifikasi.** Regresi frontend diperbarui untuk mengunci empat keadaan visual tersebut dan tetap melarang override warna khusus Inflation atau Bank sentral. Suite penuh lulus 1.531/1.531. Chromium nyata pada 1.365×768 dan 390×844 memverifikasi warna, bentuk, ketebalan, serta ketiadaan teks untuk kelima state tanpa perbedaan antarukuran layar. Commit `ddeba7e` terdeploy dengan `APP_VERSION 2026.10.29.4`; HTML produksi mengembalikan marker mixed kuning dan neutral/insufficient abu-abu tanpa override warna Bank sentral lama.
 
 ## Changelog Session 435 (2026-10-29) — Warna arah tabel disederhanakan
 
