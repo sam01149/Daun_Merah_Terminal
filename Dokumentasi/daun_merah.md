@@ -11,12 +11,28 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 440 — Dukungan Akun Redis Cadangan Terpadu _2 & Selector)
+> **Last updated:** 2026-10-29 (Session 441 — Sistem pulih penuh ke Redis 2; candle FX terisi ulang)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 441 (2026-10-29) — Sistem pulih penuh ke Redis 2; candle FX terisi ulang
+
+**Konteks.** Setelah cutover zero-config Redis 1 → Redis 2 (S440), health check `overall: DEGRADED` karena `data_freshness: DOWN` — key `ohlcv:EURUSD=X:1h` belum terisi di Redis 2 yang kosong. Tidak ada bug kode; ini efek normal Redis baru.
+
+**Tindakan.** `ohlcv_sync` dipicu satu kali via POST ke `api/admin?action=ohlcv_sync` (scratch script). Seluruh 11 simbol berhasil disync: EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD, AUD/NZD, EUR/GBP, CHF/JPY (1h/4h/1d, sumber Deriv atau Yahoo), XAU/USD (1h/4h/1d, sumber Deriv).
+
+**Verifikasi akhir.** Health Vercel setelah sync:
+- `overall: OK`
+- `redis: OK` (29ms, Redis 2 aktif)
+- `vps_heartbeat: OK` (59s ago, Railway normal)
+- `data_freshness: OK` (candle EURUSD=X age 48 menit)
+- `calendar_cache: OK`, `financialjuice: OK`, `cftc: OK`, `fred: OK`, `yahoo_move: OK`
+- `redis_key_count: 110` (Redis 2 penuh data aktif)
+
+Sistem sepenuhnya pulih. Entri S440 di `daun_merah_progress.md` dihapus (selesai). Rencana ke depan: jalankan `scripts/merge_redis_history.js` setelah Redis 1 reset ~1 November untuk memindahkan riwayat jurnal/setup/sizing lama.
 
 ## Changelog Session 440 (2026-10-29) — Dukungan Akun Redis Cadangan Terpadu (_2 & Selector)
 
