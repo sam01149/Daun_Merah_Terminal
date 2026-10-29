@@ -34,6 +34,8 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.match(html, /growth:[^}]*bullish:'Menguat'[^}]*bearish:'Melemah'/);
   assert.match(html, /inflation:[^}]*bullish:'Memanas'[^}]*bearish:'Mendingin'/);
   assert.match(html, /policy:[^}]*bullish:'Hawkish'[^}]*bearish:'Dovish'/);
+  assert.match(html, /return `<span class="sb-state \$\{valid\} sb-kind-\$\{kind\}" aria-label="\$\{ariaLabel\}"><\/span>`/);
+  assert.doesNotMatch(html, /<span class="sb-state \$\{valid\} sb-kind-\$\{kind\}"[^>]*>\$\{_sbStateLabel/);
   assert.match(html, /row\.inflation\?\.inflation_impulse/);
   assert.match(html, /Tekanan harga dipisahkan dari dampaknya terhadap mata uang/);
   assert.match(html, /riwayat forecast lima tahun; data dalam keluarga yang sama dihitung satu kali/);

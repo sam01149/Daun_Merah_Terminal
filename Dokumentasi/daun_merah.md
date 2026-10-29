@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 433 — Surprise makro aktif pada Pertumbuhan dan Inflasi)
+> **Last updated:** 2026-10-29 (Session 434 — Sel tabel Bias hanya menampilkan arah)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 434 (2026-10-29) — Sel tabel Bias hanya menampilkan arah
+
+**Perubahan.** Atas permintaan user, teks arah seperti `Menguat`, `Memanas`, `Hawkish`, `Naik`, dan padanannya dihapus dari sel tabel Dashboard. Sel directional sekarang hanya menampilkan segitiga atas atau bawah yang sudah dibentuk dengan CSS; state campur/netral/data tidak cukup memakai garis. Teks penjelasan, arti ekonomi, keyakinan, dan evidence tetap tersedia setelah baris mata uang dibuka. Nama kolom tidak berubah agar pengguna tetap mengetahui konteks tiap simbol. Label aksesibilitas nonvisual dipertahankan untuk pembaca layar. `APP_VERSION` naik ke `2026.10.29.2`.
+
+**Verifikasi.** Regresi frontend mengunci bahwa elemen state tabel kosong dari teks terlihat dan hanya memakai pseudo-element CSS, sementara label semantik tetap tersedia di detail serta `aria-label`. Suite penuh lulus 1.531/1.531. Chromium nyata pada 1.365×768 dan 390×844 merender panah/garis tanpa teks state dan tanpa overflow dokumen. Verifikasi produksi dilakukan setelah deploy.
 
 ## Changelog Session 433 (2026-10-29) — Surprise makro aktif pada Pertumbuhan dan Inflasi
 

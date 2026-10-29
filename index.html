@@ -2825,7 +2825,7 @@ body.light-theme .cal-date-input { color-scheme: light; }
 .smart-bias-table tbody tr.smart-bias-row:hover td:first-child { background:var(--surface); }
 .smart-bias-table td { padding:9px 6px; text-align:center; border-bottom:1px solid rgba(var(--fg-rgb),.06); font-size:9px; color:var(--text-mid); vertical-align:middle; }
 .smart-bias-cur { font:700 11px 'Syne',sans-serif; color:var(--text); }
-.sb-state { display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; font-weight:600; }
+.sb-state { display:inline-flex; align-items:center; justify-content:center; width:12px; min-height:8px; white-space:nowrap; }
 .sb-state::before { content:''; width:0; height:0; border-left:3px solid transparent; border-right:3px solid transparent; }
 .sb-state.bullish { color:var(--green); }
 .sb-state.bullish::before { border-bottom:6px solid currentColor; }
@@ -4915,7 +4915,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.29.1';
+const APP_VERSION = '2026.10.29.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -18801,8 +18801,9 @@ function _sbStateLabel(state, kind = 'currency') {
 
 function _sbStateHtml(state, confidence, kind = 'currency') {
   const valid = ['bullish','bearish','mixed','neutral','insufficient'].includes(state) ? state : 'insufficient';
-  const title = confidence ? ` title="Keyakinan ${escHtml(confidence)}"` : '';
-  return `<span class="sb-state ${valid} sb-kind-${kind}"${title}>${_sbStateLabel(valid, kind)}</span>`;
+  const label = _sbStateLabel(valid, kind);
+  const ariaLabel = escHtml(confidence ? `${label}, keyakinan ${confidence}` : label);
+  return `<span class="sb-state ${valid} sb-kind-${kind}" aria-label="${ariaLabel}"></span>`;
 }
 
 function _sbEvidenceText(evidence, emptyText = 'Bukti belum cukup.') {
