@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-10-29 (Session 446 — Migrator penuh Redis dua tahap siap)
+> **Last updated:** 2026-11-01 (Session 447 — Kuota Redis 1 terkonfirmasi pulih)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 447 (2026-11-01) — Kuota Redis 1 terkonfirmasi pulih
+
+Probe read-only langsung ke data-plane Upstash mengonfirmasi Redis 1 sudah keluar dari blokir batas paket: perintah `PING` kembali HTTP 200 `PONG`, sama seperti Redis 2. Validasi lanjutan `DBSIZE`/`EXISTS` menunjukkan Redis 1 masih menyimpan 946 key termasuk `setup_log_auto:v1` dan `journal_devices`; reset kuota tidak menghapus data. Redis 2 memiliki 596 key dan heartbeat aktif, konsisten bahwa aplikasi masih berjalan di akun 2. Rekonsiliasi dua arah dan cutover belum dijalankan dalam sesi pengecekan ini; pekerjaan S443 tetap diparkir sampai otomasi sinkronisasi aman dieksekusi dan diverifikasi.
 
 ## Changelog Session 446 (2026-10-29) — Migrator penuh Redis dua tahap siap
 
