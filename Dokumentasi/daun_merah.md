@@ -26,7 +26,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Pagar kuota.** Cache in-memory zona harga daemon dinaikkan dari 5 menjadi 15 menit. Batas GET jalur ini turun dari sekitar 4.032 menjadi 1.344 per hari, hemat sekitar 80.640 command per 30 hari tanpa mengubah heartbeat, polling berita, candle close, atau watcher auto-entry. Berdasarkan baseline 23 Oktober, proyeksi command Redis 1 turun dari sekitar 411 ribu (82% batas) menjadi sekitar 330 ribu/bulan (66% batas), menyisakan ruang sekitar 170 ribu command atau 51% di atas proyeksi baru. Proyeksi bandwidth tetap 1–4 GB dari batas 10 GB setelah payload watcher 804 KB diganti key ringkas pada S408. Ini pagar desain, bukan pengganti pemeriksaan Usage Upstash hari ke-3 dan ke-7.
 
-**Verifikasi.** Tes fokus resolver, migrator, self-healing, dan budget Redis lulus 32/32; skrip quick-verify/repair memiliki pagar konfirmasi dan tidak memindahkan key internal/sementara.
+**Verifikasi.** Tes fokus resolver, migrator, self-healing, dan budget Redis lulus 32/32; suite penuh lulus 1.545/1.545. Deploy commit `8fcd97c` berstatus sukses di Vercel dan Railway. Bukti live Vercel: setelah `rss_cache` dipastikan kosong di dua akun, request RSS produksi menghasilkan cache TTL 52 detik hanya di Redis 1 sementara Redis 2 tetap tidak memiliki key. Bukti live Railway: heartbeat Redis 1 terus diperbarui (TTL 271), sedangkan heartbeat lama Redis 2 terus menurun (TTL 204), sehingga instance baru telah berpindah dan instance lama tidak lagi menulis. Skrip quick-verify/repair memiliki pagar konfirmasi dan tidak memindahkan key internal/sementara.
 
 ## Changelog Session 447 (2026-11-01) — Kuota Redis 1 terkonfirmasi pulih
 
