@@ -78,8 +78,8 @@ test('resolveRedis: mendeteksi akun 1 vs akun 2 dengan UPSTASH_REDIS_REST_URL_2 
 
     process.env.UPSTASH_REDIS_REST_URL_2 = 'https://r2.test';
     process.env.UPSTASH_REDIS_REST_TOKEN_2 = 't2';
-    assert.equal(daemon.resolveRedis().account, 2);
-    assert.equal(daemon.resolveRedis().url, 'https://r2.test');
+    assert.equal(daemon.resolveRedis().account, 1);
+    assert.equal(daemon.resolveRedis().url, 'https://r1.test');
 
     process.env.REDIS_ACTIVE_ACCOUNT = '1';
     assert.equal(daemon.resolveRedis().account, 1);
@@ -89,6 +89,11 @@ test('resolveRedis: mendeteksi akun 1 vs akun 2 dengan UPSTASH_REDIS_REST_URL_2 
   } finally {
     process.env = origEnv;
   }
+});
+
+test('budget Redis: cache zona harga 15 menit membatasi GET ke sekitar 1.344 per hari', () => {
+  assert.equal(daemon.ZONE_DATA_CACHE_TTL_MS, 15 * 60 * 1000);
+  assert.equal(14 * (24 * 60 / 15), 1344);
 });
 
 test('redisGuard: Telegram degraded dimatikan, tetapi alarm pemulihan tetap aktif', () => {

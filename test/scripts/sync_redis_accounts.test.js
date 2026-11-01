@@ -12,8 +12,8 @@ const {
   parseArgs,
 } = require('../../scripts/sync_redis_accounts');
 
-test('sync Redis: key sementara tidak ikut dipindahkan, data fundamental tetap ikut', () => {
-  for (const key of ['rl:feeds:ip:1', 'lock:setuplog', 'push_lock', 'vps:heartbeat', 'ohlcv_fresh:EURUSD=X']) {
+test('sync Redis: key sementara/internal tidak ikut dipindahkan, data fundamental tetap ikut', () => {
+  for (const key of ['_upstash_agent-analytics-events', 'rl:feeds:ip:1', 'lock:setuplog', 'push_lock', 'vps:heartbeat', 'ohlcv_fresh:EURUSD=X']) {
     assert.equal(isEphemeralKey(key), true, key);
   }
   for (const key of ['fundamental:USD', 'setup_log_auto:v1', 'journal:device:id', 'ohlcv:EURUSD=X:1h']) {
@@ -104,6 +104,8 @@ test('sync Redis: digest hash/set stabil walau urutan berbeda', () => {
 });
 
 test('sync Redis: mode tulis memerlukan frasa konfirmasi eksplisit', () => {
-  assert.deepEqual(parseArgs([]), { execute: false, confirm: '' });
-  assert.deepEqual(parseArgs(['--execute', `--confirm=${CONFIRM_TEXT}`]), { execute: true, confirm: CONFIRM_TEXT });
+  assert.deepEqual(parseArgs([]), { execute: false, quickVerify: false, quickRepair: false, confirm: '' });
+  assert.deepEqual(parseArgs(['--quick-verify']), { execute: false, quickVerify: true, quickRepair: false, confirm: '' });
+  assert.deepEqual(parseArgs(['--quick-repair', `--confirm=${CONFIRM_TEXT}`]), { execute: false, quickVerify: false, quickRepair: true, confirm: CONFIRM_TEXT });
+  assert.deepEqual(parseArgs(['--execute', `--confirm=${CONFIRM_TEXT}`]), { execute: true, quickVerify: false, quickRepair: false, confirm: CONFIRM_TEXT });
 });

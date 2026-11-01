@@ -26,17 +26,17 @@ test('api/_redis: resolveRedisCredentials dan syncActiveRedisEnv', () => {
     assert.equal(creds.account, 1);
     assert.equal(creds.url, 'https://r1.test');
 
-    // Switch saat UPSTASH_REDIS_REST_URL_2 di-set
+    // Akun 2 tersedia sebagai fallback, tetapi default tetap akun 1.
     process.env.UPSTASH_REDIS_REST_URL_2 = 'https://r2.test';
     process.env.UPSTASH_REDIS_REST_TOKEN_2 = 't2';
     creds = resolveRedisCredentials();
-    assert.equal(creds.account, 2);
-    assert.equal(creds.url, 'https://r2.test');
+    assert.equal(creds.account, 1);
+    assert.equal(creds.url, 'https://r1.test');
 
     // Sinkronkan ke env
     syncActiveRedisEnv();
-    assert.equal(process.env.UPSTASH_REDIS_REST_URL, 'https://r2.test');
-    assert.equal(process.env.UPSTASH_REDIS_REST_TOKEN, 't2');
+    assert.equal(process.env.UPSTASH_REDIS_REST_URL, 'https://r1.test');
+    assert.equal(process.env.UPSTASH_REDIS_REST_TOKEN, 't1');
 
     // Explicit switch back ke akun 1
     process.env.REDIS_ACTIVE_ACCOUNT = '1';

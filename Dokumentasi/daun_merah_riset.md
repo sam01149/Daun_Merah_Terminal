@@ -36,6 +36,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Pagar operasional November.** Verifikasi pada hari ke-3 dan ke-7 melalui Usage Upstash. Laju maksimum linear untuk bertahan di bawah batas adalah sekitar 116,7 ribu command dan 2,33 GB bandwidth per tujuh hari; target dengan margin 20% adalah maksimal sekitar 93 ribu command dan 1,87 GB per tujuh hari. Jika command melewati target margin, audit `Top Commands` sebelum mengubah interval fitur; jika bandwidth melewati target, cari respons/key besar yang dipoll berulang. Jangan menunggu HTTP 403.
 
+**Pagar kode aktif 1 November.** Cache zona harga di daemon dinaikkan dari 5 menjadi 15 menit. Jalur ini turun dari maksimum 4.032 menjadi 1.344 GET/hari (hemat 2.688/hari atau 80.640/30 hari). Dengan baseline proyeksi 411 ribu command, proyeksi baru menjadi sekitar 330 ribu/bulan atau 66% batas 500 ribu; ruang tersisa sekitar 170 ribu command, setara 51% di atas beban proyeksi baru. Heartbeat, polling berita, watcher auto-entry, dan candle close tidak diperlambat. Risiko limit tidak bisa dijamin nol tanpa metrik billing live, tetapi beban proyeksi sekarang memiliki margin jauh lebih sehat daripada 22% sebelumnya.
+
 **Sumber:** Upstash Redis Pricing, https://upstash.com/pricing/redis (diakses 2026-10-29); Upstash Get Database Stats, https://upstash.com/docs/devops/developer-api/redis/get_database_stats (diakses 2026-10-29); Upstash Metrics and Charts, https://upstash.com/docs/redis/howto/metrics-and-charts (diakses 2026-10-29); `vps/daemon.js`; `api/_ratelimit.js`; `Dokumentasi/daun_merah.md` S408 dan S438.
 
 ### [2026-10-29] Perbandingan materi Markets dengan Pertumbuhan/Inflasi Dashboard

@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-01 (Session 447 — Kuota Redis 1 terkonfirmasi pulih)
+> **Last updated:** 2026-11-01 (Session 448 — Rekonsiliasi selesai, cutover Redis 1, dan pagar kuota)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 448 (2026-11-01) — Rekonsiliasi selesai, cutover Redis 1, dan pagar kuota
+
+**Rekonsiliasi data.** Redis 1 dan Redis 2 dicadangkan lalu digabung dua arah dengan `scripts/sync_redis_accounts.js`. Key internal Upstash bertipe `search` (`_upstash_*`) ditemukan saat dry-run dan kini dikecualikan karena bukan data aplikasi serta tidak portabel antardatabase. Tahap penuh menggabungkan 180 key Redis 1 ke Redis 2 dan mencerminkan 561 key ke Redis 1. Atas keputusan user karena market tutup, delta penuh per-key dihentikan setelah tahap dua; verifikasi cepat kemudian memperbaiki hanya 11 cache teknikal harian dan satu candle H1 yang muncul selama migrasi. Hasil akhir: kedua akun masing-masing 731 key aplikasi, tidak ada key hilang, dan digest data kritis identik (setup auto, arsip, watchlist, jurnal, push subscription, fundamental, kalender, dan candle EUR/USD).
+
+**Cutover.** Resolver Vercel dan daemon Railway sekarang kembali memilih Redis 1 secara default bila kedua kredensial tersedia. `REDIS_ACTIVE_ACCOUNT=2` tetap menjadi override darurat dan Redis 2 tetap menjadi tempat counter rate-limit saat akun 1 aktif. Dengan demikian push ke `main` mengaktifkan Redis 1 tanpa bergantung pada sesi dashboard/CLI yang tidak tersedia.
+
+**Pagar kuota.** Cache in-memory zona harga daemon dinaikkan dari 5 menjadi 15 menit. Batas GET jalur ini turun dari sekitar 4.032 menjadi 1.344 per hari, hemat sekitar 80.640 command per 30 hari tanpa mengubah heartbeat, polling berita, candle close, atau watcher auto-entry. Berdasarkan baseline 23 Oktober, proyeksi command Redis 1 turun dari sekitar 411 ribu (82% batas) menjadi sekitar 330 ribu/bulan (66% batas), menyisakan ruang sekitar 170 ribu command atau 51% di atas proyeksi baru. Proyeksi bandwidth tetap 1–4 GB dari batas 10 GB setelah payload watcher 804 KB diganti key ringkas pada S408. Ini pagar desain, bukan pengganti pemeriksaan Usage Upstash hari ke-3 dan ke-7.
+
+**Verifikasi.** Tes fokus resolver, migrator, self-healing, dan budget Redis lulus 32/32; skrip quick-verify/repair memiliki pagar konfirmasi dan tidak memindahkan key internal/sementara.
 
 ## Changelog Session 447 (2026-11-01) — Kuota Redis 1 terkonfirmasi pulih
 

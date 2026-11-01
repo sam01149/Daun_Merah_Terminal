@@ -35,9 +35,8 @@ function resolveRedis() {
     if (url1 && token1) return { url: url1, token: token1, account: 1 };
     if (url2 && token2) return { url: url2, token: token2, account: 2 };
   }
-  if (url2 && token2) {
-    return { url: url2, token: token2, account: 2 };
-  }
+  // Default akun 1 setelah rekonsiliasi penuh 2026-11-01; akun 2 tetap bisa
+  // dipilih eksplisit sebagai jalur darurat dengan REDIS_ACTIVE_ACCOUNT=2.
   if (url1 && token1) return { url: url1, token: token1, account: 1 };
   if (url2 && token2) return { url: url2, token: token2, account: 2 };
   return { url: url1, token: token1, account: 1 };
@@ -1151,10 +1150,10 @@ async function handlePosReviewCandidate(newsItem) {
 // GET/hari kalau tick deras di 14 pair — jauh di atas target <3.000/hari Q-2):
 // zona konfluensi (ohlcv_analysis:<symbol>) itu HANYA berubah kalau
 // ohlcv_analyze dijalankan ulang (cron/klik user), bukan tiap detik — jadi
-// data zona di-cache in-memory ZONE_DATA_CACHE_TTL_MS (5 menit) per symbol,
+// data zona di-cache in-memory ZONE_DATA_CACHE_TTL_MS (15 menit) per symbol,
 // TERPISAH dari seberapa sering perbandingan harga-vs-zona jalan (itu murni
 // komputasi lokal, boleh sesering apa pun karena tidak menyentuh Redis).
-// Hasil: GET Redis dibatasi ke maks 14 pair x (1440 menit/5) = ~4.032/hari,
+// Hasil: GET Redis dibatasi ke maks 14 pair x (1440 menit/15) = ~1.344/hari,
 // bukan puluhan ribu.
 //
 // Sumber zona: ohlcv_analysis:<symbol> (HTTP... eh, dibaca LANGSUNG dari Redis
@@ -1163,7 +1162,7 @@ async function handlePosReviewCandidate(newsItem) {
 // cache belum ada untuk suatu pair (baru fresh kalau pair itu pernah
 // dibuka/dianalisa), pair itu di-skip diam-diam.
 // ══════════════════════════════════════════════════════════════════════════
-const ZONE_DATA_CACHE_TTL_MS = 5 * 60 * 1000;
+const ZONE_DATA_CACHE_TTL_MS = 15 * 60 * 1000;
 const ZONE_CHECK_DEBOUNCE_MS = 3 * 1000; // sanity debounce CPU, BUKAN pembatas budget Redis (itu tugas cache TTL di atas)
 const zoneDataCache = {};      // symbol -> { conf, fetchedAt }
 const zoneFetchInFlight = {};  // symbol -> Promise sedang refresh (cegah thundering-herd saat cache basi)
@@ -2120,6 +2119,7 @@ if (require.main === module) main();
 
 module.exports = {
   mergeClosedCandle, normalizeDerivCandle, isHighImpactCategory, priceInZone,
+  ZONE_DATA_CACHE_TTL_MS,
   YAHOO_TO_DERIV_SYMBOL, DERIV_TO_YAHOO_SYMBOL,
   // Q-7 (pure/testable):
   priceCrossesLevel, parseOpenSetupWatchlist, AUTO_SETUP_WATCH_KEY,

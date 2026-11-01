@@ -18,7 +18,23 @@ const crypto = require('crypto');
 
 const CONFIRM_TEXT = 'SYNC_BOTH_REDIS_ACCOUNTS';
 const HISTORY_STRING_KEYS = new Set(['setup_log:v1', 'setup_log_auto:v1', 'sizing:history']);
+const QUICK_VERIFY_KEYS = [
+  'setup_log_auto:v1',
+  'setup_log_auto_archive:v1',
+  'setup_watch_open:v1',
+  'journal_devices',
+  'sizing:history',
+  'push_subs',
+  'fundamental:USD',
+  'fundamental:EUR',
+  'calendar_v1',
+  'ohlcv:EURUSD=X:1h',
+];
 const EPHEMERAL_KEY_PATTERNS = [
+  // Namespace internal yang dibuat layanan/fitur Upstash sendiri (mis. Agent
+  // analytics bertipe `search`). Bukan state aplikasi dan tidak portabel ke
+  // database lain, sehingga jangan dibaca/ditulis oleh migrator.
+  /^_upstash_/,
   /^rl:/,
   /^lock:/,
   /^cron_dedup:/,
@@ -242,7 +258,7 @@ async function snapshotDatabase(db) {
   // SCAN/DBSIZE membuktikan data-plane sudah pulih; PING saja bisa tetap sukses
   // ketika limit bandwidth memblokir command data.
   await redisCall(db, 'PING');
-  const keys = await scanKeys(db);
+  const keys = (await scanKeys(db)).filter(key => !isEphemeralKey(key));
   const records = {};
   for (const key of keys) records[key] = await readRecord(db, key);
   return { label: db.label, host: new URL(db.url).hostname, capturedAt: new Date().toISOString(), records };
@@ -329,11 +345,56 @@ async function verifyEquivalent(sourceDb, destinationDb) {
   return { checked: sourceKeys.length, missing, mismatched, ok: missing.length === 0 && mismatched.length === 0 };
 }
 
+async function verifyQuick(redis1, redis2) {
+  const [keys1, keys2] = await Promise.all([
+    scanKeys(redis1).then(keys => keys.filter(key => !isEphemeralKey(key))),
+    scanKeys(redis2).then(keys => keys.filter(key => !isEphemeralKey(key))),
+  ]);
+  const set1 = new Set(keys1);
+  const set2 = new Set(keys2);
+  const missingInRedis1 = keys2.filter(key => !set1.has(key));
+  const missingInRedis2 = keys1.filter(key => !set2.has(key));
+  const checked = [];
+  const mismatched = [];
+  for (const key of QUICK_VERIFY_KEYS) {
+    const [left, right] = await Promise.all([readRecord(redis1, key), readRecord(redis2, key)]);
+    if (!left && !right) continue;
+    checked.push(key);
+    if (recordDigest(left) !== recordDigest(right)) mismatched.push(key);
+  }
+  return {
+    keyCountRedis1: keys1.length,
+    keyCountRedis2: keys2.length,
+    missingInRedis1,
+    missingInRedis2,
+    criticalChecked: checked,
+    criticalMismatched: mismatched,
+    ok: missingInRedis1.length === 0 && missingInRedis2.length === 0 && mismatched.length === 0,
+  };
+}
+
+async function repairQuick(redis1, redis2) {
+  const before = await verifyQuick(redis1, redis2);
+  if (before.missingInRedis2.length) {
+    throw new Error(`Redis 2 kehilangan ${before.missingInRedis2.length} key; quick repair dibatalkan.`);
+  }
+  const targets = [...new Set([...before.missingInRedis1, ...before.criticalMismatched])];
+  const runId = `quick-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  for (const key of targets) {
+    const record = await readRecord(redis2, key);
+    if (record) await replaceRecord(redis1, key, record, runId);
+  }
+  const after = await verifyQuick(redis1, redis2);
+  return { repaired: targets, before, after };
+}
+
 function parseArgs(argv) {
   const args = new Set(argv);
   const confirmArg = argv.find(arg => arg.startsWith('--confirm='));
   return {
     execute: args.has('--execute'),
+    quickVerify: args.has('--quick-verify'),
+    quickRepair: args.has('--quick-repair'),
     confirm: confirmArg ? confirmArg.slice('--confirm='.length) : '',
   };
 }
@@ -348,6 +409,21 @@ async function main(argv = process.argv.slice(2)) {
     if (!db.url || !db.token) throw new Error(`Kredensial ${db.label} belum lengkap`);
   }
   if (redis1.url === redis2.url) throw new Error('Redis 1 dan Redis 2 menunjuk URL yang sama; migrasi dibatalkan');
+
+  if (options.quickVerify) {
+    const verification = await verifyQuick(redis1, redis2);
+    console.log('Verifikasi cepat:', verification);
+    if (!verification.ok) throw new Error('Verifikasi cepat gagal; jangan cutover ke Redis 1.');
+    return { quickVerify: true, verification };
+  }
+
+  if (options.quickRepair) {
+    if (options.confirm !== CONFIRM_TEXT) throw new Error(`Quick repair membutuhkan --confirm=${CONFIRM_TEXT}`);
+    const result = await repairQuick(redis1, redis2);
+    console.log('Quick repair:', result);
+    if (!result.after.ok) throw new Error('Quick repair belum menghasilkan kesetaraan; jangan cutover ke Redis 1.');
+    return { quickRepair: true, result };
+  }
 
   const runId = new Date().toISOString().replace(/[:.]/g, '-');
   const backupDir = path.resolve(process.cwd(), '.cache', 'redis-migration', runId);
@@ -402,5 +478,7 @@ module.exports = {
   mergeRecords,
   recordDigest,
   parseArgs,
+  verifyQuick,
+  repairQuick,
   main,
 };
