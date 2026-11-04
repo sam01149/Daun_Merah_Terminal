@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-01 (Session 448 — Rekonsiliasi selesai, cutover Redis 1, dan pagar kuota)
+> **Last updated:** 2026-11-04 (Session 449 — Provider DeepSeek pindah ke Relink Gateway)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 449 (2026-11-04) — Provider DeepSeek pindah ke Relink Gateway
+
+**Masalah dan solusi.** User melaporkan saldo API resmi DeepSeek habis dan meminta memakai `RELINK_AI` lokal. Seluruh generate DeepSeek di `admin.js` dan `market-digest.js` sekarang memakai resolver pasangan kunci/host di `_deepseek.js`; model Flash/Pro, prompt, timeout, dan fallback tidak diganti. Kunci tetap di env, tidak masuk Git. `RELINK_AI` disimpan sebagai Sensitive untuk Production/Preview sebelum deploy melalui push main. Kosongkan kunci Relink untuk kembali ke API resmi; sakelar `DEEPSEEK_DISABLED=true` tetap berlaku.
+
+**Pengaman dan pemeriksaan mandiri.** Relink mempunyai entri `_ai_guard.js`: publik 50/hari, eksperimen 35/hari; counter dan circuit terpisah dari provider lama supaya HTTP 402 lama tidak memblokir gateway baru. Diagnostik status/reset membaca namespace aktif. Endpoint saldo tidak mengirim kunci Relink ke API resmi, melainkan mengarahkan pemeriksaan kuota ke dashboard Relink. Template env, inventaris vendor, dan referensi pemakaian AI diperbarui. Terms Relink §5 mengizinkan produksi; diperiksa 2026-11-04.
+
+**Verifikasi.** `npm test`: 1.547/1.547 lulus, termasuk regresi pasangan host/kunci, rollback, sakelar nonaktif, namespace pool/circuit, dan sapuan seluruh call site. Dua panggilan live minimal lewat resolver aplikasi: Flash HTTP 200 (~1,87 detik), Pro HTTP 200 (~1,49 detik), masing-masing JSON valid dan finish `stop`. Gateway melaporkan masing-masing 525 input + 512 output = 1.037 token, meskipun output pendek dan `max_tokens:80`; karena itu anggaran dihitung dari usage provider, bukan panjang teks jawaban. Verifikasi deployment dicatat setelah push.
 
 ## Changelog Session 448 (2026-11-01) — Rekonsiliasi selesai, cutover Redis 1, dan pagar kuota
 

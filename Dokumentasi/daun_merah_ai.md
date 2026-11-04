@@ -14,16 +14,20 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
 > **Dibuat:** 2026-07-11 (session 157)
-> **Status provider DeepSeek (dicek live 2026-10-13):** **AKTIF.** Saldo resmi $1,36 (`is_available=true`, seluruhnya topped-up) dan sakelar lokal `DEEPSEEK_DISABLED=false`. Counter produksi hari ini menunjukkan Daun Merah 9 call dan AATAS/eksperimen 29 call. Proyeksi serta rekomendasi top-up ada di §9.
+> **Status provider DeepSeek (2026-11-04):** **Relink Gateway aktif** untuk seluruh panggilan DeepSeek; API resmi menjadi jalur kembali hanya bila `RELINK_AI` dikosongkan. Alasan migrasi: saldo provider resmi habis menurut user. Model tetap `deepseek-v4-flash` / `deepseek-v4-pro`; tidak memakai Auto atau model lain.
 > **Tujuan dokumen:** satu tempat untuk menjawab "fitur AI apa saja yang ada, dipanggil pakai model/provider apa, dan paling banyak dipakai berapa kali sehari" — supaya kalau ada laporan "AI error/limit habis", tinggal buka file ini dulu sebelum ngoprek kode.
 > **Vendor & non-AI infra:** lihat [daun_merah_vendor.md](daun_merah_vendor.md).
 > **Riset perbandingan provider (kenapa provider ini yang dipilih):** lihat [daun_merah.md § Research: Free AI Inference API Providers](daun_merah.md#research-free-ai-inference-api-providers-2026-05-28).
 
 ---
 
+**Routing aktif 2026-11-04.** Semua penyebutan DeepSeek pada fitur di dokumen ini berarti model DeepSeek melalui `https://api.relink-gateway.biz.id/v1/chat/completions`, dengan kunci `RELINK_AI`. Model, prompt, timeout, fallback Gemini, serta pemisahan publik/eksperimen tetap. `_deepseek.js` memilih pasangan host/kunci secara terpusat; `DEEPSEEK_DISABLED=true` juga menonaktifkan jalur Relink. Tidak ada fallback otomatis ke saldo resmi yang habis.
+
+**Pengaman aktif.** Pool `relink` = 50 request/hari; `relink_experimental` = 35 request/hari. Override: `AI_DAILY_LIMIT_RELINK` / `AI_DAILY_LIMIT_RELINK_EXPERIMENTAL`. Circuit terpisah `ai:relink` / `ai:relink:experimental` (termasuk suffix diagnostik), sehingga kegagalan provider resmi tidak menutup Relink. Pool `deepseek*` disimpan hanya untuk jalur kembali. Batas request bukan batas token: pemakaian Relink = (input + output) × multiplier model. Katalog publik saat diperiksa mencantumkan Flash 2× dan Pro 1,15×; cek dashboard untuk kondisi akun. Harga resmi DeepSeek dan proyeksi saldo lama di bawah hanya referensi historis ketika memakai gateway. `deepseek_balance` tidak memanggil endpoint saldo resmi dengan kunci Relink; saldo token diperiksa di dashboard Relink. [Katalog dan cara hitung](https://relink-gateway.biz.id/), [ketentuan produksi](https://relink-gateway.biz.id/terms).
+
 ## 1. Cara baca dokumen ini (ringkas dulu, baru detail)
 
-Aplikasi ini punya beberapa fitur yang memanggil AI, termasuk Ringkasan, AATAS, fungsi analisa manual, fundamental, jurnal, kritik, dan review posisi. DeepSeek berbayar dari saldo top-up user (bukan free tier); Gemini gratis. "Gratis" tetap ada plafonnya — baik dari provider aslinya maupun dari **jatah harian buatan sendiri** (`api/_ai_guard.js`) yang dipasang supaya satu fitur nakal (loop bug, di-spam) tidak menghabiskan kuota gratis punya fitur lain.
+Aplikasi ini punya beberapa fitur yang memanggil AI, termasuk Ringkasan, AATAS, fungsi analisa manual, fundamental, jurnal, kritik, dan review posisi. DeepSeek dipanggil melalui Relink Gateway memakai token prepaid; Gemini gratis. "Gratis" tetap ada plafonnya — baik dari provider aslinya maupun dari **jatah harian buatan sendiri** (`api/_ai_guard.js`) yang dipasang supaya satu fitur nakal (loop bug, di-spam) tidak menghabiskan kuota gratis punya fitur lain.
 
 Ada 2 lapis pembatas yang perlu dibedakan:
 
@@ -300,7 +304,8 @@ Kalau gagal total terjadi, user akan melihat pesan "AI tidak tersedia — coba b
 
 | Provider | Endpoint | Model ID yang dipakai | Peran saat ini | Env var |
 |---|---|---|---|---|
-| DeepSeek (API resmi, BERBAYAR) | `api.deepseek.com/chat/completions` | **Call 1 Ringkasan: `deepseek-v4-pro`**; **AATAS Call 1: `deepseek-v4-pro`**; **Call 2/4 Ringkasan, AATAS Call 2, + semua fitur lain: `deepseek-v4-flash`** (thinking disabled) | **PRIMARY/SATU-SATUNYA** — Ringkasan Berita Call 1/2/4, Analisa AI per Pair, Review Posisi Virtual, Sistem Hakim Gate A. Call 3 Ringkasan dinonaktifkan 2026-10-23. | `DEEPSEEK_API_KEY` |
+| **Relink Gateway (aktif 2026-11-04)** | `relink`: 50 request/hari; `relink_experimental`: 35 request/hari | Prepaid: total token × multiplier; batas request aplikasi bukan plafon biaya/token | Seluruh fitur bermodel DeepSeek; publik dan eksperimen terpisah |
+| DeepSeek (API resmi, hanya rollback, BERBAYAR) | `api.deepseek.com/chat/completions` | **Call 1 Ringkasan: `deepseek-v4-pro`**; **AATAS Call 1: `deepseek-v4-pro`**; **Call 2/4 Ringkasan, AATAS Call 2, + semua fitur lain: `deepseek-v4-flash`** (thinking disabled) | **PRIMARY/SATU-SATUNYA** — Ringkasan Berita Call 1/2/4, Analisa AI per Pair, Review Posisi Virtual, Sistem Hakim Gate A. Call 3 Ringkasan dinonaktifkan 2026-10-23. | `DEEPSEEK_API_KEY` |
 | Google AI Studio | `generativelanguage.googleapis.com/v1beta/openai/chat/completions` | `gemini-flash-latest` | **PRIMARY/SATU-SATUNYA** — Analisa Fundamental, AI Coach Jurnal; fallback Ringkasan Berita Call 1/2 | `GEMINI_API_KEY` |
 
 **Dihapus 2026-08-12 (kontrak diputus user, billing lapse):** SambaNova akun-1 & akun-2 (`SAMBANOVA_API_KEY`, `SAMBANOVA_API_KEY_CALL1`) — env var dihapus dari Vercel (Production & Preview), semua kode chain/circuit/budget-nya dihapus dari `api/market-digest.js`, `api/admin.js`, `api/journal.js`, `api/_ai_guard.js`. Detail root cause di `daun_merah_vendor.md`.

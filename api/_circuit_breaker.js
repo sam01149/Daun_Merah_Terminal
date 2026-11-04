@@ -1,3 +1,4 @@
+const { resolveDeepSeekCircuit } = require('./_deepseek');
 // api/_circuit_breaker.js
 // Redis-backed circuit breaker for external sources and AI providers.
 // Underscore prefix = Vercel does NOT expose this as a public route.
@@ -56,7 +57,7 @@ function getRedis() {
 }
 
 function circuitKey(source) {
-  return `circuit:${source}`;
+  return `circuit:${resolveDeepSeekCircuit(source)}`;
 }
 
 /**

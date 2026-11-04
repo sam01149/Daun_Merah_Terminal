@@ -23,7 +23,7 @@ const marketHours = require('./_market_hours');
 const cb = require('./_circuit_breaker');
 const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
-const { isDeepSeekDisabled, getDeepSeekApiKey } = require('./_deepseek');
+const { isDeepSeekDisabled, getDeepSeekApiKey, getDeepSeekUrl, isRelinkActive, resolveDeepSeekCircuit } = require('./_deepseek');
 const { requireAppKey, safeEqual } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, mapYahooSymbolToTwelveData, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { CURRENCIES: SMART_BIAS_CURRENCIES, buildSmartBiasRows } = require('./_smart_bias');
@@ -2283,7 +2283,7 @@ async function circuitStatusHandler(req, res) {
   const results = {};
   for (const src of KNOWN_CIRCUITS) {
     try {
-      const raw = await redisCmd('GET', `circuit:${src}`);
+      const raw = await redisCmd('GET', `circuit:${resolveDeepSeekCircuit(src)}`);
       results[src] = raw ? JSON.parse(raw) : { state: 'closed', failures: 0 };
     } catch(e) {
       results[src] = { error: e.message };
@@ -2303,6 +2303,11 @@ async function deepseekBalanceHandler(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   const secret = req.headers['x-admin-secret'] || req.headers['x-cron-secret'];
   if (!secret || !safeEqual(secret || '', process.env.CRON_SECRET || '')) return res.status(401).json({ error: 'Unauthorized' });
+
+  if (isRelinkActive()) {
+    return res.status(200).json({ provider: 'relink', is_available: null, balance_infos: [],
+      error: 'Saldo token Relink tersedia di dashboard Relink; bukan saldo API resmi DeepSeek.', checked_at: Date.now() });
+  }
 
   const DEEPSEEK_KEY = getDeepSeekApiKey();
   if (!DEEPSEEK_KEY) {
@@ -5082,7 +5087,7 @@ async function positionReviewHandler(req, res) {
     if (!rawText && DEEPSEEK_KEY && await cb.canCall('ai:deepseek:experimental')) {
       try {
         if (!await allowAiCall('deepseek_experimental')) throw new Error('AI daily budget exceeded');
-        const r = await fetch('https://api.deepseek.com/chat/completions', {
+        const r = await fetch(getDeepSeekUrl(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
           body: JSON.stringify({ model: 'deepseek-v4-flash', messages, max_tokens: 400, temperature: 0, thinking: { type: 'disabled' } }),
@@ -6728,7 +6733,7 @@ async function _callDeepSeekAnalyze(messages, {
   const t0 = Date.now();
   try {
     if (!await allowAiCall(budgetKey)) throw new Error('AI daily budget exceeded');
-    const r = await fetch('https://api.deepseek.com/chat/completions', {
+    const r = await fetch(getDeepSeekUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
       body: JSON.stringify({ model: modelName, messages, max_tokens: maxTokens, temperature: 0, thinking: { type: 'disabled' } }),
@@ -7849,7 +7854,7 @@ async function ohlcvAnalyzeHandler(req, res) {
           // developer-only (test_deepseek=1), jangan makan pagar biaya publik.
           if (!await allowAiCall('deepseek_experimental')) throw new Error('AI daily budget exceeded');
           console.log('ohlcv_analyze: trying DeepSeek v4-flash (API resmi) — diagnostik test_deepseek=1');
-          const r = await fetch('https://api.deepseek.com/chat/completions', {
+          const r = await fetch(getDeepSeekUrl(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
             body: JSON.stringify({ model: 'deepseek-v4-flash', messages, max_tokens: 1500, temperature: 0, thinking: { type: 'disabled' } }),
@@ -7894,7 +7899,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         try {
           if (!await allowAiCall('deepseek_experimental')) throw new Error('AI daily budget exceeded');
           console.log('ohlcv_analyze: trying DeepSeek v4-pro — diagnostik test_deepseek_pro=1');
-          const r = await fetch('https://api.deepseek.com/chat/completions', {
+          const r = await fetch(getDeepSeekUrl(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
             body: JSON.stringify({ model: 'deepseek-v4-pro', messages, max_tokens: 1500, temperature: 0, thinking: { type: 'disabled' } }),
@@ -9277,7 +9282,7 @@ async function _runCriticVerdict(userMsg, {
   if (DEEPSEEK_KEY && await cb.canCall(cbKey)) {
     try {
       if (!await allowAiCall(budgetKey)) throw new Error('AI daily budget exceeded');
-      const r = await fetch('https://api.deepseek.com/chat/completions', {
+      const r = await fetch(getDeepSeekUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
         body: JSON.stringify({ model: 'deepseek-v4-flash', messages, max_tokens: 600, temperature: 0, thinking: { type: 'disabled' } }),
@@ -9478,7 +9483,7 @@ async function preEntryCheckHandler(req, res) {
   if (DEEPSEEK_KEY && await cb.canCall('ai:deepseek')) {
     try {
       if (!await allowAiCall('deepseek')) throw new Error('AI daily budget exceeded');
-      const r = await fetch('https://api.deepseek.com/chat/completions', {
+      const r = await fetch(getDeepSeekUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
         body: JSON.stringify({ model: 'deepseek-v4-flash', messages, max_tokens: 700, temperature: 0, response_format: { type: 'json_object' }, thinking: { type: 'disabled' } }),
@@ -9864,7 +9869,7 @@ async function circuitResetHandler(req, res) {
 
   for (const src of targets) {
     try {
-      await redisCmd('DEL', `circuit:${src}`);
+      await redisCmd('DEL', `circuit:${resolveDeepSeekCircuit(src)}`);
       reset.push(src);
     } catch(e) {
       skipped.push({ src, error: e.message });

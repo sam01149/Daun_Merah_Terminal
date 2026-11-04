@@ -6,7 +6,7 @@ const { getLiveCbRates } = require('./_cb_rates');
 const { isCronCall: _isCronCallReq, isCronDedupFresh } = require('./_cron_dedup');
 const { configureVapid, sendWebPush } = require('./_webpush');
 const { allowAiCall, providerFromUrl } = require('./_ai_guard');
-const { getDeepSeekApiKey } = require('./_deepseek');
+const { getDeepSeekApiKey, getDeepSeekUrl } = require('./_deepseek');
 const { CB_KW, kwTest, isCbHeadline, stripHtml } = require('./_cb_keywords');
 const { isFxMarketOpen } = require('./_market_hours');
 // Session 158: detectCat pindah ke newscat.js (root repo) — single source of truth
@@ -137,7 +137,7 @@ const CB_NVIDIA     = 'ai:nvidia';
 // auto-route ke build terbaru server-side, tidak ada ID bertanggal terpisah di platform
 // resmi (ID "-0731" eksplisit cuma dipakai reseller pihak ketiga: Fireworks/OpenRouter/
 // DeepInfra/HF). Jadi tidak perlu ganti string di sini — sudah otomatis jalan di 0731.
-const DEEPSEEK_URL   = 'https://api.deepseek.com/chat/completions';
+const DEEPSEEK_URL   = getDeepSeekUrl();
 const DEEPSEEK_MODEL = 'deepseek-v4-flash';
 const CB_DEEPSEEK    = 'ai:deepseek';
 

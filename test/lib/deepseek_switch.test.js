@@ -2,7 +2,8 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const { isDeepSeekDisabled, getDeepSeekApiKey } = require('../../api/_deepseek');
+const { isDeepSeekDisabled, getDeepSeekApiKey, getDeepSeekUrl,
+  resolveDeepSeekProvider, resolveDeepSeekCircuit } = require('../../api/_deepseek');
 
 function withEnv(values, fn) {
   const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
@@ -25,6 +26,33 @@ test('DeepSeek nonaktif hanya bila DEEPSEEK_DISABLED=true diset eksplisit', () =
     assert.equal(isDeepSeekDisabled(), true);
     assert.equal(getDeepSeekApiKey(), null);
   });
+});
+
+test('Relink memakai kunci dan host berpasangan, dengan pool dan circuit terisolasi', () => {
+  withEnv({ RELINK_AI: ' relink-test ', DEEPSEEK_API_KEY: 'official-test', DEEPSEEK_DISABLED: 'false' }, () => {
+    assert.equal(getDeepSeekApiKey(), 'relink-test');
+    assert.equal(getDeepSeekUrl(), 'https://api.relink-gateway.biz.id/v1/chat/completions');
+    assert.equal(resolveDeepSeekProvider('deepseek'), 'relink');
+    assert.equal(resolveDeepSeekProvider('deepseek_experimental'), 'relink_experimental');
+    assert.equal(resolveDeepSeekCircuit('ai:deepseek:experimental'), 'ai:relink:experimental');
+    assert.equal(resolveDeepSeekCircuit('ai:gemini:digest'), 'ai:gemini:digest');
+  });
+  withEnv({ RELINK_AI: 'relink-test', DEEPSEEK_DISABLED: 'true' }, () => {
+    assert.equal(getDeepSeekApiKey(), null);
+  });
+  withEnv({ RELINK_AI: ' ', DEEPSEEK_API_KEY: 'official-test', DEEPSEEK_DISABLED: 'false' }, () => {
+    assert.equal(getDeepSeekApiKey(), 'official-test');
+    assert.equal(getDeepSeekUrl(), 'https://api.deepseek.com/chat/completions');
+    assert.equal(resolveDeepSeekProvider('deepseek'), 'deepseek');
+  });
+});
+
+test('seluruh call site generate memakai resolver URL, tidak mengirim key Relink ke host resmi', () => {
+  for (const file of ['api/admin.js', 'api/market-digest.js']) {
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8');
+    assert.doesNotMatch(source, /https:\/\/api\.deepseek\.com\/chat\/completions/);
+    assert.match(source, /getDeepSeekUrl/);
+  }
 });
 
 test('DeepSeek aktif secara default (tanpa env var) dan konsumen memakai sakelar pusat', () => {

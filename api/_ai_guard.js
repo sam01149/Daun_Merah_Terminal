@@ -1,3 +1,4 @@
+const { resolveDeepSeekProvider } = require('./_deepseek');
 // api/_ai_guard.js
 // Runtime guard kuota harian per provider AI (SambaNova/Gemini/DeepSeek dkk).
 // Underscore prefix = Vercel does NOT expose this as a public route.
@@ -16,6 +17,9 @@
 // Limit harian per provider — di bawah kuota resmi free-tier supaya ada headroom
 // untuk retry/fallback. Override per provider via env AI_DAILY_LIMIT_{PROVIDER}.
 const DEFAULT_LIMITS = {
+  // Relink: pagar jumlah request, bukan jaminan batas token (multiplier per model).
+  relink: 50,
+  relink_experimental: 35,
   // SambaNova (akun 1 & 2) diputus kontrak total 2026-08-12 — counter sambanova_main/
   // sambanova_c1 dihapus, sudah tidak dipanggil call site manapun (daun_merah_vendor.md).
   // Plan N (session 182) — diagnostik ?test_mistral=1/?test_nvidia=1,
@@ -116,6 +120,7 @@ async function redisCmd(...args) {
 // Provider dari URL endpoint — dipakai call site yang menerima URL dinamis.
 function providerFromUrl(url) {
   if (!url) return null;
+  if (url.includes('api.relink-gateway.biz.id/')) return 'relink';
   if (url.includes('deepseek.com'))   return 'deepseek';
   return null;
 }
@@ -126,6 +131,7 @@ function providerFromUrl(url) {
  */
 async function allowAiCall(provider) {
   if (!provider) return true; // provider tak dikenal → jangan blokir
+  provider = resolveDeepSeekProvider(provider);
   const day = new Date().toISOString().slice(0, 10);
   const key = `ai_budget:${provider}:${day}`;
   const count = await redisCmd('INCR', key);
