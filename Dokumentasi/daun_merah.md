@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-04 (Session 449 — Provider DeepSeek pindah ke Relink Gateway)
+> **Last updated:** 2026-11-04 (Session 450 — Kembali ke API resmi DeepSeek setelah top-up)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 450 (2026-11-04) — Kembali ke API resmi DeepSeek setelah top-up
+
+**Masalah dan solusi.** User meminta menghentikan Relink dan kembali ke API resmi sesudah top-up. Saldo resmi diperiksa langsung: HTTP 200, `is_available=true`, USD 1,99 topped-up. `RELINK_AI` dihapus dari konfigurasi Vercel Production/Preview; lokal dipindah ke `RELINK_AI_INACTIVE` agar kunci tersimpan tetapi tidak dibaca runtime. Resolver otomatis kembali ke pasangan URL/kunci resmi tanpa mengubah model, prompt, timeout, fallback, maupun limit. Pool/circuit aktif kembali `deepseek` / `deepseek_experimental`; pool Relink tidak lagi digunakan. Tidak mereset counter anggaran harian.
+
+**Dokumentasi.** Referensi AI dan inventaris vendor diperbarui in place. Item tertunda S449 dihapus dari progress karena integrasi Relink dibatalkan user, bukan karena timeout sudah diperbaiki. Riwayat kegagalan tetap di S449. Verifikasi satu analisa penuh dijalankan setelah deploy melalui push main; hasil dicatat pada entri ini.
 
 ## Changelog Session 449 (2026-11-04) — Provider DeepSeek pindah ke Relink Gateway
 
