@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-04 (Session 450 — Kembali ke API resmi DeepSeek setelah top-up)
+> **Last updated:** 2026-11-06 (Session 451 — Diagnosis Pandangan ekonom kosong)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 451 (2026-11-06) — Diagnosis Pandangan ekonom kosong
+
+**Temuan produksi.** Endpoint `smart_bias` diperiksa 6 November: `bank_source.report.current=null`, seluruh delapan currency `banks.state=insufficient`, rapor n=0. Tiga run `marc-weekly.yml` pada 1–2 November (`41310051000`, `41353819259`, `41396965461`) semuanya gagal HTTP 502 dengan `marc_week_ahead_not_found`. Kegagalan terjadi sebelum ekstraksi AI, sehingga bukan bukti masalah saldo/model atau syarat n≥30.
+
+**Akar masalah.** URL persis produksi `https://feeds.feedburner.com/marctomarket/ujfs` saat diperiksa hanya memuat dua artikel harian; menambahkan `max-results=20` tetap menghasilkan dua artikel. Parser produksi tidak menemukan judul `Week Ahead`/`Next Week`. Feed asli `https://www.marctomarket.com/feeds/posts/default?alt=atom&max-results=20` mengembalikan 25 artikel; outlook mingguan terakhir yang diterima parser terbit 24 Oktober dengan window 26–31 Oktober UTC, sudah kedaluwarsa. Edisi akhir pekan 31 Oktober berjudul [November 2026 Monthly](https://www.marctomarket.com/2026/10/november-2026-monthly.html), yang sengaja tidak diterima regex judul mingguan saat ini. Memperluas feed saja belum menghasilkan outlook mingguan aktif untuk minggu 2–6 November.
+
+**Mekanisme dan batas.** `summarizeTracker()` hanya mengaktifkan snapshot berisi klaim dengan window belum berakhir; `currentStances()` juga membuang klaim conditional. Syarat n≥30/`terbukti_baik` hanya membatasi kontribusi ke Bias, bukan penayangan arah. Detail UI menampilkan pesan generik tidak ada outlook tervalidasi sehingga kegagalan pengambilan tidak terlihat oleh pengguna. S420/S421 membuktikan ekstraksi pernah berhasil 26 Oktober tetapi snapshot awal terlambat dan tidak ikut rapor; riwayat itu tidak membuktikan cron November sehat.
+
+**Arah perbaikan, belum diimplementasikan.** Pengambilan perlu fallback ke feed asli dengan kedalaman memadai ketika FeedBurner tidak membawa outlook; penanganan edisi Monthly memerlukan keputusan horizon dan bukti arah eksplisit, bukan otomatis diperlakukan sebagai forecast satu minggu. Pertanyaan sesi ini diagnosis; kode runtime, UI, aturan sampel, Redis, dan model tidak diubah. Tidak memanggil AI berbayar. Bukti mentah feed disimpan lokal di `.cache/marc-feed-audit.xml` dan `.cache/marc-native-audit.xml` (gitignored). Verifikasi membaca feed aktual melalui parser produksi dan log ketiga cron; `npm.cmd test` lulus 1.547/1.547.
 
 ## Changelog Session 450 (2026-11-04) — Kembali ke API resmi DeepSeek setelah top-up
 
