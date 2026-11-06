@@ -71,16 +71,18 @@ function referencePeriod(event, spec, releasedMs) {
   return 'released-' + release.toISOString().slice(0,10);
 }
 
-function normalizeMacroRelease(event, { observedAt = new Date().toISOString(), vintageKind = 'observed' } = {}) {
+// An economic observation does not need a consensus. The production surprise
+// wrapper below still requires both numbers; never substitute zero for missing.
+function normalizeMacroObservation(event, { observedAt = new Date().toISOString(), vintageKind = 'observed', allowRevisions=false } = {}) {
   const currency = String(event?.currency || '').toUpperCase();
   const title = String(event?.event || event?.title || '').trim();
-  const spec = classifyMacroRelease(title, currency, event);
+  const spec = classifyMacroRelease(title, currency, event, {allowRevisions});
   if (!spec) return null;
   const country = String(event.country || event.source_country || '').toUpperCase();
   if (country && country !== CURRENCY_COUNTRY[currency]) return null;
   const actual = finiteNumber(event.actual_raw ?? event.actualRaw);
   const forecast = finiteNumber(event.forecast_raw ?? event.forecastRaw);
-  if (actual == null || forecast == null) return null;
+  if (actual == null) return null;
   const time_ms = releaseTimeMs(event);
   const observedMs = Date.parse(observedAt);
   if (time_ms == null || !Number.isFinite(observedMs) || time_ms > observedMs) return null;
@@ -97,12 +99,17 @@ function normalizeMacroRelease(event, { observedAt = new Date().toISOString(), v
     source_url:event.url || event.source_url || null,
     observed_at:new Date(observedMs).toISOString(),
     vintage_kind:vintageKind === 'historical_snapshot' ? 'historical_snapshot' : 'observed',
-    release_stage:/\bflash\b/i.test(title) ? 'flash' : /\b(?:prel|preliminary|prelim)\b/i.test(title) ? 'preliminary' : /\b(?:adv|advance)\b/i.test(title) ? 'advance' : 'unspecified',
+    release_stage:/\b(final|revised|revision|2nd|second|3rd|third)\b/i.test(title) ? 'later_estimate' : /\bflash\b/i.test(title) ? 'flash' : /\b(?:prel|preliminary|prelim)\b/i.test(title) ? 'preliminary' : /\b(?:adv|advance)\b/i.test(title) ? 'advance' : 'unspecified',
   };
   row.content_hash = crypto.createHash('sha256').update(JSON.stringify([
     currency, spec.series, period, time_ms, actual, forecast, row.previous,
   ])).digest('hex').slice(0,24);
   return row;
+}
+
+function normalizeMacroRelease(event, options) {
+  const row = normalizeMacroObservation(event, {...options,allowRevisions:false});
+  return row && row.forecast != null ? row : null;
 }
 
 function normalizeMacroReleases(events, options) {
@@ -427,6 +434,7 @@ module.exports = {
   MIN_PRIOR_ERRORS,
   classifyMacroRelease,
   normalizeMacroRelease,
+  normalizeMacroObservation,
   normalizeMacroReleases,
   standardizeMacroHistory,
   buildMacroPillarScores,

@@ -24,6 +24,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07] Scope final Dashboard: bias kualitatif Prime, bukan model probabilitas
+
+User secara eksplisit memilih **“Ya, fokus deskriptif”** dan meminta kesesuaian tabel Bias Prime Academy. Kesimpulan riset kuantitatif di bawah menjadi rujukan kualitas/arti data, bukan mandat membangun forecasting, ML, target harga, calibrated win-rate atau banyak skor tambahan. Academy tetap memberikan pandangan arah awal pekan, sehingga istilah yang tepat ialah ringkasan dukungan fundamental/bias kualitatif dengan alasan dan ketidakpastian; bukan hanya deskripsi masa lalu dan bukan janji harga berikutnya. Pertumbuhan/inflasi/jobs/CB adalah core, bank/positioning pendukung; one-off surprise menjadi konteks. Pemetaan otomatis lokal tidak boleh disebut formula resmi karena bobot numerik Academy tidak dipublikasikan. Implementasi calon sederhana, perbandingan makna dan temuan kelayakan sumber diselesaikan di changelog S454; belum diintegrasikan. Uji kemampuan prediksi boleh menjadi penelitian terpisah kelak jika diminta, bukan syarat untuk menampilkan fakta kondisi saat ini secara jujur.
+
 ### [2026-11-06] Prinsip desain Dashboard: sederhana, tetapi berkualitas
 
 **Arahan eksplisit user:** “keep it simple but quality”. Untuk pembenahan Dashboard setelah S453, pilih sedikit indikator yang mewakili konsep berbeda dan dapat ditelusuri sumber, tanggal serta alasannya. Hindari bukti berkorelasi dihitung berulang. Setiap transformasi harus punya tujuan ekonomi/statistik yang jelas; tambahan indikator, bobot atau model kompleks hanya layak dipertahankan bila memberi manfaat yang stabil dibanding versi sederhana pada evaluasi terpisah secara waktu. Data kurang, bukti bertentangan atau sinyal lemah boleh menghasilkan belum jelas, bukan dipaksa menjadi panah. Sederhana tidak berarti melewati pemeriksaan kualitas data, dan tidak menjamin bebas noise. Arahan ini menjadi constraint pemilihan metode dari riset literatur di bawah; belum menetapkan bobot/threshold atau mengubah runtime.

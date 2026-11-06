@@ -398,6 +398,8 @@ Pencarian metadata dilakukan langsung melalui Scopus API proyek: 145 hasil Trend
 
 ## 20. Skor fundamental kuantitatif dan prediksi FX — akademik, bank, pengelola investasi (2026-11-06)
 
+**Batas scope sejak keputusan user S454 (7 Nov):** rujukan bagian ini membantu definisi/validasi indikator; Dashboard diarahkan ke bias fundamental kualitatif ala Academy, bukan implementasi model forecasting/probabilitas. Untuk makna data kondisi, sumber primer tambahan: [S&P Global PMI FAQ](https://www.spglobal.com/market-intelligence/en/solutions/products/resources/pmi-faq) menjelaskan indeks difusi dan batas 50; [BLS, perbedaan PPI personal consumption dan CPI](https://www.bls.gov/ppi/methodology-reports/comparing-the-producer-price-index-for-personal-consumption-with-the-us-all-items-cpi-for-all-urban-consumers.htm) menjelaskan perbedaan cakupan/konsep sehingga arah keduanya tidak selalu sama. Keduanya diperiksa 7 Nov. Sumber ini membenarkan pemisahan arti, bukan mengesahkan bobot/aturan bias tertentu.
+
 | Sumber primer | Tipe | Metode/temuan dan batas penggunaan |
 |---|---|---|
 | [Colacito, Riddiough & Sarno (2020), “Business cycles and currency returns”, Journal of Financial Economics 137(3), 659–678, DOI 10.1016/j.jfineco.2020.04.005; manuskrip repositori Cambridge](https://api.repository.cam.ac.uk/server/api/core/bitstreams/a3531904-83e7-47ef-aac8-560c1e4b798c/content) | Method/Application | Posisi siklus ekonomi relatif terhadap AS dari industrial production/output gap digunakan untuk portfolio FX bulanan. Bagian real-time memakai vintage dan estimasi rekursif; hasil long–short setelah biaya dalam sampelnya tetap positif. Bukan GDP actual-vs-consensus, bukan validasi delapan panah weekly. Metadata DOI dikonfirmasi Scopus; teks institusi dibaca. |

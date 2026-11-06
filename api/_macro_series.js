@@ -78,17 +78,18 @@ define('ppi_input', 'inflation', 'producer_prices', ['ppi input'], { periods:['m
 define('ppi_output', 'inflation', 'producer_prices', ['ppi output'], { periods:['mom','yoy','qoq'] });
 define('ppi_ex_food_energy_trade', 'inflation', 'producer_prices', ['ppi ex food energy and trade services','ppi ex food energy and trade'], { countries:['US'], periods:['mom','yoy'] });
 
-function classifyMacroRelease(title, currency, metadata = {}) {
+function classifyMacroRelease(title, currency, metadata = {}, { allowRevisions=false } = {}) {
   const cur = String(currency || '').toUpperCase();
   let text = String(title || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-  if (!CURRENCY_COUNTRY[cur] || !text || REVISED.test(text) || (cur === 'EUR' && NATIONAL_EUR.test(text))) return null;
+  if (!CURRENCY_COUNTRY[cur] || !text || (!allowRevisions && REVISED.test(text)) || (cur === 'EUR' && NATIONAL_EUR.test(text))) return null;
   text = text.replace(/\b3mo\/yr\b/g, 'yoy').replace(/\by\/y\b|year[- ]on[- ]year/g, 'yoy')
     .replace(/\bm\/m\b|month[- ]on[- ]month/g, 'mom').replace(/\bq\/q\b/g, 'qoq')
-    .replace(/\bqq\b/g, 'qoq').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+    .replace(/\bqq\b/g, 'qoq').replace(/\bs\s*&\s*p\b/g,'s p').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
   const period = text.match(/\b(mom|yoy|qoq|annualized)\b/)?.[1];
   const quarterly = /\bquarterly\b/.test(text);
   const sa = /\bs a\b|\bseasonally adjusted\b/.test(text)
     || /\bSA\b/.test(String(metadata.source_indicator || metadata.indicator || ''));
+  if (allowRevisions) text=text.replace(/\b(?:2nd|second|3rd|third) (?:est|estimate)\b|\b(final|revised|revision|2nd|second|3rd|third)\b/g,' ');
   text = text.replace(/\b(mom|yoy|qoq|annualized|quarterly|prel|prelim|preliminary|flash|adv|advance)\b/g, ' ')
     .replace(/\b1st (?:est|estimate)\b|\bfirst estimate\b|\bs a\b|\bseasonally adjusted\b/g, ' ')
     .replace(/\s+/g, ' ').trim();
