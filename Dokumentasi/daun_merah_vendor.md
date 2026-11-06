@@ -129,6 +129,8 @@ Semua workflow di atas autentikasi ke `api/*.js` lewat header `x-cron-secret` â€
 
 ## 6. Berita & RSS
 
+**Kandidat panel riset bank (evaluasi 2026-11-06; BELUM terintegrasi sebagai konsensus Dashboard).** [ING FX](https://think.ing.com/market/fx/), [MUFG FX](https://www.mufgresearch.com/fx/), dan [ABN AMRO Group Economics](https://www.abnamro.com/research/en/our-research/fx-weekly-new-macro-view-new-fx-outlook) mempunyai halaman riset publik yang berhasil dibaca. ING RSS sudah terdaftar pada feed Artikel; collector stance multi-bank belum aktif. Coverage currency dan horizon, ketersediaan full text berkelanjutan, serta hak otomatisasi/cache/display belum dinyatakan lolos. Monthly/target kuartalan dan publikasi berjudul Weekly yang sebenarnya membahas 2027 tidak otomatis memenuhi horizon week-ahead. Alasan/metode kandidat panel dijelaskan di riset 6 November; keputusan produksi tetap Marc satu sumber.
+
 | Vendor | Fungsi | Tier |
 |---|---|---|
 | **FinancialJuice** (`financialjuice.com`, `features.financialjuice.com`) | Sumber RSS berita utama untuk headline real-time. **Keputusan 2026-10-26:** kategori Features `US Week Ahead` sudah dievaluasi lalu **DITOLAK untuk fungsi weekly bias** atas keputusan user; sumber weekly analis hanya Marc to Market. Penolakan ini tidak mencabut RSS FinancialJuice untuk berita real-time maupun evaluasi FJElite/bank yang merupakan fungsi berbeda | Free, RSS/halaman publik; tanpa env var |
