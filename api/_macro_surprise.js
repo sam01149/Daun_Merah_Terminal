@@ -5,8 +5,8 @@
 // standardized surprise kontinu. UI hanya menerima arah yang lolos syarat
 // coverage serta sensitivity check; label presentasi tetap menjadi urusan klien.
 
-const MACRO_HISTORY_INDEX_KEY = 'macro_surprise_history:v1';
-const MACRO_HISTORY_DATA_KEY = 'macro_surprise_events:v1';
+const MACRO_HISTORY_INDEX_KEY = 'macro_surprise_history:v2';
+const MACRO_HISTORY_DATA_KEY = 'macro_surprise_events:v2';
 const MACRO_HISTORY_YEARS = 5;
 const MIN_PRIOR_ERRORS = 12;
 const SCORE_LOOKBACK_DAYS = 180;
@@ -14,55 +14,14 @@ const DECAY_HALF_LIFE_DAYS = 45;
 const MAX_ABS_SURPRISE = 3;
 const MAJOR_CURRENCIES = new Set(['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD']);
 
-// Kalender EUR juga memuat rilis negara anggota. Tabel ini menilai EUR sebagai
-// satu currency area, jadi indikator nasional tidak boleh menyamar sebagai data
-// Euro Area. Proxy nasional dapat diteliti terpisah; ia tidak masuk fondasi awal.
-const EUR_NATIONAL_RX = /\b(german(?:y)?|france|french|italy|italian|spain|spanish|belgium|belgian|netherlands|dutch|austria|austrian|ireland|irish|portugal|portuguese|greece|greek)\b/i;
-const REVISION_STAGE_RX = /\b(final|revised|revision|2nd|second estimate|3rd|third estimate)\b/i;
-
-const RULES = [
-  // Inflation: order from specific to broad so core never falls into headline.
-  { re: /\bcore\b.*\b(pce|personal consumption expenditure)/i, pillar: 'inflation', family: 'core_consumer_prices', series: 'core_pce' },
-  { re: /\b(pce|personal consumption expenditure).*(price|inflation)/i, pillar: 'inflation', family: 'headline_consumer_prices', series: 'pce_prices' },
-  { re: /(?:\bcore\b.*\b(?:cpi|hicp|consumer price)|\b(?:cpi|hicp|consumer price).*\bcore\b)/i, pillar: 'inflation', family: 'core_consumer_prices', series: 'core_consumer_prices' },
-  { re: /\b(cpi|hicp|consumer price(?: index)?|inflation rate)\b/i, pillar: 'inflation', family: 'headline_consumer_prices', series: 'consumer_prices' },
-  { re: /(?:\bcore\b.*\b(?:ppi|producer price)|\b(?:ppi|producer price).*\bcore\b)/i, pillar: 'inflation', family: 'producer_prices', series: 'core_producer_prices' },
-  { re: /\b(ppi|producer price(?: index)?)\b/i, pillar: 'inflation', family: 'producer_prices', series: 'producer_prices' },
-
-  // Growth/activity. Related releases share a family so they cannot become
-  // independent votes merely because a calendar publishes several variants.
-  { re: /\bcomposite pmi\b/i, pillar: 'growth', family: 'activity_survey', series: 'composite_pmi' },
-  { re: /\b(?:services|service|non.manufacturing) pmi\b/i, pillar: 'growth', family: 'activity_survey', series: 'services_pmi' },
-  { re: /\bmanufacturing pmi\b/i, pillar: 'growth', family: 'activity_survey', series: 'manufacturing_pmi' },
-  { re: /\b(?:gross domestic product|gdp)\b/i, pillar: 'growth', family: 'output', series: 'gdp' },
-  { re: /\b(?:industrial production|industrial output)\b/i, pillar: 'growth', family: 'output', series: 'industrial_production' },
-  { re: /\bretail sales\b/i, pillar: 'growth', family: 'consumption', series: 'retail_sales' },
-  { re: /\bhousehold spending\b/i, pillar: 'growth', family: 'consumption', series: 'household_spending' },
-  { re: /\b(?:non.?farm payrolls?|nfp)\b/i, pillar: 'growth', family: 'labour', series: 'payrolls' },
-  { re: /\bemployment change\b/i, pillar: 'growth', family: 'labour', series: 'employment_change' },
-  { re: /\b(wage growth|average hourly earnings|average weekly earnings|earnings growth)\b/i, pillar: 'growth', family: 'labour', series: 'wages' },
-  { re: /\bunemployment rate\b/i, pillar: 'growth', family: 'labour', series: 'unemployment_rate', inverse: true },
-  { re: /\b(?:initial )?jobless claims?\b/i, pillar: 'growth', family: 'labour', series: 'jobless_claims', inverse: true, cadence: 'weekly' },
-  { re: /\bclaimant count(?: change)?\b/i, pillar: 'growth', family: 'labour', series: 'claimant_count', inverse: true },
-  { re: /\bmichigan.*\bconsumer sentiment\b/i, pillar: 'growth', family: 'demand_survey', series: 'michigan_consumer_sentiment' },
-  { re: /\bconsumer (?:confidence|sentiment)\b/i, pillar: 'growth', family: 'demand_survey', series: 'consumer_confidence' },
-  { re: /\bifo business/i, pillar: 'growth', family: 'business_survey', series: 'ifo_business' },
-  { re: /\bzew economic sentiment/i, pillar: 'growth', family: 'business_survey', series: 'zew_sentiment' },
-  { re: /\bkof economic barometer/i, pillar: 'growth', family: 'business_survey', series: 'kof_barometer' },
-  { re: /\btankan\b/i, pillar: 'growth', family: 'business_survey', series: 'tankan' },
-  { re: /\bbusiness (?:confidence|climate)\b/i, pillar: 'growth', family: 'business_survey', series: 'business_confidence' },
-];
+const { classifyMacroRelease, CURRENCY_COUNTRY } = require('./_macro_series');
+const crypto = require('node:crypto');
+const MACRO_HISTORY_VINTAGES_KEY = 'macro_surprise_vintages:v2';
+const MACRO_HISTORY_MANIFEST_KEY = 'macro_surprise_manifest:v2';
+const MAX_AGE_DAYS = { weekly:21, monthly:75, quarterly:150 };
 
 function finiteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function periodKind(title) {
-  const t = String(title || '').toLowerCase();
-  if (/\b(qoq|q\/q|quarter(?:ly)?)\b/.test(t)) return 'qoq';
-  if (/\b(yoy|y\/y|year.on.year|annual)\b/.test(t)) return 'yoy';
-  if (/\b(mom|m\/m|month.on.month|monthly)\b/.test(t)) return 'mom';
-  return 'level';
 }
 
 function releaseTimeMs(event) {
@@ -79,67 +38,84 @@ function releaseTimeMs(event) {
   return Number.isFinite(ms) ? ms : null;
 }
 
-function classifyMacroRelease(title, currency) {
-  const cur = String(currency || '').toUpperCase();
-  const text = String(title || '').trim();
-  if (!MAJOR_CURRENCIES.has(cur) || !text) return null;
-  if (cur === 'EUR' && EUR_NATIONAL_RX.test(text)) return null;
-  // First-print surprises carry the new information. Later estimates/revisions
-  // of the same reference period are not independent evidence and would both
-  // duplicate the family and contaminate its forecast-error distribution.
-  if (REVISION_STAGE_RX.test(text)) return null;
-  const rule = RULES.find(item => item.re.test(text));
-  if (!rule) return null;
-  const period = periodKind(text);
-  const cadence = rule.cadence || (period === 'qoq' ? 'quarterly' : 'monthly');
-  return {
-    pillar: rule.pillar,
-    family: rule.family,
-    series: `${rule.series}:${period}`,
-    inverse: !!rule.inverse,
-    cadence,
-  };
+function referencePeriod(event, spec, releasedMs) {
+  const ref = event.reference_date || event.referenceDate;
+  const refMs = ref ? Date.parse(ref) : NaN;
+  if (Number.isFinite(refMs) && refMs <= releasedMs) {
+    const date = new Date(refMs);
+    if (spec.cadence === 'weekly') return date.toISOString().slice(0, 10);
+    if (spec.cadence === 'quarterly') return date.getUTCFullYear() + '-Q' + (Math.floor(date.getUTCMonth()/3)+1);
+    return date.toISOString().slice(0, 7);
+  }
+  const text = String(event.reference_period || event.referencePeriod || event.period || '').trim();
+  const release = new Date(releasedMs);
+  const yearInText = text.match(/\b(20\d{2})\b/);
+  let year = yearInText ? Number(yearInText[1]) : release.getUTCFullYear();
+  const quarter = text.match(/\bQ([1-4])\b/i);
+  if (quarter) {
+    if (!yearInText && Number(quarter[1]) > Math.floor(release.getUTCMonth()/3)+1) year--;
+    return year + '-Q' + quarter[1];
+  }
+  const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const monthMatch = text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i);
+  if (monthMatch) {
+    const month = monthNames.indexOf(monthMatch[1].toLowerCase());
+    if (!yearInText && month > release.getUTCMonth()) year--;
+    const ym = year + '-' + String(month+1).padStart(2,'0');
+    if (spec.cadence !== 'weekly') return ym;
+    const dayMatch = text.slice(monthMatch.index + monthMatch[0].length).match(/^[.\s/,-]*(\d{1,2})(?!\d)/);
+    if (dayMatch) return ym + '-' + dayMatch[1].padStart(2,'0');
+  }
+  // A known release date is a safe fallback identity when reference metadata is
+  // absent. Never manufacture an economic reference month from the release month.
+  return 'released-' + release.toISOString().slice(0,10);
 }
 
-function normalizeMacroRelease(event) {
+function normalizeMacroRelease(event, { observedAt = new Date().toISOString(), vintageKind = 'observed' } = {}) {
   const currency = String(event?.currency || '').toUpperCase();
   const title = String(event?.event || event?.title || '').trim();
-  const spec = classifyMacroRelease(title, currency);
+  const spec = classifyMacroRelease(title, currency, event);
   if (!spec) return null;
+  const country = String(event.country || event.source_country || '').toUpperCase();
+  if (country && country !== CURRENCY_COUNTRY[currency]) return null;
   const actual = finiteNumber(event.actual_raw ?? event.actualRaw);
   const forecast = finiteNumber(event.forecast_raw ?? event.forecastRaw);
   if (actual == null || forecast == null) return null;
   const time_ms = releaseTimeMs(event);
-  if (time_ms == null) return null;
-  const date = new Date(time_ms).toISOString().slice(0, 10);
-  const period = typeof event.period === 'string' && event.period.trim() ? event.period.trim() : null;
-  // Calendar `period` often contains only "Sep" or "Q3" without a year. Prefix
-  // release year so five different September releases do not overwrite each
-  // other in Redis. Direct/raw and cached representations still converge.
-  const periodId = period ? `${date.slice(0, 4)}-${period.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : date;
-  const id = `${currency}|${spec.series}|${periodId}`;
-  return {
-    id,
-    currency,
-    title,
-    date,
-    time_ms,
-    period,
-    actual,
-    forecast,
-    previous: finiteNumber(event.previous_raw ?? event.previousRaw),
-    impact: event.impact || null,
-    ...spec,
+  const observedMs = Date.parse(observedAt);
+  if (time_ms == null || !Number.isFinite(observedMs) || time_ms > observedMs) return null;
+  const sourceUnit = String(event.unit || event.source_unit || '').trim();
+  if (sourceUnit && ((sourceUnit === '%' && spec.unit !== 'percent') || (sourceUnit !== '%' && spec.unit === 'percent'))) return null;
+  const date = new Date(time_ms).toISOString().slice(0,10);
+  const period = referencePeriod(event, spec, time_ms);
+  const id = currency + '|' + spec.series + '|' + period;
+  const row = {
+    schema_version:2, id, currency, title, date, time_ms, period, actual, forecast,
+    previous:finiteNumber(event.previous_raw ?? event.previousRaw), impact:event.impact || null,
+    ...spec, source:'tradingview', source_event_id:String(event.source_event_id || event.id || '') || null,
+    source_country:country || CURRENCY_COUNTRY[currency], source_unit:sourceUnit || null,
+    source_url:event.url || event.source_url || null,
+    observed_at:new Date(observedMs).toISOString(),
+    vintage_kind:vintageKind === 'historical_snapshot' ? 'historical_snapshot' : 'observed',
+    release_stage:/\bflash\b/i.test(title) ? 'flash' : /\b(?:prel|preliminary|prelim)\b/i.test(title) ? 'preliminary' : /\b(?:adv|advance)\b/i.test(title) ? 'advance' : 'unspecified',
   };
+  row.content_hash = crypto.createHash('sha256').update(JSON.stringify([
+    currency, spec.series, period, time_ms, actual, forecast, row.previous,
+  ])).digest('hex').slice(0,24);
+  return row;
 }
 
-function normalizeMacroReleases(events) {
-  const byId = new Map();
-  for (const event of Array.isArray(events) ? events : []) {
-    const row = normalizeMacroRelease(event);
-    if (row) byId.set(row.id, row);
+function normalizeMacroReleases(events, options) {
+  const rows = (Array.isArray(events) ? events : []).map(event => normalizeMacroRelease(event, options))
+    .filter(Boolean).sort((a,b) => a.time_ms-b.time_ms || a.title.localeCompare(b.title));
+  const byId = new Map(), conflicts = new Set();
+  for (const row of rows) {
+    const prior = byId.get(row.id);
+    if (!prior) byId.set(row.id,row);
+    else if (prior.time_ms === row.time_ms && (prior.actual !== row.actual || prior.forecast !== row.forecast)) conflicts.add(row.id);
   }
-  return [...byId.values()].sort((a, b) => a.time_ms - b.time_ms);
+  // Same-time contradictory representations are quarantined, not last-writer wins.
+  return [...byId.values()].filter(row => !conflicts.has(row.id));
 }
 
 function sampleStd(values) {
@@ -210,7 +186,7 @@ function buildMacroPillarScores(releases, {
 } = {}) {
   const standardized = standardizeMacroHistory(releases, { minPriorErrors });
   const cutoff = asOfMs - lookbackDays * 86400000;
-  const usable = standardized.filter(row => row.time_ms <= asOfMs && row.time_ms >= cutoff && Number.isFinite(row.standardized_surprise));
+  const usable = standardized.filter(row => row.time_ms <= asOfMs && row.time_ms >= cutoff);
   const byCurrency = {};
 
   for (const currency of MAJOR_CURRENCIES) {
@@ -224,19 +200,23 @@ function buildMacroPillarScores(releases, {
         seriesMap.get(row.series).push(row);
       }
       const seriesScores = [];
+      let staleSeries = 0;
       for (const [series, rows] of seriesMap) {
+        const latest = rows.reduce((best, row) => !best || row.time_ms > best.time_ms ? row : best, null);
+        const maxAge = MAX_AGE_DAYS[latest.cadence] || MAX_AGE_DAYS.monthly;
+        if (asOfMs - latest.time_ms > maxAge * 86400000) { staleSeries++; continue; }
+        if (!Number.isFinite(latest.standardized_surprise)) continue;
         const values = rows.map(row => ({
           value: row.standardized_surprise,
           weight: 2 ** (-Math.max(0, asOfMs - row.time_ms) / (halfLifeDays * 86400000)),
         }));
         const score = weightedMean(values);
         if (score != null) {
-          const latest = rows.reduce((best, row) => !best || row.time_ms > best.time_ms ? row : best, null);
           seriesScores.push({
             series,
             family: rows[0].family,
             score,
-            observations: rows.length,
+            observations: rows.filter(row => Number.isFinite(row.standardized_surprise)).length,
             latest_at: latest.time_ms,
             latest: {
               indicator: latest.title,
@@ -245,6 +225,12 @@ function buildMacroPillarScores(releases, {
               forecast: latest.forecast,
               standardized_surprise: latest.standardized_surprise,
               prior_n: latest.prior_n,
+              age_days: Math.max(0, (asOfMs-latest.time_ms)/86400000),
+              cadence: latest.cadence || null,
+              observed_at: latest.observed_at || null,
+              vintage_kind: latest.vintage_kind || null,
+              source_event_id: latest.source_event_id || null,
+              source_url: latest.source_url || null,
             },
           });
         }
@@ -285,6 +271,8 @@ function buildMacroPillarScores(releases, {
         series_count: seriesScores.length,
         families,
         buckets,
+        stale_series_count: staleSeries,
+        freshness: families.length ? 'fresh' : staleSeries ? 'stale' : 'insufficient',
       };
     }
     byCurrency[currency] = pillars;
@@ -376,41 +364,64 @@ function buildCftcFoundation(currency, cotPayload, nowMs = Date.now()) {
   };
 }
 
-async function persistMacroReleases(events, redisCmd) {
-  if (typeof redisCmd !== 'function') return { stored: 0 };
-  const rows = normalizeMacroReleases(events);
-  if (!rows.length) return { stored: 0 };
-  const chunkSize = 80;
-  for (let start = 0; start < rows.length; start += chunkSize) {
-    const chunk = rows.slice(start, start + chunkSize);
-    const hset = ['HSET', MACRO_HISTORY_DATA_KEY];
-    const zadd = ['ZADD', MACRO_HISTORY_INDEX_KEY];
-    for (const row of chunk) {
-      hset.push(row.id, JSON.stringify(row));
-      zadd.push(String(row.time_ms), row.id);
-    }
-    await redisCmd(...hset);
-    await redisCmd(...zadd);
+// Atomic first-seen payload + index; revisions are append-only by content hash.
+// Historical imports are explicitly labelled, never claimed to be true release vintages.
+const PERSIST_SCRIPT = `
+local inserted = 0
+for i = 1, #ARGV, 4 do
+  if redis.call('HSETNX', KEYS[2], ARGV[i], ARGV[i+1]) == 1 then
+    redis.call('ZADD', KEYS[1], ARGV[i+2], ARGV[i])
+    inserted = inserted + 1
+  end
+  redis.call('HSETNX', KEYS[3], ARGV[i+3], ARGV[i+1])
+end
+return inserted
+`;
+
+async function persistMacroReleases(events, redisCmd, options = {}) {
+  if (typeof redisCmd !== 'function') return { stored:0, inserted:0 };
+  // Old display caches lack source metadata and may misidentify cadence/SA.
+  // Wait for a fresh calendar payload rather than importing ambiguous v1 rows.
+  const sourcedEvents = (Array.isArray(events) ? events : []).filter(event =>
+    (event.source_event_id || event.id) && (event.source_country || event.country));
+  const rows = normalizeMacroReleases(sourcedEvents, options);
+  let inserted = 0;
+  for (let start=0; start<rows.length; start+=80) {
+    const args = [];
+    for (const row of rows.slice(start,start+80)) args.push(row.id, JSON.stringify(row), String(row.time_ms), row.id + ':' + row.content_hash);
+    inserted += Number(await redisCmd('EVAL',PERSIST_SCRIPT,3,MACRO_HISTORY_INDEX_KEY,MACRO_HISTORY_DATA_KEY,MACRO_HISTORY_VINTAGES_KEY,...args)) || 0;
   }
-  return { stored: rows.length, first_at: rows[0].time_ms, last_at: rows[rows.length - 1].time_ms };
+  return { stored:rows.length, inserted, first_at:rows[0]?.time_ms || null, last_at:rows.at(-1)?.time_ms || null };
 }
 
-async function loadMacroReleases(redisCmd, { fromMs = Date.now() - MACRO_HISTORY_YEARS * 365 * 86400000, toMs = Date.now() } = {}) {
-  const ids = await redisCmd('ZRANGEBYSCORE', MACRO_HISTORY_INDEX_KEY, String(fromMs), String(toMs));
+async function loadMacroReleases(redisCmd, { fromMs = Date.now() - MACRO_HISTORY_YEARS*365*86400000, toMs = Date.now(), requireManifest = true } = {}) {
+  if (requireManifest) {
+    const raw = await redisCmd('GET',MACRO_HISTORY_MANIFEST_KEY);
+    let manifest;
+    try { manifest = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { return []; }
+    if (manifest?.schema_version !== 2 || manifest?.status !== 'ready' || !manifest.content_digest || manifest.source !== 'tradingview') return [];
+  }
+  const ids = await redisCmd('ZRANGEBYSCORE',MACRO_HISTORY_INDEX_KEY,String(fromMs),String(toMs));
   if (!Array.isArray(ids) || !ids.length) return [];
   const rows = [];
-  for (let start = 0; start < ids.length; start += 200) {
-    const chunk = ids.slice(start, start + 200);
-    const raw = await redisCmd('HMGET', MACRO_HISTORY_DATA_KEY, ...chunk);
+  for (let start=0; start<ids.length; start+=200) {
+    const chunk = ids.slice(start,start+200);
+    const raw = await redisCmd('HMGET',MACRO_HISTORY_DATA_KEY,...chunk);
     for (const item of Array.isArray(raw) ? raw : []) {
-      try { if (item) rows.push(JSON.parse(item)); } catch (_) { /* skip corrupt row */ }
+      try {
+        const row = typeof item === 'string' ? JSON.parse(item) : item;
+        if (row?.schema_version === 2 && Number.isFinite(row.time_ms) && row.time_ms>=fromMs && row.time_ms<=toMs) rows.push(row);
+      } catch (_) { /* corrupt row stays unavailable */ }
     }
   }
-  return rows.sort((a, b) => a.time_ms - b.time_ms);
+  return rows.sort((a,b) => a.time_ms-b.time_ms);
 }
 
 module.exports = {
   MACRO_HISTORY_INDEX_KEY,
+  MACRO_HISTORY_VINTAGES_KEY,
+  MACRO_HISTORY_MANIFEST_KEY,
+  MAX_AGE_DAYS,
   MACRO_HISTORY_DATA_KEY,
   MACRO_HISTORY_YEARS,
   MIN_PRIOR_ERRORS,

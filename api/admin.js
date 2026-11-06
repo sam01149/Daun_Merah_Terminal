@@ -792,8 +792,12 @@ const KEY_REGISTRY = [
   { key: 'journal:*',          owner: 'api/journal.js',        ttl_expected: null,   note: 'Full journal entry JSON per device' },
   { key: 'journal_index:*',      owner: 'api/journal.js',        ttl_expected: null,   note: 'Sorted set: journal entry IDs by created_at timestamp' },
   { key: 'fundamental:*',        owner: 'api/admin.js',          ttl_expected: null,   note: 'HSET fundamental data per currency (no TTL — overwritten when new data)' },
-  { key: 'macro_surprise_history:v1', owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Sorted set ID rilis makro untuk standardized forecast surprise Growth/Inflation (5 tahun backfill)' },
-  { key: 'macro_surprise_events:v1',  owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Hash payload actual/forecast terstruktur per ID rilis; belum dibaca UI sampai fondasi lolos validasi' },
+  { key: 'macro_surprise_history:v1', owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Legacy S452, dipertahankan untuk rollback; tidak dibaca fondasi aktif' },
+  { key: 'macro_surprise_events:v1', owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Legacy sebelum pemisahan definisi seri; jangan dipakai untuk analisis' },
+  { key: 'macro_surprise_history:v2', owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Index rilis berdasarkan definisi, ukuran perubahan, cadence, penyesuaian musiman' },
+  { key: 'macro_surprise_events:v2', owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Payload first-seen immutable dengan provenance; backfill bukan vintage asli' },
+  { key: 'macro_surprise_vintages:v2', owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Versi payload append-only menurut content hash' },
+  { key: 'macro_surprise_manifest:v2', owner: 'scripts/rebuild_macro_foundation.js', ttl_expected: null, note: 'Aktivasi hanya setelah verifikasi jumlah dan digest rekonstruksi' },
   { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'AI analysis of fundamental data (Gemini only), cached 6h' },
   { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
   { key: 'vps:heartbeat',        owner: 'vps/heartbeat.js',      ttl_expected: 300,    note: 'Plan Q-1: epoch beat daemon Render, dibaca api/admin.js?action=health source=vps_heartbeat' },
@@ -9587,7 +9591,7 @@ async function ohlcvDashboardHandler(req, res) {
   }
 }
 
-const SMART_BIAS_CACHE_KEY = 'smart_bias:v1';
+const SMART_BIAS_CACHE_KEY = 'smart_bias:v2';
 const SMART_BIAS_TTL_SECS = 15 * 60;
 const MARC_TRACKER_KEY = 'marc_weekly:tracker:v1';
 const MARC_FEED_URL = 'https://feeds.feedburner.com/marctomarket/ujfs';
@@ -9742,7 +9746,7 @@ async function smartBiasHandler(req, res) {
   let cached = null;
   try {
     cached = _parseJsonValue(await redisCmd('GET', SMART_BIAS_CACHE_KEY), null);
-    if (!force && cached?.schema_version === 4) return res.status(200).json(cached);
+    if (!force && cached?.schema_version === 5) return res.status(200).json(cached);
   } catch (e) { /* lanjut hitung fresh */ }
 
   try {
@@ -9784,7 +9788,7 @@ async function smartBiasHandler(req, res) {
       nowMs: Date.now(),
     });
     const payload = {
-      schema_version: 4,
+      schema_version: 5,
       methodology: 'standardized_surprise_core_first',
       rows,
       computed_at: new Date().toISOString(),
@@ -9792,6 +9796,10 @@ async function smartBiasHandler(req, res) {
         available: macroFoundation.release_count > 0,
         release_count: macroFoundation.release_count,
         history_years: 5,
+        data_schema_version: 2,
+        vintage_limitation: 'Historical vendor snapshots; not verified first-release vintages. New observations frozen at first ingestion.',
+        interpretation: 'Surprise relative to consensus, not economic growth or inflation level; predictive thresholds not calibrated.',
+        max_release_age_days: { weekly:21, monthly:75, quarterly:150 },
         sensitivity_half_lives_days: [30, 45, 60, 90],
       },
       banks_mode: 'marc_weekly_forward_log',

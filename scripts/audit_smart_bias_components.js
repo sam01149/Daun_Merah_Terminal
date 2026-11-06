@@ -14,7 +14,8 @@ function parsed(value) {
   return typeof value === 'string' ? JSON.parse(value) : value;
 }
 function audit(input, asOfMs) {
-  const raw = input[macro.MACRO_HISTORY_DATA_KEY];
+  const historyKey = input[macro.MACRO_HISTORY_DATA_KEY] ? macro.MACRO_HISTORY_DATA_KEY : 'macro_surprise_events:v1';
+  const raw = input[historyKey];
   const releases = (Array.isArray(raw) ? raw.filter((_, i) => i % 2 === 1) : Object.values(raw || {})).map(parsed);
   const inWindow = releases.filter(row => row.time_ms >= asOfMs - 5 * 365 * 86400000 && row.time_ms <= asOfMs);
   const scores = macro.buildMacroPillarScores(inWindow, { asOfMs });
@@ -49,7 +50,7 @@ function audit(input, asOfMs) {
   const cot = parsed(input.cot_cache_v2) || {};
   const cb = parsed(input.cb_bias) || {};
   return {
-    as_of:new Date(asOfMs).toISOString(), stored_rows:releases.length, in_five_year_window:inWindow.length,
+    as_of:new Date(asOfMs).toISOString(), history_key:historyKey, stored_rows:releases.length, in_five_year_window:inWindow.length,
     classification_probes:probes,
     normalization_collision:{ inputs:sourceEvents.length, outputs:collision.length, retained_titles:collision.map(row => row.title) },
     multiple_title_series:multipleTitles,

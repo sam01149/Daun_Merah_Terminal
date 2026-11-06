@@ -4911,7 +4911,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.10.29.4';
+const APP_VERSION = '2026.11.06.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -18788,8 +18788,8 @@ async function fetchDashSmartBias(force = false) {
 function _sbStateLabel(state, kind = 'currency') {
   const labels = {
     currency:  { bullish:'Naik', bearish:'Turun', mixed:'Campur', neutral:'Netral', insufficient:'—' },
-    growth:    { bullish:'Menguat', bearish:'Melemah', mixed:'Campur', neutral:'Datar', insufficient:'—' },
-    inflation: { bullish:'Memanas', bearish:'Mendingin', mixed:'Campur', neutral:'Stabil', insufficient:'—' },
+    growth:    { bullish:'Di atas konsensus', bearish:'Di bawah konsensus', mixed:'Campur', neutral:'Seimbang', insufficient:'—' },
+    inflation: { bullish:'Di atas konsensus', bearish:'Di bawah konsensus', mixed:'Campur', neutral:'Seimbang', insufficient:'—' },
     policy:    { bullish:'Hawkish', bearish:'Dovish', mixed:'Campur', neutral:'Netral', insufficient:'—' },
   };
   return (labels[kind] || labels.currency)[state] || '—';
@@ -18814,10 +18814,10 @@ function _sbEvidenceText(evidence, emptyText = 'Bukti belum cukup.') {
         core_consumer_prices:'Harga konsumen inti', producer_prices:'Harga produsen',
       };
       const family = ev.family ? `${familyLabels[ev.family] || ev.family} · ` : '';
-      const surprise = Number.isFinite(Number(ev.standardized_surprise))
+      const surprise = ev.standardized_surprise != null && Number.isFinite(Number(ev.standardized_surprise))
         ? ` · kekuatan kejutan ${Number(ev.standardized_surprise) >= 0 ? '+' : ''}${Number(ev.standardized_surprise).toFixed(2)}σ`
         : '';
-      const familyScore = Number.isFinite(Number(ev.family_score))
+      const familyScore = ev.family_score != null && Number.isFinite(Number(ev.family_score))
         ? ` · skor keluarga ${Number(ev.family_score) >= 0 ? '+' : ''}${Number(ev.family_score).toFixed(2)}`
         : '';
       const seriesCount = Number(ev.series_count) > 1 ? ` dari ${Number(ev.series_count)} seri` : '';
@@ -18843,17 +18843,17 @@ function _sbDetailHtml(row) {
   const inst = p.institutional || {};
   const am = inst.asset_manager || {};
   const lev = inst.leveraged_funds || {};
-  const pct = v => Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}% OI` : '—';
+  const pct = v => v != null && Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}% OI` : '—';
   const conflictLabels = { banks:'Pandangan ekonom', positioning:'Posisi pasar' };
   const conflicts = row.overall?.conflicts?.length ? `Konflik: ${row.overall.conflicts.map(x => conflictLabels[x] || x).join(', ')}` : 'Tidak ada konflik data pendukung.';
-  const growthSummary = `Aktivitas ${_sbStateLabel(row.growth?.buckets?.activity, 'growth')} · tenaga kerja ${_sbStateLabel(row.growth?.buckets?.labour, 'growth')} · hasil ${_sbStateLabel(row.growth?.state, 'growth')}.`;
-  const inflationSummary = `Tekanan harga ${_sbStateLabel(row.inflation?.inflation_impulse, 'inflation')} · bank sentral ${_sbStateLabel(row.inflation?.policy_context, 'policy')} · dukungan mata uang ${_sbStateLabel(row.inflation?.currency_support || row.inflation?.state, 'currency')}.`;
+  const growthSummary = `Kejutan aktivitas ${_sbStateLabel(row.growth?.buckets?.activity, 'growth')} · tenaga kerja ${_sbStateLabel(row.growth?.buckets?.labour, 'growth')} · hasil ${_sbStateLabel(row.growth?.state, 'growth')}.`;
+  const inflationSummary = `Kejutan harga ${_sbStateLabel(row.inflation?.inflation_impulse, 'inflation')} · bank sentral ${_sbStateLabel(row.inflation?.policy_context, 'policy')} · dukungan mata uang ${_sbStateLabel(row.inflation?.currency_support || row.inflation?.state, 'currency')}.`;
   return `<div class="smart-bias-detail-inner">
-    <div class="sb-detail-group"><div class="sb-detail-title">Pertumbuhan</div><div class="sb-detail-text">${escHtml(growthSummary)}</div><div class="sb-detail-text">Kejutan dibandingkan dengan riwayat forecast lima tahun; data dalam keluarga yang sama dihitung satu kali.</div>${_sbEvidenceText(row.growth?.evidence)}</div>
-    <div class="sb-detail-group"><div class="sb-detail-title">Inflasi</div><div class="sb-detail-text">${escHtml(inflationSummary)}</div><div class="sb-detail-text">Tekanan harga dipisahkan dari dampaknya terhadap mata uang.</div>${_sbEvidenceText(row.inflation?.evidence)}</div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Pertumbuhan</div><div class="sb-detail-text">${escHtml(growthSummary)}</div><div class="sb-detail-text">Mengukur kejutan terhadap konsensus, bukan laju pertumbuhan ekonomi. Besarnya dibandingkan dengan riwayat selisih actual dan forecast lima tahun; setiap keluarga data mendapat bobot setara. Data usang tidak digunakan. Riwayat lama dapat memuat revisi.</div>${_sbEvidenceText(row.growth?.evidence)}</div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Inflasi</div><div class="sb-detail-text">${escHtml(inflationSummary)}</div><div class="sb-detail-text">Mengukur kejutan harga terhadap konsensus, bukan apakah inflasi sedang naik atau turun. Dampaknya terhadap mata uang dibaca bersama kebijakan bank sentral.</div>${_sbEvidenceText(row.inflation?.evidence)}</div>
     <div class="sb-detail-group"><div class="sb-detail-title">Bank sentral</div><div class="sb-detail-text">Sikap: ${escHtml(row.central_bank?.bias || '—')} · per ${escHtml(row.central_bank?.as_of || '—')}</div>${_sbEvidenceText(row.central_bank?.evidence)}</div>
     <div class="sb-detail-group"><div class="sb-detail-title">Pandangan ekonom</div><div class="sb-detail-text">Sumber: Marc to Market · Marc Chandler</div>${_sbEvidenceText(row.banks?.evidence, 'Tidak ada outlook week-ahead eksplisit yang lolos validasi.')}<div class="sb-detail-text">${escHtml(_sbRecordText(row.banks?.track_record))}</div></div>
-    <div class="sb-detail-group"><div class="sb-detail-title">Posisi pasar</div><div class="sb-detail-text">Asset Manager: ${escHtml(am.state || '—')} · ${pct(am.net_pct_oi)}</div><div class="sb-detail-text">Leveraged Funds: ${escHtml(lev.state || '—')} · ${pct(lev.net_pct_oi)}</div><div class="sb-detail-text">Laporan: ${escHtml(inst.report_date || '—')}</div></div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Posisi pasar</div><div class="sb-detail-text">Asset Manager: ${escHtml(_sbStateLabel(am.state))} · ${pct(am.net_pct_oi)}</div><div class="sb-detail-text">Leveraged Funds: ${escHtml(_sbStateLabel(lev.state))} · ${pct(lev.net_pct_oi)}</div><div class="sb-detail-text">Laporan: ${escHtml(inst.report_date || '—')}</div></div>
     <div class="sb-detail-group"><div class="sb-detail-title">Bias</div><div class="sb-detail-text">Keyakinan ${escHtml(row.overall?.confidence || 'rendah')}. ${escHtml(conflicts)} Tier pendukung tidak dapat membalik arah inti.</div></div>
   </div>`;
 }

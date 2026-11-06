@@ -11,12 +11,28 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-06 (Session 452 — Audit perhitungan komponen Dashboard)
+> **Last updated:** 2026-11-06 (Session 453 — Rekonstruksi fondasi indikator Dashboard)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 453 (2026-11-06) — Rekonstruksi fondasi indikator Dashboard
+
+**Masalah dan cakupan.** User meminta membenahi fondasi setelah audit S452. Diperbaiki definisi/identitas, provenance, penyimpanan dan freshness Growth/Inflation; tidak menambah collector bank atau mengganti kebijakan AM/LF maupun ambang finansial agar panah muncul. Masalah bukan hanya parser: row lama yang tertimpa tidak bisa dipulihkan dengan mengganti nama seri.
+
+**Perubahan.** Registry eksplisit baru `api/_macro_series.js` memisahkan real GDP dari price/sales/components (yang tidak dipakai sebagai growth), payroll total/private/ADP, initial/continuing claims, GDP bulanan/kuartalan, CPI headline/core/trimmed/median, HICP tanpa food/energy vs core zona euro yang juga mengecualikan alkohol/tembakau, PPI input/output, dan varian Tankan. ID memuat ukuran MoM/YoY/QoQ/annualized, cadence dan SA bila ada; quarterly YoY tetap YoY. Final/revised/national EUR, unit/country yang bertentangan, angka tanpa raw actual/consensus dan actual masa depan ditolak. Alias baru yang tidak dikenal tidak ditebak. Kontradiksi actual/forecast serentak untuk satu ID dikeluarkan dan memblokir rebuild tulis sampai ditinjau.
+
+**Riwayat baru.** `scripts/rebuild_macro_foundation.js` (entry lama backfill menjadi wrapper) mengunduh/menyimpan snapshot bulanan, memecah response yang berpotensi terpotong, default dry-run, memakai resolver Redis akun aktif, dan hanya mengisi namespace v2. Terkumpul 57.509 raw event dalam 61 jendela bulan (Nov 2021–Nov 2026); 6.367 ID lolos, konflik 0. Sebelum tulis, hash/index v1 dicadangkan lokal; v1 tidak dimutasi. HLEN/ZCARD/roundtrip payload diverifikasi identik 6.367, digest `25b87d160d58ea505f565a1d9678d510f6ffb7ad43b990b1e6d8e5633ee4844f`; manifest ready dipublikasikan 2026-11-06T16:14:11.859Z. Manifest adalah bukti seed terverifikasi, bukan checksum yang harus tetap sama setelah ingestion baru. Script menolak overwrite berbeda pada rerun. Backup, raw, laporan dan normalized tetap di `.cache/macro-foundation-v2/` (gitignored).
+
+**Vintage dan pembaruan.** Lua atomik HSETNX + index membekukan payload pertama; perubahan content disimpan append-only menurut hash, tidak menimpa input skor. Backfill diberi `historical_snapshot`: bukan vintage saat rilis pertama dan tidak layak diklaim backtest point-in-time bebas revisi/look-ahead. Waktu release/observed, source ID/country/unit/URL dan periode acuan dipertahankan; kalender utama DAN cache surprise meneruskan metadata (termasuk Low impact). Ingestion mengabaikan cache lama yang tidak memiliki identitas sumber agar tidak menambah seri ambigu. Loader fail-closed bila manifest belum ready. Schema API menjadi 5/cache `smart_bias:v2` sehingga cache hasil v1 tidak terbaca.
+
+**Freshness, tampilan dan edge case.** Seri usang berhenti menyumbang setelah 21 hari weekly / 75 monthly / 150 quarterly; ini menerapkan toleransi freshness yang sudah ada pada modul UI, bukan ambang prediksi baru. Minimum 12 error terdahulu, winsor ±3, 180 hari, half-life 45, sensitivity 30/45/60/90 serta family averaging tetap. Seri bulanan AUD yang baru belum dipaksa lolos minimum sampel. Rincian menjelaskan surprise terhadap konsensus, bukan kontraksi ekonomi atau turunnya inflasi; setiap family berbobot setara, riwayat lama dapat direvisi. Missing COT tidak lagi dianggap netral/nol karena Number(null); detail kosong tetap kosong. Versi HTML/SW serempak `2026.11.06.1`.
+
+**Verifikasi.** Suite `npm.cmd test` 1.555/1.555 lulus: regresi collision/definisi/cadence/SA/country/unit, raw scale, reference year, prior-only SD, immutability/revision/idempotence, manifest/reimport/freshness, missing COT dan metadata kalender. Replay browser lokal 1440px dan 390px: delapan baris, tujuh kolom, detail dapat dibuka, tidak ada overflow halaman (tabel tetap scroll horizontal pada layar kecil), missing COT tidak tampil 0,0% OI; screenshot diperiksa. Semua delapan currency mempunyai coverage aktivitas + labour dan inflasi pada shadow, tetapi sebagian arah tetap mixed sesuai keselarasan/sensitivity. Verifikasi produksi setelah push dicatat di bawah.
+
+**Batas yang tetap terbuka.** Ini memperbaiki fondasi DATA, bukan membuktikan sinyal prediktif/noise-free: neutral zone, relative-decay vs amplitude, bobot/family independen (termasuk peran PPI), confidence terkalibrasi dan validasi forward mingguan belum selesai. Evidence/date substantif CB, keputusan AM/LF S421, serta kegagalan collector Marc/perluasan bank masih terpisah di progress. Tidak memanggil AI berbayar. Jejak audit S452 tetap berlaku untuk bagian yang belum diperbaiki.
 
 ## Changelog Session 452 (2026-11-06) — Audit perhitungan komponen Dashboard
 

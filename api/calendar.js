@@ -176,6 +176,14 @@ function buildSurpriseEvents(allEvents, dateRange) {
       currency: e.currency, event: e.event, date: e.date, time_wib: e.time_wib,
       impact: e.impact, forecast_raw: e.forecast_raw, previous_raw: e.previous_raw,
       actual_raw: e.actual_raw, period: e.period,
+      source_event_id: e.source_event_id || null,
+      source_country: e.source_country || null,
+      source_unit: e.source_unit || null,
+      source_indicator: e.source_indicator || null,
+      reference_date: e.reference_date || null,
+      reference_period: e.reference_period || null,
+      released_at: e.released_at || null,
+      url: e.url || null,
     }));
 }
 
@@ -257,6 +265,15 @@ async function fetchTradingViewEvents(rangeStartWib, rangeEndWib) {
       forecast_raw: num(e.forecastRaw),
       previous_raw: num(e.previousRaw),
       actual_raw:   num(e.actualRaw),
+      // Foundation v2 needs stable source identity, reference period, country,
+      // units and the true UTC release time. Keep them through the display cache.
+      source_event_id: e.id != null ? String(e.id) : null,
+      source_country: e.country || null,
+      source_unit: e.unit || null,
+      source_indicator: e.indicator || null,
+      reference_date: e.referenceDate || null,
+      reference_period: e.referencePeriod || null,
+      released_at: e.date,
       period:   (typeof e.period === 'string' && e.period) ? e.period : null,
       comment:  (typeof e.comment === 'string' && e.comment) ? e.comment.trim() : null,
       url:      e.source_url || null,

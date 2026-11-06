@@ -93,6 +93,12 @@ function macroFamilyEvidence(pillar) {
         series_count: members.length,
         standardized_surprise: latest.standardized_surprise ?? null,
         prior_n: latest.prior_n ?? null,
+        age_days: latest.age_days ?? null,
+        cadence: latest.cadence ?? null,
+        vintage_kind: latest.vintage_kind ?? null,
+        observed_at: latest.observed_at ?? null,
+        source_event_id: latest.source_event_id ?? null,
+        source_url: latest.source_url ?? null,
         actual: latest.actual ?? null,
         forecast: latest.forecast ?? null,
         previous: null,
@@ -115,7 +121,7 @@ function buildGrowthFromMacro(pillar, stability) {
   return {
     state,
     confidence: macroConfidence(state, pillar?.family_count || 0),
-    freshness: pillar?.family_count ? 'fresh' : 'insufficient',
+    freshness: pillar?.freshness || (pillar?.family_count ? 'fresh' : 'insufficient'),
     evidence: macroFamilyEvidence(pillar).slice(0, 10),
     buckets: { activity, labour },
     score: Number.isFinite(pillar?.score) ? pillar.score : null,
@@ -236,7 +242,7 @@ function buildInflationFromMacro(pillar, stability, centralBank) {
     confidence: impulseConfidence,
     impulse_confidence: impulseConfidence,
     currency_support_confidence: macroConfidence(state, pillar?.family_count || 0),
-    freshness: pillar?.family_count ? 'fresh' : 'insufficient',
+    freshness: pillar?.freshness || (pillar?.family_count ? 'fresh' : 'insufficient'),
     evidence: macroFamilyEvidence(pillar).slice(0, 8),
     inflation_impulse: impulseState,
     policy_context: centralBank.state,
@@ -338,6 +344,7 @@ function buildBanks(currency, stances) {
 }
 
 function signedPositionState(netPct) {
+  if (netPct == null || netPct === '') return 'insufficient';
   const value = Number(netPct);
   if (!Number.isFinite(value)) return 'insufficient';
   if (Math.abs(value) < 3) return 'neutral';
@@ -364,7 +371,7 @@ function buildPositioning(currency, cotPayload, _retailByCurrency, nowMs = Date.
   return {
     state,
     confidence: state === 'insufficient' ? 'rendah' : state === 'mixed' ? 'rendah' : 'sedang',
-    freshness: reportAge == null || reportAge > 14 ? 'stale' : 'fresh',
+    freshness: !p ? 'insufficient' : reportAge == null || reportAge > 14 ? 'stale' : 'fresh',
     institutional: {
       state: institutionalState,
       asset_manager: { state: am, net: p?.am_net ?? null, net_pct_oi: p?.am_net_pct_oi ?? null, change_net: p?.am_change_net ?? null },

@@ -99,12 +99,20 @@ test('buildSurpriseEvents: impact Low TETAP lolos (beda dari dedupeCalendarEvent
   assert.deepEqual(out.map(e => e.event), ['A']);
 });
 
-test('buildSurpriseEvents: field display (forecast/previous/actual string, comment, url) dibuang', () => {
+test('buildSurpriseEvents: display numbers omitted, source metadata kept for macro history', () => {
   const dateRange = new Set(['2026-08-04']);
   const out = buildSurpriseEvents([ev({ event: 'A', currency: 'USD' })], dateRange);
   assert.deepEqual(Object.keys(out[0]).sort(), [
-    'actual_raw', 'currency', 'date', 'event', 'forecast_raw', 'impact', 'period', 'previous_raw', 'time_wib',
+    'actual_raw', 'currency', 'date', 'event', 'forecast_raw', 'impact', 'period', 'previous_raw',
+    'reference_date', 'reference_period', 'released_at', 'source_country', 'source_event_id',
+    'source_indicator', 'source_unit', 'time_wib', 'url',
   ]);
+});
+
+test('buildSurpriseEvents: source identity/cadence survives low-impact cache ingestion', () => {
+  const input = ev({impact:'Low',source_event_id:'original-id',source_country:'AU',currency:'AUD',source_unit:'%',source_indicator:'CPI YY SA *',reference_date:'2026-07-31',reference_period:'Jul 2026',released_at:'2026-08-04T12:30:00Z'});
+  const [output] = buildSurpriseEvents([input],new Set([input.date]));
+  for(const key of ['source_event_id','source_country','source_unit','source_indicator','reference_date','reference_period','released_at','url']) assert.equal(output[key],input[key]);
 });
 
 test('buildSurpriseEvents: dedup by date|time_wib|currency|event, sama pola dedupeCalendarEvents', () => {

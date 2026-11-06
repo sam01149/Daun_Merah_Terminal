@@ -12,18 +12,22 @@ const {
   assessMacroScoreStability,
   buildCftcFoundation,
   persistMacroReleases,
+  normalizeMacroReleases,
+  loadMacroReleases,
+  MACRO_HISTORY_MANIFEST_KEY,
+  MACRO_HISTORY_VINTAGES_KEY,
 } = require('../../api/_macro_surprise');
 
 test('macro classifier keeps currency-area data and rejects EUR national releases', () => {
   assert.deepEqual(classifyMacroRelease('Euro Area Composite PMI', 'EUR'), {
-    pillar: 'growth', family: 'activity_survey', series: 'composite_pmi:level', inverse: false, cadence: 'monthly',
+    pillar: 'growth', family: 'activity_survey', series: 'composite_pmi:level:monthly', inverse: false, cadence: 'monthly', unit:'index',
   });
   assert.equal(classifyMacroRelease('German CPI YoY', 'EUR'), null);
   assert.equal(classifyMacroRelease('ECB President Speaks', 'EUR'), null);
   assert.equal(classifyMacroRelease('GDP QoQ Final', 'USD'), null);
   assert.ok(classifyMacroRelease('GDP QoQ Advance', 'USD'));
   assert.deepEqual(classifyMacroRelease('Average Hourly Earnings YoY', 'USD'), {
-    pillar:'growth', family:'labour', series:'wages:yoy', inverse:false, cadence:'monthly',
+    pillar:'growth', family:'labour', series:'hourly_earnings:yoy:monthly', inverse:false, cadence:'monthly', unit:'percent',
   });
 });
 
@@ -32,7 +36,7 @@ test('normalization requires actual and forecast and preserves inverse semantics
     currency: 'USD', title: 'Initial Jobless Claims', date: '2026-10-22T12:30:00Z',
     actualRaw: 194000, forecastRaw: 200000, previousRaw: 205000, period: 'Oct/17',
   });
-  assert.equal(row.series, 'jobless_claims:level');
+  assert.equal(row.series, 'initial_jobless_claims:level:weekly');
   assert.equal(row.inverse, true);
   assert.equal(row.actual, 194000);
   assert.equal(normalizeMacroRelease({ currency: 'USD', title: 'GDP QoQ', date: '2026-10-22T12:30:00Z', actualRaw: 2.1 }), null);
@@ -144,12 +148,120 @@ test('history persistence uses deterministic hash plus sorted-set index', async 
   const calls = [];
   const redis = async (...args) => { calls.push(args); return 1; };
   const result = await persistMacroReleases([
-    { currency: 'USD', event: 'GDP QoQ', date: '2026-10-22', time_wib: '19:30 WIB', actual_raw: 2.2, forecast_raw: 2.0, period: 'Q3' },
+    { currency: 'USD', source_country:'US', source_event_id:'fixture-gdp', event: 'GDP QoQ', date: '2026-10-22', time_wib: '19:30 WIB', actual_raw: 2.2, forecast_raw: 2.0, period: 'Q3' },
     { currency: 'EUR', event: 'German CPI YoY', date: '2026-10-22', time_wib: '15:00 WIB', actual_raw: 2.1, forecast_raw: 2.0, period: 'Sep' },
   ], redis);
   assert.equal(result.stored, 1);
-  assert.equal(calls[0][0], 'HSET');
-  assert.equal(calls[0][1], MACRO_HISTORY_DATA_KEY);
-  assert.equal(calls[1][0], 'ZADD');
-  assert.equal(calls[1][1], MACRO_HISTORY_INDEX_KEY);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'EVAL');
+  assert.equal(calls[0][2], 3);
+  assert.deepEqual(calls[0].slice(3,6), [MACRO_HISTORY_INDEX_KEY,MACRO_HISTORY_DATA_KEY,MACRO_HISTORY_VINTAGES_KEY]);
+});
+
+test('registry rejects GDP price/components and separates economic definitions', () => {
+  for (const title of ['GDP Price Index QoQ Adv','GDP Sales QoQ Adv','GDP Private Consumption QoQ Prel']) assert.equal(classifyMacroRelease(title,'USD'),null);
+  for (const [currency,a,b] of [
+    ['USD','Initial Jobless Claims','Continuing Jobless Claims'],
+    ['USD','Non Farm Payrolls','Nonfarm Payrolls Private'],
+    ['GBP','GDP YoY','GDP Growth Rate YoY'],
+    ['GBP','PPI Input YoY','PPI Output YoY'],
+    ['EUR','Core Inflation Rate YoY Flash','HICP ex Food & Energy YoY Flash'],
+    ['AUD','Quarterly Inflation Rate YoY','Inflation Rate YoY'],
+  ]) {
+    assert.ok(classifyMacroRelease(a,currency),a);
+    assert.ok(classifyMacroRelease(b,currency),b);
+    assert.notEqual(classifyMacroRelease(a,currency).series,classifyMacroRelease(b,currency).series);
+  }
+  assert.match(classifyMacroRelease('Core Inflation Rate YoY','USD').family,/^core_/);
+  assert.equal(classifyMacroRelease('Quarterly Inflation Rate YoY','AUD').series,'consumer_prices:yoy:quarterly');
+  assert.equal(classifyMacroRelease('Unemployment Rate','NZD').cadence,'quarterly');
+  assert.equal(classifyMacroRelease('Wage Price Index YoY','AUD').cadence,'quarterly');
+  assert.equal(classifyMacroRelease('RBA Weighted Median CPI YoY','AUD').cadence,'quarterly');
+  assert.match(classifyMacroRelease('RBA Trimmed Mean CPI YoY','AUD',{indicator:'Trimmed Mean CPI YY SA *'}).series,/:sa$/);
+  assert.equal(classifyMacroRelease('Unknown GDP super index','USD'),null);
+});
+
+const event = (overrides={}) => ({currency:'USD',country:'US',title:'GDP Growth Rate QoQ Adv',date:'2026-01-29T13:30:00Z',referenceDate:'2025-12-31T00:00:00Z',referencePeriod:'Q4 2025',actualRaw:3.4,forecastRaw:3.0,unit:'%',id:'provider-123',...overrides});
+const options = {observedAt:'2026-11-06T00:00:00Z',vintageKind:'historical_snapshot'};
+
+test('normalization preserves raw scale, identity and provenance across calendar adapter', () => {
+  const raw = event();
+  const row = normalizeMacroRelease(raw,options);
+  const cached = normalizeMacroRelease({currency:raw.currency,event:raw.title,date:'2026-01-29',released_at:raw.date,actual_raw:raw.actualRaw,forecast_raw:raw.forecastRaw,source_country:raw.country,source_unit:raw.unit,reference_date:raw.referenceDate,reference_period:raw.referencePeriod,source_event_id:raw.id},options);
+  assert.equal(row.id,cached.id);
+  assert.equal(row.content_hash,cached.content_hash);
+  assert.equal(row.period,'2025-Q4');
+  assert.equal(row.source_event_id,'provider-123');
+  assert.equal(row.vintage_kind,'historical_snapshot');
+  assert.equal(normalizeMacroRelease(event({country:'DE'}),options),null);
+  assert.equal(normalizeMacroRelease(event({unit:'USD'}),options),null);
+  assert.equal(normalizeMacroRelease(event({date:'2027-01-01T00:00:00Z'}),options),null);
+  assert.equal(normalizeMacroRelease(event({actualRaw:null,actual:'3.4%'}),options),null);
+  assert.equal(normalizeMacroRelease(event({title:'Initial Jobless Claims',unit:null,actualRaw:194000,forecastRaw:200000,referenceDate:'2026-01-24'}),options).actual,194000);
+  assert.equal(normalizeMacroRelease(event({referenceDate:null,referencePeriod:'Q4'}),options).period,'2025-Q4');
+});
+
+test('contradictory simultaneous rows are quarantined regardless of input order', () => {
+  const a = event(), b = event({actualRaw:99});
+  assert.deepEqual(normalizeMacroReleases([a,b],options),[]);
+  assert.deepEqual(normalizeMacroReleases([b,a],options),[]);
+  assert.equal(normalizeMacroReleases([a,event({title:'GDP Price Index QoQ Adv'})],options).length,1);
+});
+
+function memoryRedis() {
+  const hashes = new Map(), index = new Map(); let manifest = null;
+  const redis = async (command,...args) => {
+    if (command==='EVAL') {
+      assert.match(args[0],/HSETNX/);
+      let inserted=0;
+      const data = hashes.get(args[3]) || new Map(), vintages = hashes.get(args[4]) || new Map();
+      for(let i=5;i<args.length;i+=4) {
+        if(!data.has(args[i])) { data.set(args[i],args[i+1]);index.set(args[i],Number(args[i+2]));inserted++; }
+        if(!vintages.has(args[i+3])) vintages.set(args[i+3],args[i+1]);
+      }
+      hashes.set(args[3],data);hashes.set(args[4],vintages);return inserted;
+    }
+    if(command==='GET') return manifest;
+    if(command==='SET') { assert.equal(args[0],MACRO_HISTORY_MANIFEST_KEY);manifest=args[1];return 'OK'; }
+    if(command==='ZRANGEBYSCORE') return [...index].filter(([,time])=>time>=Number(args[1])&&time<=Number(args[2])).map(([id])=>id);
+    if(command==='HMGET') return args.slice(1).map(id=>hashes.get(args[0])?.get(id)||null);
+    if(command==='ZCARD') return index.size;
+    if(command==='HLEN') return hashes.get(args[0])?.size||0;
+    throw Error('Unexpected Redis command '+command);
+  };
+  return {redis,hashes};
+}
+
+test('first seen stays immutable; revisions append; repeat ingestion is idempotent', async () => {
+  const {redis,hashes} = memoryRedis();
+  assert.equal((await persistMacroReleases([event({id:null,country:null})],redis,options)).stored,0,'legacy display cache must not contaminate v2');
+  assert.equal((await persistMacroReleases([event()],redis,options)).inserted,1);
+  assert.equal((await persistMacroReleases([event()],redis,options)).inserted,0);
+  await persistMacroReleases([event({actualRaw:4})],redis,{observedAt:'2026-11-06T00:00:00Z'});
+  assert.equal(hashes.get(MACRO_HISTORY_VINTAGES_KEY).size,2);
+  assert.deepEqual(await loadMacroReleases(redis),[],'unverified history fails closed');
+  const rows = await loadMacroReleases(redis,{fromMs:0,toMs:Date.parse(options.observedAt),requireManifest:false});
+  assert.equal(rows.length,1);assert.equal(rows[0].actual,3.4);
+});
+
+test('rebuild verifies content before activation and refuses a conflicting reimport', async () => {
+  const {prepareSnapshots,publish} = require('../../scripts/rebuild_macro_foundation');
+  const {redis} = memoryRedis();
+  const prepared = prepareSnapshots([{source:'tradingview',fetched_at:options.observedAt,rows:[event()]}]);
+  const manifest = await publish(prepared,redis,Date.parse(options.observedAt));
+  assert.equal(manifest.status,'ready');
+  assert.equal((await loadMacroReleases(redis,{fromMs:0})).length,1);
+  const conflicting = prepareSnapshots([{source:'tradingview',fetched_at:options.observedAt,rows:[event({actualRaw:9})]}]);
+  await assert.rejects(()=>publish(conflicting,redis,Date.parse(options.observedAt)),/refusing to overwrite/);
+});
+
+test('freshness expires per cadence instead of treating any historical family as fresh', () => {
+  const asOf = Date.parse('2026-11-06T00:00:00Z');
+  for(const [cadence,maxAge] of [['weekly',21],['monthly',75],['quarterly',150]]) {
+    const rows = Array.from({length:14},(_,i)=>({id:String(i),currency:'USD',series:'probe',pillar:'inflation',family:'headline_consumer_prices',cadence,actual:i%2?1:-1,forecast:0,time_ms:asOf-(maxAge+1+13-i)*86400000}));
+    const stale = buildMacroPillarScores(rows,{asOfMs:asOf}).currencies.USD.inflation;
+    assert.equal(stale.freshness,'stale');assert.equal(stale.ready,false);
+    rows[13].time_ms=asOf-(maxAge-1)*86400000;
+    assert.equal(buildMacroPillarScores(rows,{asOfMs:asOf}).currencies.USD.inflation.freshness,'fresh');
+  }
 });

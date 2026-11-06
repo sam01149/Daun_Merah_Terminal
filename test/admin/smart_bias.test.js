@@ -126,6 +126,14 @@ test('Smart Bias Positioning: Asset Manager dan Leveraged Funds konflik menjadi 
   assert.equal('retail' in result, false);
 });
 
+test('Smart Bias Positioning: missing currency is unavailable, never neutral zero', () => {
+  const result = buildPositioning('EUR',{report_date:'2026-10-20',positions:{}},{},NOW);
+  assert.equal(result.state,'insufficient');
+  assert.equal(result.freshness,'insufficient');
+  assert.equal(result.institutional.asset_manager.state,'insufficient');
+  assert.equal(result.institutional.leveraged_funds.net_pct_oi,null);
+});
+
 test('Smart Bias Overall: tier pendukung tidak dapat membalik arah inti', () => {
   const layer = state => ({ state });
   const core = { growth:layer('bullish'), inflation:{ state:'bullish', policy_context:'neutral' }, central_bank:layer('neutral') };

@@ -8,6 +8,8 @@ const NEWSCAT_VERSION = '2026.09.12.2';
 try { importScripts('/newscat.js?v=' + NEWSCAT_VERSION); } catch (e) {}
 
 const CACHE_NAME = 'fjfeed-v2';
+// Keep the worker update aligned with the HTML release/cache-busting version.
+const APP_VERSION = '2026.11.06.1';
 const FETCH_URL = '/api/feeds?type=rss';
 const STATE_CACHE = 'daun-merah-state';
 const SEEN_GUIDS_URL = '/sw-seen-guids';
