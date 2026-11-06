@@ -177,6 +177,14 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 **Kesimpulan:** Opsi paling efisien dan stabil adalah menggunakan **Capacitor** jika targetnya Android/iOS (menjaga single-codebase), atau **Tauri v2** jika targetnya desktop Windows installer.
 
 
+### [2026-11-06] Arti kolom Banks dalam materi Prime Academy
+
+**Sumber dan konteks.** Pertanyaan user 6 November tentang arti asli Pandangan bank; diverifikasi ulang ke transkrip materi tersimpan di `.cache/prime-audit-20261010/transcripts/what-the-smart-bias-is.json`, `the-table-and-the-summary.json`, dan `how-the-bias-is-weighted.json`. Materi menyebut riset bank besar dan analis makro; contoh tabel membedakan Bank research dari Hedge fund positioning dan kebijakan bank sentral.
+
+**Makna.** Banks merangkum pandangan arah mata uang dari riset bank/analis makro, termasuk alasan fundamentalnya. Ini opini/proyeksi institusi, berbeda dari keputusan suku bunga bank sentral dan berbeda dari posisi transaksi aktual yang dicerminkan positioning. Dalam hierarki Academy, bank research bersama positioning adalah tier 2: kesepakatan dengan fundamental memperkuat keyakinan; perbedaan melemahkan keyakinan tetapi tidak membalik arah inti. Materi yang diperiksa tidak memberikan daftar lengkap bank, bobot numerik per bank, atau formula konsensus yang bisa diklaim sebagai metode asli.
+
+**Batas kesetaraan Daun Merah.** Implementasi sekarang memakai satu analis, Marc Chandler, atas keputusan sumber S420 lalu label menjadi Pandangan ekonom S431. Itu adaptasi satu sumber, bukan bukti bahwa kolom telah mewakili konsensus bank besar sebagaimana cakupan materi Academy. Tidak ada kode atau metode yang diubah dalam penjelasan ini.
+
 ### [2026-10-23–24] Koreksi struktur tabel Smart Bias Prime Academy dan kelayakan datanya
 
 **Validasi fondasi Growth/Inflation 2026-10-25.** Voting tanda actual-vs-forecast dan toleransi tetap 0,5% ditolak: besar kejutan berbeda antarseri dan harus dinormalisasi terhadap distribusi forecast error seri itu sendiri. Implementasi fondasi mengikuti bentuk indeks surprise di literatur: error consensus kontinu dibagi simpangan baku historis, memakai hanya observasi yang sudah tersedia sebelum rilis, minimum 12 prior errors, decay waktu, dan equal weight setelah deduplikasi ke economic family. Angka minimum 12 adalah syarat operasional agar simpangan baku tidak dibentuk dari sampel sangat kecil, bukan klaim ambang universal dari paper; kestabilan diuji lagi pada half-life 30/45/60/90 hari. First print dipakai, final/revisi dibuang. Rilis negara anggota Eurozone dikeluarkan dari skor EUR agar entity tidak tercampur.
