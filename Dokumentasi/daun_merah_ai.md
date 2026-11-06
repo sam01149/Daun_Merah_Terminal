@@ -79,6 +79,8 @@ Satu kali "generate" sekarang adalah **2-3 panggilan AI**, bukan 1:
 | **Call 2** | Bias bank sentral per currency, format JSON terstruktur | Selalu |
 | **Call 4** | Cek headline baru vs alasan/arah posisi terbuka user (Peringatan Posisi) | **Hanya** kalau ada `device_id` DAN device itu punya posisi terbuka — jadi otomatis dilewati saat cron jalan (cron tidak bawa device_id) |
 
+**Batas CB Bias yang dipakai Dashboard (audit 2026-11-06, S452).** Call 2 membaca headline, cuplikan description, sebagian data fundamental, suku bunga, dan stance sebelumnya; ini klasifikasi AI, bukan pengukuran langsung surprise/path suku bunga relatif. Confidence High/Medium adalah kategori model, bukan probabilitas akurasi terkalibrasi. Bukti disimpan melalui pencocokan keyword dan cap delapan headline, sedangkan Dashboard membaca lima; `updated_at`/`matched_at` menunjukkan waktu pemrosesan, bukan umur sumber substantif. Gate saat ini belum menjamin bahwa judul generik Interest Rate Probabilities mempunyai isi arah yang dapat diperiksa. Tidak ada perubahan model/prompt/limit dari audit ini; detail temuan dan remediasi di changelog S452/progress.
+
 **Kapan generate penuh terjadi:**
 
 - **Otomatis (cron):** 3×/hari via GitHub Actions — 07:00, 14:00, 19:30 WIB (jam buka sesi Asia/Eropa/New York). Cron ini TIDAK kena rate limit apapun (diautentikasi lewat secret) dan TIDAK kena gate di bawah — selalu generate fresh.
