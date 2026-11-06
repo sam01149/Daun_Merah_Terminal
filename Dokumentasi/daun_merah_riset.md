@@ -24,6 +24,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-06] Prinsip desain Dashboard: sederhana, tetapi berkualitas
+
+**Arahan eksplisit user:** “keep it simple but quality”. Untuk pembenahan Dashboard setelah S453, pilih sedikit indikator yang mewakili konsep berbeda dan dapat ditelusuri sumber, tanggal serta alasannya. Hindari bukti berkorelasi dihitung berulang. Setiap transformasi harus punya tujuan ekonomi/statistik yang jelas; tambahan indikator, bobot atau model kompleks hanya layak dipertahankan bila memberi manfaat yang stabil dibanding versi sederhana pada evaluasi terpisah secara waktu. Data kurang, bukti bertentangan atau sinyal lemah boleh menghasilkan belum jelas, bukan dipaksa menjadi panah. Sederhana tidak berarti melewati pemeriksaan kualitas data, dan tidak menjamin bebas noise. Arahan ini menjadi constraint pemilihan metode dari riset literatur di bawah; belum menetapkan bobot/threshold atau mengubah runtime.
+
 ### [2026-11-06] Literatur kuantitatif FX dari Scopus, bank dan pengelola investasi
 
 **Lingkup.** User meminta dasar ekonomi/Scopus serta literatur hedge fund/bank untuk menilai fondasi kuantitatif Dashboard. Ini riset metode, bukan integrasi outlook, pelaksanaan strategi, permintaan plan untuk AI lain atau perubahan auto-entry. Riset sebelumnya terpusat pada surprise dan kegagalan potensial formula; pencarian ini diperluas ke kondisi/siklus ekonomi, economic momentum, scorecard FX, model beda frekuensi dan kondisi pasar. Ada bukti positif yang relevan: tidak tepat menyimpulkan fundamental tidak bisa dipakai memprediksi FX hanya karena sebagian respons rilis cepat. Tetapi tidak ada sumber yang ditemukan memvalidasi formula Dashboard yang aktif secara persis.
