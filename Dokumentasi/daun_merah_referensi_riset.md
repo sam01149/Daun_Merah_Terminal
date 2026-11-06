@@ -406,6 +406,20 @@ Sebelum memulai riset/fitur makro baru di Daun Merah:
 
 ## Rujukan silang
 
+### Dokumen contoh riset institusi untuk panel pandangan FX — diverifikasi 6 November 2026
+
+Dokumen berikut adalah bukti struktur/sumber pandangan, bukan penelitian yang memvalidasi profit atau win-rate. Rekomendasi integrasi dan status akses ada di vendor; eksperimen desain ada di riset.
+
+| Dokumen primer | Tipe | Temuan inti dan batas |
+|---|---|---|
+| [UOB, Monthly FX & Rates Strategy, 6 Nov 2026](https://www.uobgroup.com/assets/web-resources/research/pdf/FXRM_261106.pdf), Heng Koon How, Peter Chia, Quek Ser Leang | Application/Constraint | 24 halaman, strategi FX/rates dan target 4Q26–3Q27; bukan forecast pekan. Tabel FX halaman 23 tidak memuat CAD. Identitas file/hash dan review visual disimpan dalam riset |
+| [UOB, FX Insights, 6 Nov 2026](https://www.uobgroup.com/assets/web-resources/research/pdf/FXI_261106.pdf) | Application/Constraint | 15 halaman, 24h/1–3 weeks/1–3 months dipisahkan; momentum/level merupakan technical view. Konflik angka USD/CHF antarhalaman perlu QC sebelum memakai klaim |
+| [UOB, Weekly Outlook, 6 Nov 2026, untuk 9–13 Nov](https://www.uobgroup.com/assets/web-resources/research/pdf/WO_261106.pdf) | Application/Constraint | 5 halaman agenda dan perkiraan rilis/speaker; bukan voting bullish/bearish mata uang. Forecast indikator belum dirilis tidak boleh menjadi actual dalam indeks surprise |
+| [HSBC Global Research, FX Navigator Monthly pada Currency Zone, 23 Okt 2026](https://www.currencyzone.hsbc.com/) | Application | Definisi panah pair coming weeks, current vs previous month, narasi alasan dan pilihan delapan currency; contoh format stance terstruktur. USD = DXY; bukan angka probabilitas atau forecast pekan spesifik |
+| [DBS Group Research, Macro Insights Weekly: Asia’s trade with China and the US, 27 Apr 2026](https://www.dbs.com/insightsdirect/api/s3/dbs-buffer/article_attachment/20260427/10-14-57_2604027_insights_weekly.pdf), bagian FX Philip Wee | Application | Bagian FX berbeda dari agenda/forecast makro dan tabel jangka panjang; membuktikan DBS menerbitkan riset weekly asli selain produk Sales. Sampel April bukan pandangan November |
+| [TD Securities, Weekly FX Brief, 2–6 Nov 2026](https://www.tdsecurities.com/tds/document/tdfx-weekly-commercialbrief) | Application/Constraint | Komentar coming-week USD/CAD, rentang option-implied Week Ahead/Month Ahead, dan target kuartal dipisahkan. Range volatilitas bukan arah atau target expected return; label Internal/Interne perlu klarifikasi |
+| [OCBC, FX Weekly: Firm, Not One-Way, 2 Nov 2026](https://www.ocbc.com/iwov-resources/sg/ocbc/gbc/pdf/FX%20Outlook/FX%20Ideas/FX%20Weekly%20110226.pdf), Sim Moh Siong dan Christopher Wong | Application/Constraint | Analisis FX/energi, kalender minggu dan forecast hingga 2027; publikasi weekly tidak menjadikan semua klaim ber-horizon satu minggu |
+
 - [[nfp-causal-research-framework]] — memory: kill-gate NFP final, kenapa proyek itu STOP
 - [[labour-market-assessment-pivot]] — memory: pivot ke nowcasting rule-based, sudah dieksekusi S154
 - `daun_merah.md` Session 150-153 — detail teknis lengkap riset NFP (Klein sebagai constraint utama)
