@@ -26,8 +26,9 @@ const { allowAiCall } = require('./_ai_guard');
 const { isDeepSeekDisabled, getDeepSeekApiKey, getDeepSeekUrl, isRelinkActive, resolveDeepSeekCircuit } = require('./_deepseek');
 const { requireAppKey, safeEqual } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, mapYahooSymbolToTwelveData, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
-const { CURRENCIES: SMART_BIAS_CURRENCIES, buildSmartBiasRows } = require('./_smart_bias');
-const { loadMacroReleases, buildMacroPillarScores, assessMacroScoreStability } = require('./_macro_surprise');
+const { buildSmartBiasRows } = require('./_smart_bias');
+const {loadMacroConditions}=require('./_macro_conditions_store');
+const {buildMacroConditions,buildQualitativeBiasRows}=require('./_macro_candidate');
 const marcWeekly = require('./_marc_weekly');
 const { computePrimeExecution, resampleCandles } = require('./_prime_execution');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
@@ -798,6 +799,11 @@ const KEY_REGISTRY = [
   { key: 'macro_surprise_events:v2', owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Payload first-seen immutable dengan provenance; backfill bukan vintage asli' },
   { key: 'macro_surprise_vintages:v2', owner: 'api/_macro_surprise.js', ttl_expected: null, note: 'Versi payload append-only menurut content hash' },
   { key: 'macro_surprise_manifest:v2', owner: 'scripts/rebuild_macro_foundation.js', ttl_expected: null, note: 'Aktivasi hanya setelah verifikasi jumlah dan digest rekonstruksi' },
+  { key: 'macro_conditions_index:v1', owner: 'api/_macro_conditions_store.js', ttl_expected: null, note: 'Index kondisi ekonomi, loader membaca 180 hari terbaru' },
+  { key: 'macro_conditions_events:v1', owner: 'api/_macro_conditions_store.js', ttl_expected: null, note: 'Estimasi terakhir yang diketahui per seri/periode; actual tanpa consensus boleh masuk' },
+  { key: 'macro_conditions_vintages:v1', owner: 'api/_macro_conditions_store.js', ttl_expected: null, note: 'Arsip versi kondisi menurut source event dan content hash' },
+  { key: 'macro_conditions_manifest:v1', owner: 'scripts/seed_macro_conditions.js', ttl_expected: null, note: 'Seed kondisi diaktifkan setelah hitung ulang dan pemeriksaan isi' },
+  { key: 'macro_conditions_batch:*', owner: 'api/_macro_conditions_store.js', ttl_expected: 21600, note: 'Fingerprint batch kalender/fundamental; polling identik tidak menulis seluruh dataset lagi' },
   { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'AI analysis of fundamental data (Gemini only), cached 6h' },
   { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
   { key: 'vps:heartbeat',        owner: 'vps/heartbeat.js',      ttl_expected: 300,    note: 'Plan Q-1: epoch beat daemon Render, dibaca api/admin.js?action=health source=vps_heartbeat' },
@@ -9591,7 +9597,7 @@ async function ohlcvDashboardHandler(req, res) {
   }
 }
 
-const SMART_BIAS_CACHE_KEY = 'smart_bias:v2';
+const SMART_BIAS_CACHE_KEY = 'smart_bias:v3';
 const SMART_BIAS_TTL_SECS = 15 * 60;
 const MARC_TRACKER_KEY = 'marc_weekly:tracker:v1';
 const MARC_FEED_URL = 'https://feeds.feedburner.com/marctomarket/ujfs';
@@ -9746,22 +9752,21 @@ async function smartBiasHandler(req, res) {
   let cached = null;
   try {
     cached = _parseJsonValue(await redisCmd('GET', SMART_BIAS_CACHE_KEY), null);
-    if (!force && cached?.schema_version === 5) return res.status(200).json(cached);
+    if (!force && cached?.schema_version === 6) return res.status(200).json(cached);
   } catch (e) { /* lanjut hitung fresh */ }
 
   try {
-    const [fundRows, liveRates, rawBias, rawCot, rawMarcTracker, macroReleases] = await Promise.all([
-      Promise.all(SMART_BIAS_CURRENCIES.map(cur => redisCmd('HGETALL', `fundamental:${cur}`).catch(() => null))),
+    const nowMs=Date.now();
+    const [liveRates, rawBias, rawCot, rawMarcTracker, observations] = await Promise.all([
       getLiveCbRates().catch(() => []),
       redisCmd('GET', 'cb_bias').catch(() => null),
       redisCmd('GET', 'cot_cache_v2').catch(() => null),
       redisCmd('GET', MARC_TRACKER_KEY).catch(() => null),
-      loadMacroReleases(redisCmd).catch(error => {
-        console.warn('smart_bias macro history unavailable:', error.message);
+      loadMacroConditions(redisCmd,{asOfMs:nowMs}).catch(error => {
+        console.warn('smart_bias conditions unavailable:', error.message);
         return [];
       }),
     ]);
-    const fundamentals = Object.fromEntries(SMART_BIAS_CURRENCIES.map((cur, i) => [cur, _hgetallToObj(fundRows[i])]));
     const biasMap = _parseJsonValue(rawBias, {});
     const cbBanks = (Array.isArray(liveRates) ? liveRates : []).map(rate => ({
       ...rate,
@@ -9773,34 +9778,32 @@ async function smartBiasHandler(req, res) {
     const marcTracker = _parseJsonValue(rawMarcTracker, []);
     const marcReport = marcWeekly.summarizeTracker(Array.isArray(marcTracker) ? marcTracker : []);
     const storedStances = marcWeekly.currentStances(marcReport);
-    const macroFoundation = macroReleases.length ? {
-      scores: buildMacroPillarScores(macroReleases, { asOfMs: Date.now() }),
-      stability: assessMacroScoreStability(macroReleases, { asOfMs: Date.now() }),
-      release_count: macroReleases.length,
-    } : { scores: null, stability: null, release_count: 0 };
-    const rows = buildSmartBiasRows({
-      fundamentals,
+    // Existing adapters supply only policy, analyst views and positioning.
+    // Growth/inflation come from reported conditions, never a surprise fallback.
+    const contextRows = buildSmartBiasRows({
       cbBanks,
       cot: _parseJsonValue(rawCot, {}),
       bankItems: [],
       bankStances: storedStances,
-      macroFoundation,
-      nowMs: Date.now(),
+      macroFoundation:{scores:null,stability:null,release_count:0},
+      nowMs,
     });
+    const conditions=buildMacroConditions(observations,{asOfMs:nowMs,integrated:true});
+    const rows=buildQualitativeBiasRows(conditions,contextRows);
     const payload = {
-      schema_version: 5,
-      methodology: 'standardized_surprise_core_first',
+      schema_version: 6,
+      methodology: 'academy_qualitative_core_first',
       rows,
-      computed_at: new Date().toISOString(),
-      macro_foundation: {
-        available: macroFoundation.release_count > 0,
-        release_count: macroFoundation.release_count,
-        history_years: 5,
-        data_schema_version: 2,
-        vintage_limitation: 'Historical vendor snapshots; not verified first-release vintages. New observations frozen at first ingestion.',
-        interpretation: 'Surprise relative to consensus, not economic growth or inflation level; predictive thresholds not calibrated.',
+      computed_at: new Date(nowMs).toISOString(),
+      macro_conditions: {
+        available: observations.length>0,
+        observation_count: observations.length,
+        version:conditions.version,
+        interpretation:'Qualitative fundamental support; not a price target, probability or entry signal.',
+        surprises:'Consensus comparisons are context only and never determine core conditions.',
+        estimation_policy:'Latest known estimate per period, including revisions; previous from the same release.',
         max_release_age_days: { weekly:21, monthly:75, quarterly:150 },
-        sensitivity_half_lives_days: [30, 45, 60, 90],
+        numeric_formula:'Local conservative adaptation; Academy does not disclose complete numerical weights.',
       },
       banks_mode: 'marc_weekly_forward_log',
       bank_source: { name: 'Marc to Market', analyst: 'Marc Chandler', report: marcReport },

@@ -1,12 +1,12 @@
 'use strict';
 
-// Pre-integration adaptation of the Academy hierarchy. No production handler
-// imports this module. Qualitative fundamental bias, not a probability model.
+// Qualitative adaptation of the Academy hierarchy, shared by the live dashboard
+// and offline review. No price probabilities or optimized numeric weights.
 const { MAX_AGE_DAYS } = require('./_macro_surprise');
 const {buildOverall} = require('./_smart_bias');
 const CURRENCIES = ['USD','EUR','GBP','JPY','CHF','CAD','AUD','NZD'];
 const DAY = 86400000;
-const VERSION = 'macro_conditions_candidate_v1';
+const VERSION = 'academy_qualitative_v1';
 const sign = value => !Number.isFinite(value) ? null : value === 0 ? 0 : value > 0 ? 1 : -1;
 
 function evidenceDirection(components, required) {
@@ -24,7 +24,7 @@ function evidenceDirection(components, required) {
 function validRows(rows, asOfMs, mode) {
   const groups = new Map();
   for (const row of rows || []) {
-    if (row?.schema_version !== 2 || !CURRENCIES.includes(row.currency) || !row.id || !row.source_event_id || !Number.isFinite(row.actual)
+    if (row?.schema_version !== 2 || !CURRENCIES.includes(row.currency) || !row.id || !row.source_event_id || typeof row.series!=='string' || !MAX_AGE_DAYS[row.cadence] || !Number.isFinite(row.actual)
       || !Number.isFinite(row.time_ms) || row.time_ms > asOfMs) continue;
     const observedMs = Date.parse(row.observed_at);
     if (!Number.isFinite(observedMs) || row.time_ms > observedMs || (mode !== 'diagnostic' && observedMs > asOfMs)) continue;
@@ -70,7 +70,7 @@ function component(row, concept, { neutral=null, inverse=false } = {}) {
     level_direction:neutral==null ? null : sign(actual-neutral),
     comparison:'previous_reported_in_same_release',
     comparison_basis:row.currency+'|'+row.series,cadence:row.cadence,
-    source_event_id:row.source_event_id,source_url:row.source_url,period:row.period,
+    source_event_id:row.source_event_id,source_url:row.source_url,period:row.period,unit:row.unit,
     released_at:new Date(row.time_ms).toISOString(),observed_at:row.observed_at,vintage_kind:row.vintage_kind,
     forecast:row.forecast ?? null,
   };
@@ -84,7 +84,7 @@ function gdpComponent(rows) {
   return component(row,'output',{neutral:0});
 }
 
-function buildMacroCandidate(observations,{asOfMs=Date.now(),mode='observed'}={}) {
+function buildMacroCandidate(observations,{asOfMs=Date.now(),mode='observed',integrated=false}={}) {
   if (!Number.isFinite(asOfMs)) throw Error('Invalid as-of timestamp');
   if (!['observed','diagnostic'].includes(mode)) throw Error('Unknown evaluation mode');
   const rows=validRows(observations,asOfMs,mode);
@@ -119,7 +119,7 @@ function buildMacroCandidate(observations,{asOfMs=Date.now(),mode='observed'}={}
   }
   return {
     version:VERSION,as_of:new Date(asOfMs).toISOString(),mode,currencies,
-    integration:{enabled:false,reason:'preintegration_review',data_point_in_time:mode==='observed'},
+    integration:{enabled:integrated,reason:integrated?'active_qualitative_dashboard':'preintegration_review',data_point_in_time:mode==='observed'},
     academy:{core:['growth','inflation','labour','central_bank'],secondary:['bank_research','positioning'],one_off_surprises:'context_only',numeric_formula:'local_adaptation_not_published_by_academy'},
     constraints:{growth_core_concepts:2,growth_context_concepts:2,consumer_price_concepts:2,optimized_weights:0,probability_claims:false},
   };
@@ -160,13 +160,14 @@ function buildAcademyPreview(candidate, contextRows=[]) {
         .map(code=>code==='core_consistent' ? 'core_conflict' : code);
       overall.rationale_codes.push('core_disagreement_kept_explicit');
     }
-    return {currency,growth,inflation,central_bank,banks,positioning,
+    return {currency,as_of:candidate.as_of,growth,inflation,central_bank,banks,positioning,
       overall:{...overall,confidence:null,interpretation:'qualitative_fundamental_bias_not_trade_signal',
         evidence_quality:{coverage:[growth,inflation,central_bank].filter(layer=>layer.state!=='insufficient').length,
           total_core_columns:3,confirmations:overall.confirmations,conflicts:overall.conflicts}},
-      context_limitations:['central_bank_and_positioning_reused_from_supplied_snapshot_not_reaudited'],
+      context_limitations:['central_bank_updated_at_is_processing_time_not_verified_original_article_time'],
     };
   });
 }
 
-module.exports={ VERSION,CURRENCIES,buildMacroCandidate,buildAcademyPreview,evidenceDirection };
+module.exports={ VERSION,CURRENCIES,buildMacroCandidate,buildAcademyPreview,evidenceDirection,
+  buildMacroConditions:buildMacroCandidate,buildQualitativeBiasRows:buildAcademyPreview };

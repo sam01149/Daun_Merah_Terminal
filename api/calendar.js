@@ -6,6 +6,7 @@
 // (lihat catch block di bawah) — riwayat FF sebagai fallback dicatat di
 // Dokumentasi/daun_merah_vendor.md.
 const TV_EVENTS_URL = 'https://economic-calendar.tradingview.com/events';
+const {persistMacroConditions}=require('./_macro_conditions_store');
 const MAJOR_CURRENCIES = new Set(['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF']);
 // Plan X (2026-08-04) — cache kedua utk surprise detector auto-entry (vps/daemon.js
 // checkSurpriseSkip). Sejak fondasi Smart Bias 2026-10-25, cache raw ini mencakup
@@ -113,6 +114,10 @@ module.exports = async function handler(req, res) {
       const surpriseKey = isNextWeek ? 'calendar_surprise_next_v1' : 'calendar_surprise_v1';
       const surprisePayload = { events: surpriseEvents, count: surpriseEvents.length, fetched_at: payload.fetched_at };
       writes.push(redisCmd('SET', surpriseKey, JSON.stringify(surprisePayload), 'EX', CACHE_TTL));
+      // Update the descriptive dashboard without depending on a paid AI/news
+      // refresh. Fingerprinting skips unchanged batches to protect Redis quota.
+      writes.push(persistMacroConditions(allEvents,redisCmd,{observedAt:payload.fetched_at,batchKey:isNextWeek?'calendar_next':'calendar'})
+        .catch(error=>console.warn('calendar conditions write failed:',error.message)));
     }
     try { await Promise.all(writes); } catch(_) {}
     if (sf.gotLock) sf.release();

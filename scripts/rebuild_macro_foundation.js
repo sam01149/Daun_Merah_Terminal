@@ -140,4 +140,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(error=>{console.error(error.message);process.exitCode=1;});
-module.exports = { prepareSnapshots,publish,digest,main };
+module.exports = { prepareSnapshots,publish,digest,fetchRange,main };

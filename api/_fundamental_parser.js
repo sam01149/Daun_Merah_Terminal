@@ -4,6 +4,7 @@
 // All functions are pure except autoUpdateFundamentals which requires a redisCmd function.
 
 const { persistMacroReleases } = require('./_macro_surprise');
+const { persistMacroConditions } = require('./_macro_conditions_store');
 
 const FUND_PREFIX_MAP = [
   { kw: [
@@ -542,7 +543,7 @@ async function _fetchCalendarEventsForFund(redisCmd) {
             // calendar_v1 membawa field display; calendar_surprise_v1 membawa
             // seluruh impact termasuk raw numbers. Merge menjaga keduanya tanpa
             // menghitung rilis yang sama dua kali.
-            byRelease.set(key, { ...prior, ...event });
+            byRelease.set(key, { ...prior, ...event, ...(c.fetched_at ? {source_fetched_at:c.fetched_at} : {}) });
           }
         }
       } catch(_) { /* fail-open, skip batch yang rusak */ }
@@ -567,6 +568,8 @@ async function autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd) {
   // update fundamental existing.
   try { await persistMacroReleases(calendarEvents, redisCmd); }
   catch (e) { console.warn('macro surprise history write failed:', e.message); }
+  try { await persistMacroConditions(calendarEvents, redisCmd,{batchKey:'fundamentals'}); }
+  catch (e) { console.warn('macro conditions write failed:', e.message); }
   const byCurrency = {};
   for (const e of calendarEvents) {
     const fund = extractFundamentalFromCalendarEvent(e);
