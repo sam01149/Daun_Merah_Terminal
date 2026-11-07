@@ -1903,7 +1903,8 @@ async function runAutoEntryCycle(pairs = AUTO_ENTRY_PAIRS) {
   // dan skip menjadi ranking shadow. Tidak ada pilihan top-N dan tidak ada entry baru.
   const expectedLabels = academyMeta.expected_labels.join(',');
   const finalizePath = `/api/admin?action=setup_stats&scope=auto&source=academy_finalize&academy_slot_id=${encodeURIComponent(academySlotId)}&academy_expected=${encodeURIComponent(expectedLabels)}`;
-  await triggerWithRetry(finalizePath);
+  // Shadow dihentikan; tidak mengirim finalisasi ranking eksperimen.
+  // Histori cohort tetap tersedia untuk audit.
 }
 
 // Sub-riset 3a — instrumentasi latensi field `actual` calendar_v1. Poll

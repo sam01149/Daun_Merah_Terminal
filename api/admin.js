@@ -10,6 +10,7 @@
 //   /api/health → /api/admin?action=health
 //   /api/push   → /api/admin?action=push
 
+const { SHADOW_ENABLED, groupHistory } = require('./_aatas_operation');
 const PUSH_KW  = require('./_push_keywords');
 const newscat  = require('../newscat');
 const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund, reconcileFundamentalKeys } = require('./_fundamental_parser');
@@ -4529,7 +4530,9 @@ function _statsPayloadFromLog(log) {
   // sebagai panduan di mana sampel LAYAK dibelah.
   // `stats_from_policy_v` ikut dikirim supaya dashboard bisa menjelaskan sendiri kenapa
   // angkanya nol/kecil (bukan "data hilang") tanpa siapa pun harus membuka source code.
-  return { symbols, global: _aggSetupStats(aatasLog), recent: log, policy_epochs: POLICY_EPOCHS, stats_from_policy_v: AATAS_EPOCH };
+  const grouped = groupHistory(aatasLog);
+  const aggregateGroups = groups => Object.fromEntries(Object.entries(groups).map(([key, rows]) => [key, _aggSetupStats(rows)]));
+  return { symbols, global: _aggSetupStats(aatasLog), by_policy: aggregateGroups(grouped.policies), by_strategy: aggregateGroups(grouped.strategies), shadow_enabled: SHADOW_ENABLED, recent: log, policy_epochs: POLICY_EPOCHS, stats_from_policy_v: AATAS_EPOCH };
 }
 
 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — status 'tp' palsu tersimpan di
@@ -4606,14 +4609,14 @@ async function _buildAutoScopeStats() {
   // yang didaftarkan SEBELUM event. Hanya symbol dengan reaction belum tersimpan yang
   // ikut MGET; sesudah lengkap/unavailable terminal, ia tidak menambah beban tick lagi.
   const academyNow = Date.now();
-  const academyReactionPending = log.filter(s => s?.academy_shadow?.event_scenarios?.some(scenario => {
+  const academyReactionPending = SHADOW_ENABLED ? log.filter(s => s?.academy_shadow?.event_scenarios?.some(scenario => {
     const eventMs = Date.parse(scenario?.event_at || '');
     return scenario?.scenario_id
       && !s.academy_shadow?.event_reactions?.[scenario.scenario_id]
       && Number.isFinite(eventMs)
       && academyNow >= eventMs + 3 * 3600000;
-  }));
-  const optimizationPending = log.filter(s => ['waiting_zone', 'confirmed', 'filled', 'unavailable'].includes(s?.entry_optimization_shadow?.state));
+  })) : [];
+  const optimizationPending = SHADOW_ENABLED ? log.filter(s => ['waiting_zone', 'confirmed', 'filled', 'unavailable'].includes(s?.entry_optimization_shadow?.state)) : [];
   const candleSymbols = [...new Set([
     ...active,
     ...academyReactionPending.map(s => s.symbol).filter(Boolean),
@@ -4669,13 +4672,13 @@ async function _buildAutoScopeStats() {
   }
   // Tidak pernah mengubah status/level/setup produksi: hanya menempelkan hasil reaction
   // deterministik pada envelope Academy yang sudah ada. Error tetap fail-open.
-  try {
+  if (SHADOW_ENABLED) try {
     const academyApplied = applyCompletedEventReactions(log, candlesBySymbol, calendarEvents, Date.now());
     if (academyApplied.changed) log = academyApplied.records;
   } catch (e) { console.warn('Academy reaction shadow gagal (diabaikan):', e.message); }
   // PLAN AH: evaluator entry gabungan AATAS+Prime hanya memperbarui envelope shadow.
   // Status/fill/SL/TP produksi di record induk tidak pernah dibaca balik dari hasil ini.
-  try {
+  if (SHADOW_ENABLED) try {
     const optimizationApplied = applyEntryOptimizationShadow(log, candlesBySymbol, Date.now());
     if (optimizationApplied.changed) log = optimizationApplied.records;
   } catch (e) { console.warn('AATAS Entry Optimalization shadow gagal (diabaikan):', e.message); }
@@ -4691,7 +4694,7 @@ async function _buildAutoScopeStats() {
 }
 
 async function _finalizeAcademyRanking(slotId, expectedLabels, setupLog) {
-  if (!slotId) return null;
+  if (!SHADOW_ENABLED || !slotId) return null;
   try {
     const [rejectRaw, skipRaw] = await Promise.all([
       redisCmd('LRANGE', 'aatas_reject_log:v1', '0', '199'),
@@ -8617,15 +8620,15 @@ async function ohlcvAnalyzeHandler(req, res) {
         regime: autoGuardRegime,
         model, policy_v: POLICY_VERSION, aatas_v: AATAS_PROMPT_VERSION,
       };
-      rejectEntry.academy_shadow = buildAcademyShadow({
+      rejectEntry.academy_shadow = SHADOW_ENABLED ? buildAcademyShadow({
         setup: { ...structured, symbol, label: data.label }, events: aatasCalendarEvents,
         decisionMs: rejectEntry.ts, slotId: academySlotId,
-      });
-      rejectEntry.entry_optimization_shadow = buildEntryOptimizationShadow({
+      }) : undefined;
+      rejectEntry.entry_optimization_shadow = SHADOW_ENABLED ? buildEntryOptimizationShadow({
         setup: { ...structured, symbol, label: data.label, ts: rejectEntry.ts },
         marketData: data._entry_optimization_inputs,
         decisionMs: rejectEntry.ts,
-      });
+      }) : undefined;
       // Ditunggu agar finalisasi cohort yang dipanggil daemon sesudah seluruh pair tidak
       // mendahului log ini. Error tetap ditelan: pencatatan tidak boleh menggagalkan analisa.
       await redisCmd('LPUSH', 'aatas_reject_log:v1', JSON.stringify(rejectEntry))
@@ -8800,15 +8803,15 @@ async function ohlcvAnalyzeHandler(req, res) {
         // hanya menangkap pertanyaan yang sudah terpikirkan saat skema dibuat.
         ...(isAutoCall ? {
           academy_slot_id: academySlotId,
-          academy_shadow: buildAcademyShadow({
+          academy_shadow: SHADOW_ENABLED ? buildAcademyShadow({
             setup: { ...structured, symbol, label: data.label }, events: aatasCalendarEvents,
             decisionMs: Date.now(), slotId: academySlotId,
-          }),
-          entry_optimization_shadow: buildEntryOptimizationShadow({
+          }) : undefined,
+          entry_optimization_shadow: SHADOW_ENABLED ? buildEntryOptimizationShadow({
             setup: { ...structured, symbol, label: data.label, ts: createdAt, level_set_at: createdAt },
             marketData: data._entry_optimization_inputs,
             decisionMs: createdAt,
-          }),
+          }) : undefined,
           entry_execution: 'zone_touch_after_calendar',
           selected_sl_id: structured.selected_sl_id ?? null,
           selected_tp_id: structured.selected_tp_id ?? null,
@@ -8980,15 +8983,15 @@ async function ohlcvAnalyzeHandler(req, res) {
                     reasoning_note_truncated: structured.reasoning_note_truncated === true,
                     aatas_v: AATAS_PROMPT_VERSION,
                     academy_slot_id: academySlotId,
-                    academy_shadow: mergeAcademyShadow(stalePending.academy_shadow, buildAcademyShadow({
+                    academy_shadow: SHADOW_ENABLED ? mergeAcademyShadow(stalePending.academy_shadow, buildAcademyShadow({
                       setup: { ...structured, symbol, label: data.label }, events: aatasCalendarEvents,
                       decisionMs: Date.now(), slotId: academySlotId,
-                    })),
-                    entry_optimization_shadow: mergeEntryOptimizationShadow(stalePending.entry_optimization_shadow, buildEntryOptimizationShadow({
+                    })) : stalePending.academy_shadow,
+                    entry_optimization_shadow: SHADOW_ENABLED ? mergeEntryOptimizationShadow(stalePending.entry_optimization_shadow, buildEntryOptimizationShadow({
                       setup: { ...structured, symbol, label: data.label, ts: stalePending.ts, level_set_at: Date.now() },
                       marketData: data._entry_optimization_inputs,
                       decisionMs: Date.now(),
-                    })),
+                    })) : stalePending.entry_optimization_shadow,
                   },
                 };
               } else {

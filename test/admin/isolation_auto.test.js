@@ -192,7 +192,8 @@ test('PLAN U-7(a): auto=1 + CRON_SECRET valid -> ohlcv_analysis:<symbol> TIDAK d
       assert.equal(autoLog.length, 1);
       assert.equal(autoLog[0].source, 'auto');
       assert.equal(autoLog[0].symbol, 'GBPUSD=X');
-      assert.equal(autoLog[0].entry_optimization_shadow.mode, 'shadow_no_entry_effect');
+      assert.equal(autoLog[0].entry_optimization_shadow, undefined);
+      assert.equal(autoLog[0].academy_shadow, undefined);
     } finally { global.fetch = origFetch; }
   });
 });
