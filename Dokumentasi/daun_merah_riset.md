@@ -24,6 +24,15 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07] Menilai audit AI: kesesuaian prinsip tidak membuktikan akurasi ekonomi (S467)
+
+User memberikan laporan AI lain tentang Smart Bias. Dibandingkan dengan kode saat ini dan transkrip lokal Prime di .cache/prime-audit-20261010/transcripts/ (what-the-smart-bias-is, how-the-bias-is-weighted, the-table-and-the-summary, the-economic-cycle, using-the-bias, where-the-chart-fits). Prinsip inti/pendukung, pembatasan arah dan sifat deskriptif memang sejalan dengan adaptasi yang disepakati. Namun predikat 100% sesuai/lolos semua tidak dibuktikan oleh checklist atau unit test. Academy menjelaskan prioritas empat tier, interpretasi berdasarkan konteks/reaksi pasar dan narasi; tidak mengungkap formula lengkap yang sama dengan mesin kita. Kode sendiri menandai numeric_formula=local_adaptation_not_published_by_academy. Metode simple sign actual-vs-previous, GDP+unemployment, keselarasan inflasi/tone, dan aturan agregasi adalah pilihan implementasi lokal; ini tidak menjamin seluruh penilaian benar atau bebas noise.
+
+Ringkasan accordion kita lebih singkat dari summary naratif manual Prime yang membahas penyebab, reaksi pasar, politik dan hal berikutnya yang dipantau. Pemindahan trend ke fitur pair dan tidak menampilkan retail adalah adaptasi disengaja; tidak perlu ditambahkan kembali semata-mata untuk mengejar label 100%. Cakupan institusi masih dua sumber dengan satu kontributor eligible pada pembaruan S466. CB Dashboard membaca tone panel cb_bias; updated_at adalah waktu pemrosesan, bukan bukti tanggal statement asli. Freshness guard tidak sama dengan verifikasi kebenaran tone atau seluruh sumber. Semua ini sudah merupakan batas desain, bukan bug baru atau alasan mengubah model diam-diam.
+
+Laporan yang ditempel merekam schema 11/cache v8/versi .5/1605 tes. State sekarang schema 12/cache v9/versi .6/1615 tes; filter bank menerima konteks antarparagraf dalam section yang sama, pair mingguan ditampilkan relatif, snapshot yang masih berlaku tidak hilang karena artikel tak relevan, dan sync ING berhasil S466. Satu pendukung yang berlawanan dicatat dalam conflicts; tidak otomatis mengubah overall menjadi mixed. DTO produksi tetap confidence null. Bukti pemeriksaan data eksternal populasi penuh, validasi prompt sumber CB dan uji ketahanan terhadap revisi/tanggal sumber tidak disertakan laporan; jangan menyebutnya lulus hanya karena nama tes ada. Untuk penilaian ini tidak mengubah formula, UI, filter atau dataset produksi.
+
+
 ### [2026-11-07] Sumber mingguan selain ING - pemeriksaan ulang setelah pembaruan S466
 
 Yang aktif selain ING masih ABN AMRO. Edisi 4 Nov tidak menyumbang weekly G10 yang memenuhi filter; hasil USD neutral S466 berasal dari ING saja. Jangan menyebut panel ini konsensus beberapa bank.
