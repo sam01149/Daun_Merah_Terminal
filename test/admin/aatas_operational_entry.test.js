@@ -108,3 +108,10 @@ test('range tetap tidak masuk ketika kalender tentative dan ketika zona diubah t
  assert.equal(st.status,'pending');assert.equal(st.operation_wait_reason,'relevant_event_time_unknown');
  ({st,candles}=fixture());st.entry_zone='90-91';op.evaluate(st,candles,T+2*H,cal);assert.equal(st.status,'invalid');
 });
+
+test('open H1 tersedia langsung setelah trigger close; high-low candle berjalan tidak menjadi outcome',()=>{
+ const {st,candles}=fixture();candles.at(-1).h=125;
+ op.evaluate(st,candles,T+H+5*60000,cal);
+ assert.equal(st.status,'open');assert.equal(st.filled_t,(T+H)/1000);assert.equal(st.closed_t,undefined);
+ op.evaluate(st,candles,T+2*H,cal);assert.equal(st.status,'tp');
+});

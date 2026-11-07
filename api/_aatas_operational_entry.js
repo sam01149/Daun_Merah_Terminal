@@ -179,7 +179,11 @@ function evaluate(st,input,now,events=[]) {
       const a=atr(sixHour(all.filter(r=>r.t<=bar.t),end),14),body=Math.abs(bar.c-bar.o);
       const rejected=sign===1?bar.o>c.zone.high&&bar.c>c.zone.high&&bar.c>bar.o:bar.o<c.zone.low&&bar.c<c.zone.low&&bar.c<bar.o;
       if(!rejected || !(a>0) || (c.strategy==='momentum'&&(body<a*.5||body>a))) continue;
-      const next=all[i+1];if(!next || next.t!==bar.t+3600) {st.operation_wait_reason='next_closed_h1_unavailable';continue;}
+      // Open candle berjalan sudah tersedia setelah trigger close. H/L/C parsial
+      // tidak dipakai untuk trigger, ATR atau outcome sebelum candle selesai.
+      const next=normalizeCandles((input||[]).filter(r=>r && ['t','o','h','l','c'].every(k=>number(r[k])!=null)))
+        .find(r=>r.t===bar.t+3600 && r.t*1000<=now);
+      if(!next) {st.operation_wait_reason='next_h1_open_unavailable';continue;}
       const fill=next.o;
       let sl=c.planned_sl,tp=c.planned_tp;
       if(c.strategy==='choppy') {sl=fill-sign*a;tp=fill+sign*2*a;if(tp>c.environment.high||tp<c.environment.low)continue;}

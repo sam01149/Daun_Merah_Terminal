@@ -20,7 +20,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Changelog Session 469 (2026-11-07) — Penunjuk operasional AATAS
 
-Konsol developer memakai kontrak operasional AATAS v64 dan rincian statistik kumulatif per kebijakan/strategi, menggantikan panel shadow aktif. Rincian perubahan auto-entry, perlindungan histori, tes dan batas verifikasi ada di `professional_llm_trader/changelog.md` Session 469; sesuai routing ATURAN §2, rincian auto-entry tetap di folder tersebut.
+Konsol developer memakai kontrak operasional AATAS v64 dan rincian statistik kumulatif per kebijakan/strategi, menggantikan panel shadow aktif. Fill memakai open H1 yang tersedia sesudah candle pemicu selesai; candle berjalan tidak menjadi bukti outcome. Suite penuh 1.631/1.631 lulus. Rincian perubahan auto-entry, perlindungan histori, tes dan batas verifikasi ada di `professional_llm_trader/changelog.md` Session 469; sesuai routing ATURAN §2, rincian auto-entry tetap di folder tersebut.
 
 ## Changelog Session 467 (2026-11-07) - Tinjauan kritis laporan audit AI lain
 
