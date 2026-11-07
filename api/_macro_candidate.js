@@ -100,7 +100,7 @@ function buildMacroCandidate(observations,{asOfMs=Date.now(),mode='observed',int
     const consumption=component(latest(local,['retail_sales'],'yoy'),'consumption');
     const consumer=[
       component(latest(local,['consumer_prices'],'yoy'),'headline'),
-      component(latest(local,['cpi_ex_food_household_energy_vehicle_fuels','core_consumer_prices','trimmed_mean_cpi','weighted_median_cpi','cpi_trimmed_mean','cpi_median'],'yoy'),'underlying'),
+      component(latest(local,['cpi_ex_food_household_energy_vehicle_fuels','cpi_ex_fresh_seasonal_energy_fuels','core_consumer_prices','trimmed_mean_cpi','weighted_median_cpi','cpi_trimmed_mean','cpi_median'],'yoy'),'underlying'),
     ];
     let consumerSummary=evidenceDirection(consumer,['headline','underlying']);
     if (consumerSummary.coverage==='complete' && (consumer[0].period!==consumer[1].period

@@ -36,7 +36,7 @@ Ada 2 lapis pembatas yang perlu dibedakan:
 
 ## 2. Peta Fitur AI
 
-**Batas AI vs deterministik (2026-11-07, S456).** Kondisi ekonomi dan agregasi bias dihitung kode. Sejak S460, tone CB pada Dashboard membaca cb_bias yang sama dengan panel bank sentral; tidak ada ekstraksi atau syarat headline tambahan pada read Dashboard. Dashboard read tidak memakai token. Ekstraksi riset institusi mengambil artikel ING baru melalui DeepSeek Flash existing; quote, subjek, tanggal, pair dan horizon divalidasi kode. Maksimal dua panggilan/hari dengan bucket deepseek_institutions (relink_institutions bila gateway aktif), circuit ai:deepseek:institutions; hash sama idempotent dan retry cooldown enam jam. Marc retired atas instruksi user, termasuk cron dan penilaian outcome. Ini ringkasan opini deskriptif, bukan prediksi terkalibrasi.
+**Batas AI vs deterministik (2026-11-07, S456).** Kondisi ekonomi dan agregasi bias dihitung kode. Sejak S460, tone CB pada Dashboard membaca cb_bias yang sama dengan panel bank sentral; tidak ada ekstraksi atau syarat headline tambahan pada read Dashboard. Dashboard read tidak memakai token. Ekstraksi riset institusi mengambil artikel ING dan FX Weekly ABN AMRO baru (ABN untuk penggunaan pribadi yang dikonfirmasi user, S463) melalui DeepSeek Flash existing; quote, subjek, tanggal, pair dan horizon divalidasi kode. Maksimal empat panggilan/hari dengan bucket deepseek_institutions (relink_institutions bila gateway aktif), circuit ai:deepseek:institutions; hash sama idempotent dan retry cooldown enam jam. Marc retired atas instruksi user, termasuk cron dan penilaian outcome. Ini ringkasan opini deskriptif, bukan prediksi terkalibrasi.
 
 | # | Fitur | Tombol di UI | Dipicu otomatis? | Cache | Rate limit server |
 |---|-------|--------------|-------------------|-------|--------------------|
@@ -277,7 +277,7 @@ Ini jawaban langsung untuk pertanyaan "penggunaan paling banyak fitur AI itu ber
 | Analisa AI per Pair manual | Tidak masuk baseline; hanya bertambah bila user menekan tombol | DeepSeek (primary/satu-satunya) |
 | Analisa Fundamental | maksimal 8 request | Gemini (primary/satu-satunya, retry 1x + jeda 2s) |
 | AI Coach Jurnal | ±5-10 request | Gemini (primary/satu-satunya, retry 1x + jeda 2s) |
-| Ekstraksi pandangan institusi ING | normalnya satu artikel/hari kerja; maksimal 2 request/hari, hash sama tidak diulang | DeepSeek Flash, bucket deepseek_institutions terpisah |
+| Ekstraksi pandangan institusi ING + ABN AMRO (pribadi) | normalnya satu artikel per sumber/hari kerja; maksimal 4 request/hari, hash sama tidak diulang | DeepSeek Flash, bucket deepseek_institutions terpisah |
 | Auto-Entry Virtual + Uji Konsistensi LLM (Plan U-3, §3.6) | ±20-26 request (AATAS v2, 2026-08-25: tiap kandidat 2 panggilan — Call 1 makro + Call 2 teknikal; Gate 1 gagal berhenti di 1. Probe konsistensi 3×2) | DeepSeek eksperimen (pool `deepseek_experimental`, 35/hari) |
 | Sistem Hakim Gate A (bagian dari auto-entry di atas) | maksimal +2 request/hari | DeepSeek eksperimen |
 | Review Posisi Virtual (Plan U-5a/b, §3.7) | maksimal +3 request (event-driven, cap harian kode) | DeepSeek eksperimen |

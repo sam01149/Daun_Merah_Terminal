@@ -158,4 +158,4 @@ async function sync(redis,{fetchImpl=fetch,nowMs=Date.now(),fetchSnapshotImpl=fe
     return {updated:true,period:snapshot.period,actual:snapshot.actual,previous:snapshot.previous};
   }finally{await redis('DEL','lock:statsnz_core').catch(()=>null);}
 }
-module.exports={CACHE_KEY,VINTAGES_KEY,FIELD,SERIES,DEFINITION,SOURCE_ROW,SHEET,INDEX_URL,pageData,discoverRelease,newZealandTime,releaseMetadata,parseWorkbookRows,observation,getSnapshot,fetchSnapshot,sync};
+module.exports={CACHE_KEY,VINTAGES_KEY,FIELD,SERIES,DEFINITION,SOURCE_ROW,SHEET,INDEX_URL,pageData,discoverRelease,newZealandTime,releaseMetadata,parseWorkbookRows,observation,getSnapshot,fetchSnapshot,sync,WRITE_SCRIPT};

@@ -3,6 +3,7 @@
 // Institution research is secondary evidence. Pair views and unbounded horizons
 // stay in the detail panel; they never become a currency-wide weekly vote.
 const crypto=require('node:crypto');
+const abn=require('./_abn_research');
 function cleanHtml(value) {
   const entities={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' '};
   return String(value||'').replace(/<script\b[\s\S]*?<\/script>/gi,' ').replace(/<style\b[\s\S]*?<\/style>/gi,' ')
@@ -13,15 +14,19 @@ function cleanHtml(value) {
     });
 }
 const CURRENCIES=['USD','EUR','GBP','JPY','CHF','CAD','AUD','NZD'];
-const KEY='institution_views:v1';
-const VERSION='institution-views-v1';
+const KEY='institution_views:v2';
+const VERSION='institution-views-v2';
 const DAY=86400000;
 const SOURCE={institution:'ING',url:'https://think.ing.com/rss/',host:'think.ing.com',
   attribution:'Adaptasi ringkasan riset analis ING; hak cipta konten sumber: ING Bank N.V.',
   terms:'https://think.ing.com/about/terms-of-use/'};
+const SOURCES=[SOURCE,{institution:'ABN AMRO',url:abn.INDEX_URL,host:'www.abnamro.com',
+  attribution:'Adaptasi riset ABN AMRO untuk penggunaan pribadi; sumber: www.abnamro.com; copyright ABN AMRO Bank N.V.',
+  terms:'https://www.abnamro.com/research/en/home/information/disclaimer',usage:'private_only'}];
+const ATTRIBUTION=SOURCES.map(s=>s.attribution).join(' ');
 const plain=value=>cleanHtml(value).replace(/\s+/g,' ').trim();
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
-function safeUrl(value){try{const u=new URL(value);return u.protocol==='https:' && u.hostname===SOURCE.host && !u.username && !u.password && u.pathname.startsWith('/articles/') ? u.href : null;}catch(_){return null;}}
+function safeUrl(value,institution='ING'){if(institution==='ABN AMRO')return abn.safeUrl(value);if(institution!=='ING')return null;try{const u=new URL(value);return u.protocol==='https:' && u.hostname===SOURCE.host && !u.username && !u.password && u.pathname.startsWith('/articles/') ? u.href : null;}catch(_){return null;}}
 
 function parseFeed(xml,nowMs=Date.now()) {
   return [...String(xml).matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].map(match=>{
@@ -93,7 +98,7 @@ function validateClaims(result,article) {
 function buildInstitutionColumn(currency,snapshots=[],nowMs=Date.now()) {
   const candidates=[];
   for(const snapshot of Array.isArray(snapshots)?snapshots:[]) {
-    if(snapshot?.extractor_version!==VERSION || snapshot.institution!==SOURCE.institution || !safeUrl(snapshot.url)
+    if(snapshot?.extractor_version!==VERSION || !SOURCES.some(s=>s.institution===snapshot.institution) || !safeUrl(snapshot.url,snapshot.institution)
       || !Number.isFinite(Date.parse(snapshot.published_at)) || Date.parse(snapshot.published_at)>nowMs
       || nowMs-Date.parse(snapshot.published_at)>14*DAY || !Array.isArray(snapshot.claims)) continue;
     for(const c of snapshot.claims) {
@@ -114,7 +119,7 @@ function buildInstitutionColumn(currency,snapshots=[],nowMs=Date.now()) {
   const latestByBank=new Map();
   for(const snapshot of Array.isArray(snapshots)?snapshots:[]) {
     const t=Date.parse(snapshot?.published_at);
-    if(snapshot?.extractor_version===VERSION && snapshot.institution===SOURCE.institution && safeUrl(snapshot.url)
+    if(snapshot?.extractor_version===VERSION && SOURCES.some(s=>s.institution===snapshot.institution) && safeUrl(snapshot.url,snapshot.institution)
       && Number.isFinite(t) && t<=nowMs && nowMs-t<=14*DAY && Array.isArray(snapshot.claims)) {
       latestByBank.set(snapshot.institution,Math.max(latestByBank.get(snapshot.institution)||0,t));
     }
@@ -132,7 +137,7 @@ function buildInstitutionColumn(currency,snapshots=[],nowMs=Date.now()) {
   return {state,confidence:null,freshness:votes.length?'fresh':'insufficient',evidence:votes,
     context:[],institutions:votes.map(c=>c.institution),scope:'weekly_only',
     institution_count:votes.length,coverage_count:votes.length,eligible_for_overall:votes.length>0,
-    methodology:'one_institution_one_explicit_weekly_currency_view',attribution:SOURCE.attribution};
+    methodology:'one_institution_one_explicit_weekly_currency_view',attribution:ATTRIBUTION};
 }
 
 function extractionPrompt(article) {
@@ -140,11 +145,13 @@ function extractionPrompt(article) {
     {role:'user',content:JSON.stringify({institution:article.institution,title:article.title,published_at:article.published_at,url:article.url,text:article.text})}];
 }
 
-async function fetchLatest(fetchImpl=fetch,nowMs=Date.now()) {
+async function fetchLatest(fetchImpl=fetch,nowMs=Date.now(),institution='ING') {
   const get=async url=>{const r=await fetchImpl(url,{signal:AbortSignal.timeout(8000),redirect:'error'});if(!r.ok)throw Error('source_http_'+r.status);return r.text();};
+  if(institution==='ABN AMRO'){const a=await abn.fetchLatest(get,plain,nowMs);return {...a,content_hash:hash(a.text),extractor_version:VERSION};}
+  if(institution!=='ING')throw Error('institution_not_enabled');
   const entry=parseFeed(await get(SOURCE.url),nowMs)[0];
   if(!entry)throw Error('no_recent_fx_article');
   return parseArticle(await get(entry.url),entry);
 }
 
-module.exports={KEY,VERSION,SOURCE,CURRENCIES,parseFeed,parseArticle,weekWindow,validateClaims,buildInstitutionColumn,extractionPrompt,fetchLatest};
+module.exports={KEY,VERSION,SOURCE,SOURCES,ATTRIBUTION,CURRENCIES,parseFeed,parseArticle,weekWindow,validateClaims,buildInstitutionColumn,extractionPrompt,fetchLatest};

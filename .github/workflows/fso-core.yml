@@ -1,0 +1,17 @@
+name: Swiss Core Inflation
+on:
+  schedule:
+    - cron: '45 */6 * * *'
+  workflow_dispatch:
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Perbarui inflasi inti Swiss
+        run: |
+          STATUS=$(curl -sS -o /tmp/fso-core.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" --max-time 58 \
+            "https://financial-feed-app.vercel.app/api/admin?action=fso_core&mode=sync")
+          cat /tmp/fso-core.json
+          if [ "$STATUS" -ne 200 ]; then exit 1; fi
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/fso-core.json','utf8'));if(x.error)process.exit(1)"

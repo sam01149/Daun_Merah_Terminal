@@ -594,6 +594,10 @@ async function autoUpdateFundamentalsFromCalendar(calendarEvents, redisCmd) {
         // headline parser) — tidak butuh logic isNewValue re-scan, tapi tetap
         // jangan MUNDUR kalau entry existing sudah dari rilis yang lebih baru
         // (mis. calendar_v1 sempat serve cache basi minggu lalu).
+        // Exact official exclusion-series rows belong to their collectors.
+        // Generic calendar labels cannot erase their definition and period.
+        if (key === 'Core CPI YoY' && ((currency === 'CHF' && existingEntry?.source === 'fso')
+          || (currency === 'NZD' && existingEntry?.source === 'statsnz'))) continue;
         if (existingEntry && existingEntry.date && existingEntry.date > date) continue;
         const sameRelease = existingEntry && existingEntry.date === date;
         const entry = { actual: value, period: '—', date, source: 'calendar' };
@@ -719,6 +723,10 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
         // `date` SELALU di-set `now` walau actual tidak berubah, jadi indikator lama
         // terus tampil "rilis hari ini" berhari-hari. Sekarang date cuma maju kalau
         // actual benar-benar baru (headline release baru), bukan re-scan headline lama.
+        // A repeated wire headline must not replace official core metadata with
+        // period='—' or silently switch to a different national core definition.
+        if (key === 'Core CPI YoY' && ((currency === 'CHF' && existingEntry?.source === 'fso')
+          || (currency === 'NZD' && existingEntry?.source === 'statsnz'))) continue;
         const isNewValue = !existingEntry || existingEntry.actual !== value;
         const entry = { actual: value, period: '—', date: isNewValue ? now : (existingEntry.date || now), source: 'headline' };
         // Headline "Previous X" takes priority; fall back to existing Redis value.
@@ -738,9 +746,10 @@ async function autoUpdateFundamentals(headlines, redisCmd) {
         else if (!isNewValue && existingEntry && existingEntry.forecast) entry.forecast = existingEntry.forecast;
         args.push(key, JSON.stringify(entry));
       }
+      if (args.length <= 2) continue;
       await redisCmd(...args);
-      updated[currency] = items.map(i => i.key);
-      console.log(`Fundamental updated: ${currency} — ${items.map(i => i.key).join(', ')}`);
+      updated[currency] = args.slice(2).filter((_,i)=>i%2===0);
+      console.log(`Fundamental updated: ${currency} — ${updated[currency].join(', ')}`);
     } catch(e) { console.warn(`fundamental HSET failed for ${currency}:`, e.message); }
   }
   return updated;

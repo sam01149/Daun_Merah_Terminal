@@ -11,12 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 462 - Audit sumber bank dan kelengkapan inflasi CHF)
+> **Last updated:** 2026-11-07 (Session 463 - Core CHF resmi dan panel bank pribadi mingguan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 463 (2026-11-07) - Core CHF resmi dan panel bank pribadi mingguan
+
+**Otorisasi.** User meminta mengambil core CHF dan pandangan bank yang difilter mingguan, lalu mengonfirmasi dashboard hanya penggunaan pribadi. Sumber tambahan ABN AMRO diterima sesuai disclaimer private use dengan atribusi; bukan izin distribusi komersial. Bank lain tidak diaktifkan hanya karena PDF publik.
+
+**CHF.** api/_fso_core.js membaca indeks resmi FSO https://statistik.admin.ch/fr/prix-consommation, hanya tab published news, menemukan rilis CPI Inggris terakhir dan workbook LIK25B25 tertaut. Sheet 3 wajib berlabel annual change (Vorjahresmonat), exact row 1170_103/Core inflation 1/Kerninflation 1. Header tanggal menentukan kolom Oktober/September, bukan posisi tetap; workbook harus berakhir pada periode rilis. Actual 0.5% dan previous 0.5% berasal dari workbook yang sama, bukan index/MoM/Core inflation 2 atau SNB trimmed mean. Definisi: tanpa produk segar/musiman, energi dan bahan bakar. Rilis 3 Nov 07:30 UTC/14:30 WIB, periode 2026-10. Validasi host, tanggal post-period/nonfuture, dua nilai numerik, identitas seri, periode sebelumnya, age <=75 hari, hash snapshot. Sumber gagal tidak menghapus cache. Lua shared write script dari collector Stats NZ menyimpan snapshot fso_core_chf:v1, fundamental:CHF/Core CPI YoY, dan vintage unik secara atomik dengan proteksi rollback/newer Fundamental dan tipe Redis. Lock token UUID diperiksa saat pelepasan. GET hanya cache; action admin fso_core mode=sync wajib CRON_SECRET. GitHub Actions tiap enam jam (bukan SLA), batas source fetch 8/8/18 detik, respons <=8MB. Tidak menambah endpoint Vercel. Dashboard schema 11/cache smart_bias:v8 menggabungkan observation FSO dan Stats NZ; seri resmi tetap terpisah dari kalender/surprise history.
+
+**Integritas Fundamental.** Scan berita/kalender generik tidak boleh menimpa Core CPI YoY resmi CHF/FSO dan NZD/StatsNZ dengan period kosong atau definisi lain. Headline writer tidak mengirim HSET tanpa field jika seluruh kandidat dilindungi; daftar updated hanya field yang benar ditulis. Tidak mengubah formula deskriptif atau menambahkan prediksi.
+
+**Bank.** Registry aktif ING + ABN AMRO, cache institution_views:v2/extractor-v2 (cache lama tidak diberi kelayakan baru), maksimal 40 laporan. ABN memakai indeks kanonis /research/en/overview/our-research (alamat lama 302); tautan FX Weekly ditemukan dari HTML, tanggal publicationDate numerik dari struktur Nuxt harus cocok slug/title/rendered title, body hanya rich-text + introduction, bank copyright wajib. Sampel terbaru 4 Nov 13:15 UTC/20:15 WIB: FX Weekly - US dollar slips on election surprise, 4002 karakter. Body ini kebanyakan retrospektif dan outlook SEK; tidak dipaksa menjadi delapan stance G10. Hanya kutipan horizon eksplisit this/next week currency-wide, fundamental/mixed, tanpa syarat, fresh dan dalam pekan berlaku yang memberi suara. Pair, teknikal, monthly, agenda dan near-term tanpa pekan tetap tidak dihitung. Satu bank satu suara; konflik tetap mixed. Scheduler 17:35 WIB hari kerja menjalankan ING dan ABN terpisah, ABN tetap dicoba bila ING gagal. Tiap sync secret-only, source allowlist, hash idempotent dan cooldown enam jam dengan versi+bank+hash. Bucket DeepSeek Flash institusi 4/hari untuk dua sumber, circuit tetap terpisah; read tidak memanggil AI. Metadata atribusi kedua sumber disimpan. Runtime API-only, HTML/SW tidak berubah.
+
+**Verifikasi awal.** Fetch nyata dari collector berhasil untuk workbook Swiss (0.5/0.5) dan artikel ABN bertanggal; file sumber dan snapshot di .cache/chf-audit/. Regresi menutup discovery future/agenda, definisi dan annual sheet, periode tidak selaras, null/duplikat/corrupt/stale, cache-only/auth/lock, bank spoof/duplicate/conflict/expiry dan perlindungan metadata resmi. Suite penuh 1.605/1.605 lulus; git diff --check bersih. Verifikasi produksi dicatat setelah deploy.
 
 ## Changelog Session 462 (2026-11-07) - Audit sumber bank dan kelengkapan inflasi CHF
 
