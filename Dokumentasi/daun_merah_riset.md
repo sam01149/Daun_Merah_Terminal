@@ -24,6 +24,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07] Pemeriksaan ulang HSBC untuk pertanyaan Daily vs Weekly
+
+[Currency Zone HSBC](https://www.currencyzone.hsbc.com/) diperiksa ulang: format stance lebih terstruktur daripada artikel harian, tetapi FX Navigator adalah monthly; edisi yang terlihat tetap 23 Oktober, horizon beberapa minggu. Tidak menyamakan current/previous dengan perubahan hari ini/kemarin. Batas integrasi lebih konkret daripada catatan lama: halaman mencantumkan larangan reproduksi, penyimpanan dan transmisi tanpa izin tertulis. Maka belum diintegrasikan; tidak ada perubahan aplikasi. Kredibilitas institusi, kesesuaian horizon, freshness dan hak pemakaian adalah pemeriksaan yang berbeda.
+
 ### [2026-11-07] Panel institusi: sumber yang dapat dipakai dan pemisahan horizon
 
 Fondasi deskriptif telah diaktifkan S455; integrasi institusi S456 diminta user setelahnya, dan Marc dicabut atas instruksi eksplisit user. Panel otomatis awal menerima ING, bukan mengklaim banyak bank. [Terms ING](https://think.ing.com/about/terms-of-use/) mengizinkan adaptasi konten miliknya dengan atribusi. [FX Daily 6 November](https://think.ing.com/articles/fx-daily-tech-collapses-fx-shrugs/) mempunyai konteks USD/EUR yang bersyarat, sehingga nol suara mingguan adalah hasil yang benar untuk snapshot ini. Judul daily/weekly tidak menetapkan horizon klaim; quote arah harus menyatakan horizon pekan secara eksplisit untuk agregasi, pair tetap relatif. Bias fundamental inti tidak berubah oleh banyak artikel yang mengulang tesis sama.
