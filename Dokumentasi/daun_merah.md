@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 461 - Inflasi inti NZD langsung dari Stats NZ)
+> **Last updated:** 2026-11-07 (Session 462 - Audit sumber bank dan kelengkapan inflasi CHF)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 462 (2026-11-07) - Audit sumber bank dan kelengkapan inflasi CHF
+
+**Sumber bank aktual.** Pemeriksaan kode api/_institution_views.js dan respons smart_bias produksi 7 Nov 08:40 WIB mengonfirmasi enabled_institutions hanya ING, scope weekly_only. HSBC/DBS/UOB/MUFG/TD/OCBC belum collector aktif; status kandidat dan pembatasan pemakaian tetap mengikuti daftar vendor. FX Daily ING hanya menyumbang jika claim memenuhi filter mingguan yang telah disepakati. Tidak mengklaim panel sebagai konsensus banyak bank.
+
+**CHF: sebab tepat.** Produksi headline CPI Oktober 1.5%/previous 1.0%, rilis 3 Nov, tersedia di macro conditions. Underlying missing_or_stale, coverage partial. Fundamental sebenarnya menyimpan Core CPI YoY 0.5%/previous 0.5%, source headline, tanggal 1 Okt, periode tidak teridentifikasi. Jalur Dashboard membaca observasi kalender terstruktur dan pelengkap resmi Stats NZ khusus NZD, bukan field Fundamental berbasis headline tanpa periode. Arsip mentah TradingView September/October/November diperiksa: masing-masing memuat CPI index/MoM/YoY CHF, tidak memuat core. Ini kekurangan ingestion seri inti, bukan bukti tidak adanya statistik Swiss atau bug perhitungan arah.
+
+**Verifikasi sumber primer.** Rilis FSO 3 Nov untuk Oktober 2026 menampilkan Core inflation 1 YoY 0.5%, MoM 0.0%, index 100.6; definisi mengecualikan produk segar/musiman, energi dan bahan bakar. Jangan tertukar dengan Core inflation 2 (0.9%) atau trimmed mean SNB. Sumber https://statistik.admin.ch/en/news/2026-0059 dan PDF https://dam-api.bfs.admin.ch/hub/api/dam/assets/36894291/master halaman 1/3. Angka current tersedia resmi; integrasi otomatis CHF belum dikerjakan dalam audit ini. Tidak menyalin field lama Fundamental atau mengganti periodenya untuk memaksa status lengkap. Bukti produksi .cache/chf-audit/before.json. Tidak ada perubahan runtime atau panggilan AI. Suite penuh npm.cmd test 1.594/1.594 lulus; tindak lanjut collector CHF dicatat di progress lokal.
 
 ## Changelog Session 461 (2026-11-07) - Inflasi inti NZD langsung dari Stats NZ
 
