@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 465 - Filter bank membaca konteks bagian dan pasangan relatif)
+> **Last updated:** 2026-11-07 (Session 466 - Pembaruan pandangan bank berhasil setelah gangguan provider)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 466 (2026-11-07) - Pembaruan pandangan bank berhasil setelah gangguan provider
+
+User meminta pembaruan langsung. Sync produksi institution_views source ING pada 7 Nov 14:58 WIB berhasil HTTP 200/synced true: tujuh laporan disimpan, satu klaim diterima, satu request AI. Tidak mengubah filter, kuota, prompt atau runtime. ABN AMRO unchanged, tanpa panggilan AI tambahan. Ini membuktikan satu request model nyata sudah kembali berhasil; bukan klaim seluruh layanan provider bebas gangguan.
+
+Hasil Dashboard schema 12: USD neutral dari ING 2 Nov 07:51 UTC (14:51 WIB), bagian USD: Contemplating the midterms. Kutipan arah konsolidasi DXY dan agenda makro this week pada paragraf berbeda lolos time_basis section. Jendela 2-9 Nov; hasil masih sah pada Sabtu 7 Nov. Tujuh mata uang lain belum memiliki pandangan yang lolos; relative_views tetap kosong, bukan netral buatan. Institusi read memiliki delapan laporan (tujuh ING + satu ABN), USD neutral sama dengan Dashboard; pembacaan cache computed_at identik dan tidak memanggil AI. Tidak ada snapshot manual/mock yang dipakai. Bukti .cache/bank-refresh/ING.json, ABN-AMRO.json, proof.json, dashboard.json dan institutions-read.json.
+
+Playwright memakai HTML/data produksi pada 1440/390: delapan baris/tujuh kolom, rincian USD Pandangan mingguan cenderung mendatar., tanpa tautan eksternal/overflow. Screenshot ui-390.png diperiksa. Pekerjaan tertunda pemulihan ING S465 di progress lokal dihapus karena syarat end-to-end kini terpenuhi. Suite penuh 1.615/1.615 lulus; diff --check bersih.
 
 ## Changelog Session 465 (2026-11-07) - Filter bank membaca konteks bagian dan pasangan relatif
 
