@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
 
@@ -24,10 +25,8 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   for (const heading of ['Pertumbuhan', 'Inflasi', 'Bank sentral', 'Pandangan institusi', 'Posisi pasar', 'Bias']) {
     assert.match(renderer, new RegExp(`<th>${heading}</th>`));
   }
-  assert.match(html, /<div class="sb-detail-title">Bias<\/div>/);
   assert.doesNotMatch(renderer, /<th>Kesimpulan<\/th>/);
   assert.doesNotMatch(html, /<div class="sb-detail-title">Overall<\/div>/);
-  assert.match(html, /Cakupan panel:/);
   assert.doesNotMatch(html, /Marc Chandler|marcRecord|_sbRecordText/);
   assert.doesNotMatch(html, /Pandangan bank/);
   assert.doesNotMatch(renderer, /Sumber Pandangan bank|Rapor forward|Buka artikel minggu ini|Snapshot minggu ini terlambat|sb-track-record|marcRecord/);
@@ -42,19 +41,34 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.match(html, /\.sb-state\.neutral::before, \.sb-state\.insufficient::before \{ width:6px; height:1px; border:0; background:currentColor; \}/);
   assert.doesNotMatch(html, /\.sb-state\.sb-kind-(?:inflation|policy)\.(?:bullish|bearish)/);
   assert.match(html, /row\.inflation\?\.inflation_impulse/);
-  assert.match(html, /Membaca perubahan kondisi ekonomi/);
-  assert.match(html, /Konsensus hanya pelengkap/);
-  assert.match(html, /Harga produsen hanya pelengkap/);
-  assert.match(html, /angka historis dapat memuat revisi/);
   const details=between('function _sbDetailHtml(row)', '\nfunction toggleDashSmartBias');
-  assert.doesNotMatch(details, /Keyakinan|_sbRecordText|hit_rate|family_score|standardized_surprise/);
-  assert.match(details,/vs sebelumnya/);
-  assert.match(details,/Masih tumbuh, tetapi melambat/);
+  assert.doesNotMatch(details, /href=|source_url|source_headlines|forecast|published_at|as_of|hit_rate|confidence|coverage_count/);
+  assert.match(details,/Belum ada pandangan mingguan yang cukup jelas/);
   assert.match(renderer,/Bias fundamental kualitatif/);
   assert.match(renderer,/Pembaruan belum berhasil/);
   assert.doesNotMatch(renderer, /<th>Trend<\/th>|<th>Seasonality<\/th>/);
   assert.match(html, /@media \(max-width: 1023px\)[\s\S]*?#dashboardPanel\.visible \{ display:flex;/);
   assert.match(html, /view:'dashboard',\s+label:'Dashboard'/);
+});
+
+test('Rincian Dashboard merangkum kondisi tanpa headline mentah, angka atau tautan eksternal', () => {
+  const source=between('function _sbDetailHtml(row)', '\nfunction toggleDashSmartBias');
+  const render=vm.runInNewContext('('+source.trim()+')',{escHtml:String});
+  const row={growth:{conditions:{state:'unchanged',components:[{concept:'output',direction:0},{concept:'labour',direction:0}]}},
+    inflation:{conditions:{state:'unclear',components:[{concept:'headline',direction:1},{concept:'underlying',direction:0}]}},
+    central_bank:{state:'bearish',as_of:'2026-11-07T00:00:00Z',evidence:[{title:'ECB raw English headline'}]},
+    banks:{state:'insufficient',context:[{reason:'LONG RAW TEXT',url:'https://example.com'}]},
+    positioning:{institutional:{state:'mixed'}},overall:{state:'mixed'}};
+  const result=render(row);
+  assert.equal((result.match(/class="sb-detail-group"/g)||[]).length,6);
+  assert.match(result,/Laju GDP tetap\. Pengangguran tetap\./);
+  assert.match(result,/Inflasi umum naik\. Inflasi inti tetap\./);
+  assert.match(result,/Sikap bank sentral cenderung longgar\./);
+  assert.match(result,/Arah fundamental belum sejalan\./);
+  assert.doesNotMatch(result,/href|https:|English|LONG RAW|2026|%/);
+  assert.match(render({}),/Data pertumbuhan belum cukup\./);
+  const slowing={growth:{conditions:{state:'down',components:[{concept:'output',direction:-1,level_direction:1},{concept:'labour',direction:-1}]}}};
+  assert.match(render(slowing),/Ekonomi masih tumbuh, tetapi melambat\./);
 });
 
 test('Positioning Smart Bias hanya menampilkan institutional tanpa Retail', () => {

@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 456 — Pandangan institusi dan penghapusan Marc)
+> **Last updated:** 2026-11-07 (Session 457 - Ringkasan Dashboard tanpa sumber eksternal)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 457 (2026-11-07) - Ringkasan Dashboard tanpa sumber eksternal
+
+**Arahan.** User menolak rincian yang terasa seperti laporan teknis, meminta mengurus makna informasi, dan tidak menampilkan sumber eksternal karena detail data dapat dilihat di fitur Fundamental. Instruksi terbaru diterapkan sebagai ringkasan pendek per komponen; baris tabel masih dapat dibuka. Tidak menyatakan akurasi prediksi terjamin dari perubahan presentasi.
+
+**Perubahan.** _sbDetailHtml kini merangkum enam komponen dalam Bahasa Indonesia: perubahan GDP/pengangguran, inflasi umum/inti, sikap kebijakan, pandangan institusi, positioning dan bias. Penjelasan metode, daftar angka, konsensus, headline berita mentah, timestamp teknis, URL/tautan eksternal, cakupan panel dan disclaimer panjang dihapus dari rincian Dashboard. Helper renderer lama yang tidak dipakai dibuang. Keadaan data kurang tetap jelas, pertumbuhan melambat saat GDP positif tidak disebut kontraksi. Meta klik menjadi ringkasan. Backend, formula, snapshot dan provenance tetap utuh; tidak ada pengumpulan sumber atau panggilan AI baru. APP_VERSION HTML/SW 2026.11.07.4.
+
+**Verifikasi sebelum deploy.** npm.cmd test 1.583/1.583 lulus. Regresi renderer menjalankan ringkasan EUR (GDP/jobs tetap, headline naik/core tetap), data kosong, dan ekspansi melambat; headline/URL/timestamp masukan tidak ikut ditampilkan. Playwright memakai payload aktual pada 1440/390: delapan baris/tujuh kolom, rincian pendek tanpa anchor, semua kelompok rincian muat di layar ponsel dan tidak ada overflow halaman. Screenshot .cache/dashboard-summary-ui-*.png diperiksa. Verifikasi produksi menyusul setelah push.
 
 ## Changelog Session 456 (2026-11-07) — Pandangan institusi dan penghapusan Marc
 
