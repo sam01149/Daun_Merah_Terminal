@@ -26,5 +26,5 @@ test('Multiple banks vote independently; duplicates stay one vote, conflicts mix
   assert.equal(m.buildInstitutionColumn('GBP',[a,make('ABN AMRO','bearish')],NOW).state,'mixed');
   assert.equal(m.buildInstitutionColumn('GBP',[{...b,url:a.url}],NOW).institution_count,0);
   assert.equal(m.buildInstitutionColumn('GBP',[{...b,institution:'Unknown'}],NOW).institution_count,0);
-  assert.equal(m.buildInstitutionColumn('GBP',[a,b],Date.parse('2026-11-07')).state,'insufficient');
+  assert.equal(m.buildInstitutionColumn('GBP',[a,b],Date.parse('2026-11-09')).state,'insufficient');
 });

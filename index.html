@@ -4914,7 +4914,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.07.5';
+const APP_VERSION = '2026.11.07.6';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -18806,6 +18806,14 @@ function _sbStateHtml(state, confidence, kind = 'currency') {
   return `<span class="sb-state ${valid} sb-kind-${kind}" aria-label="${ariaLabel}"></span>`;
 }
 
+function _sbBankHtml(banks) {
+  const broad=banks?.state && banks.state!=='insufficient' ? _sbStateHtml(banks.state) : '';
+  const relative=(banks?.relative_views||[]).filter(v=>['USD','EUR','GBP','JPY','CHF','CAD','AUD','NZD'].includes(v.against)
+    && ['bullish','bearish','neutral','mixed'].includes(v.state)).slice(0,2);
+  const lines=relative.map(v=>`<div class="sb-pos-line"><span class="sb-pos-lbl">vs ${escHtml(v.against)}</span>${_sbStateHtml(v.state)}</div>`).join('');
+  return broad+lines || _sbStateHtml('insufficient');
+}
+
 function _sbDetailHtml(row) {
   const growth=row.growth?.conditions || {}, inflation=row.inflation?.conditions || {};
   const gdp=growth.components?.find(item=>item.concept==='output');
@@ -18826,8 +18834,12 @@ function _sbDetailHtml(row) {
     : 'Data inflasi belum cukup.';
   const policyText=({bullish:'Sikap bank sentral cenderung ketat.',bearish:'Sikap bank sentral cenderung longgar.',
     neutral:'Sikap bank sentral relatif netral.',mixed:'Arah kebijakan belum jelas.'})[row.central_bank?.state] || 'Arah kebijakan belum dapat dinilai.';
-  const institutionText=({bullish:'Pandangan mingguan mendukung penguatan.',bearish:'Pandangan mingguan mendukung pelemahan.',
-    neutral:'Pandangan mingguan cenderung mendatar.',mixed:'Pandangan mingguan belum sejalan.'})[row.banks?.state] || 'Belum ada pandangan mingguan yang cukup jelas.';
+  const institutionBroad=({bullish:'Pandangan mingguan mendukung penguatan.',bearish:'Pandangan mingguan mendukung pelemahan.',
+    neutral:'Pandangan mingguan cenderung mendatar.',mixed:'Pandangan mingguan belum sejalan.'})[row.banks?.state];
+  const relativeText=(row.banks?.relative_views||[]).filter(v=>['USD','EUR','GBP','JPY','CHF','CAD','AUD','NZD'].includes(v.against))
+    .slice(0,2).map(v=>{const stance=({bullish:'cenderung menguat',bearish:'cenderung melemah',neutral:'cenderung mendatar',mixed:'pandangan belum sejalan'})[v.state];
+      return stance?`Terhadap ${v.against}: ${stance}.`:'';}).filter(Boolean);
+  const institutionText=[institutionBroad,...relativeText].filter(Boolean).join(' ') || 'Belum ada pandangan mingguan yang cukup jelas.';
   const positioning=row.positioning?.institutional || {};
   const positionSide=state=>({bullish:'condong beli',bearish:'condong jual',neutral:'relatif seimbang',mixed:'belum searah'})[state] || 'belum tersedia';
   const positioningText=positioning.state==='mixed'?'Posisi pengelola aset dan dana spekulatif berlawanan.':
@@ -18867,7 +18879,7 @@ function renderDashSmartBias() {
       <td>${_sbStateHtml(row.growth?.state, row.growth?.confidence, 'growth')}</td>
       <td>${_sbStateHtml(row.inflation?.inflation_impulse, row.inflation?.confidence, 'inflation')}</td>
       <td>${_sbStateHtml(row.central_bank?.state, row.central_bank?.confidence, 'policy')}</td>
-      <td>${_sbStateHtml(row.banks?.state, row.banks?.confidence)}</td>
+      <td>${_sbBankHtml(row.banks)}</td>
       <td><div class="sb-pos-line"><span class="sb-pos-lbl">Inst</span>${_sbStateHtml(p.institutional?.state)}</div></td>
       <td>${_sbStateHtml(row.overall?.state, row.overall?.confidence)}</td>
     </tr>${isOpen ? `<tr class="smart-bias-detail"><td colspan="7">${_sbDetailHtml(row)}</td></tr>` : ''}`;

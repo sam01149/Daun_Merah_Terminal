@@ -79,6 +79,16 @@ test('Positioning Smart Bias hanya menampilkan institutional tanpa Retail', () =
   assert.doesNotMatch(renderer, /FinancialJuice|FXSSI|Yahoo|Deriv|Twelve Data/);
 });
 
+test('Pandangan pasangan ditampilkan relatif di kolom dan rincian, tanpa menjadi panah mata uang umum',()=>{
+  const source=between('function _sbStateLabel(', '\nfunction toggleDashSmartBias');
+  const context={escHtml:String};vm.createContext(context);vm.runInContext(source,context);
+  const banks={state:'insufficient',relative_views:[{against:'USD',state:'bullish'}]};
+  const cell=context._sbBankHtml(banks);assert.match(cell,/vs USD/);assert.match(cell,/sb-state bullish/);
+  const detail=context._sbDetailHtml({banks});assert.match(detail,/Terhadap USD: cenderung menguat\./);
+  assert.doesNotMatch(detail,/Belum ada pandangan|Pandangan mingguan mendukung penguatan/);
+  const invalid=context._sbBankHtml({relative_views:[{against:'<script>',state:'bullish'}]});assert.doesNotMatch(invalid,/script/);
+});
+
 test('Teknikal hanya menampilkan EMA gap, ATR, dan arah otomatis', () => {
   const markup = between('<!-- TEKNIKAL PANEL -->', '<!-- DASHBOARD PANEL -->');
   assert.match(markup, /id="tekPrimePanel"/);

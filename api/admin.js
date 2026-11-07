@@ -814,7 +814,7 @@ const KEY_REGISTRY = [
   { key: 'fso_core_chf:v1', owner: 'api/_fso_core.js', ttl_expected: null, note: 'Inflasi inti Swiss resmi, Core inflation 1 YoY' },
   { key: 'fso_core_chf:vintages:v1', owner: 'api/_fso_core.js', ttl_expected: null, note: 'Versi unik data FSO' },
   { key: 'lock:fso_core', owner: 'api/_fso_core.js', ttl_expected: 55, note: 'Single-flight FSO' },
-  { key: 'institution_views:v2', owner: 'api/_institution_views.js', ttl_expected: null, note: 'Maksimal 40 laporan ringkas; tanggal/horizon diperiksa lagi saat dibaca' },
+  { key: 'institution_views:v3', owner: 'api/_institution_views.js', ttl_expected: null, note: 'Maksimal 40 laporan ringkas; tanggal/horizon diperiksa lagi saat dibaca' },
   { key: 'institution_views:attempt:*', owner: 'api/admin.js', ttl_expected: 21600, note: 'Jeda retry ekstraksi institusi per content hash' },
   { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'AI analysis of fundamental data (Gemini only), cached 6h' },
   { key: 'cb_decisions',         owner: 'api/market-digest.js',  ttl_expected: null,   note: 'HSET CB rate decisions detected from headlines, overrides CB_FALLBACK metadata' },
@@ -9609,7 +9609,7 @@ async function ohlcvDashboardHandler(req, res) {
   }
 }
 
-const SMART_BIAS_CACHE_KEY = 'smart_bias:v8';
+const SMART_BIAS_CACHE_KEY = 'smart_bias:v9';
 const SMART_BIAS_TTL_SECS = 15 * 60;
 
 function _parseJsonValue(raw, fallback) {
@@ -9662,7 +9662,7 @@ async function institutionViewsHandler(req,res) {
   if(req.method==='OPTIONS')return res.status(204).end();
   let snapshots=_parseJsonValue(await redisCmd('GET',institutionViews.KEY).catch(()=>null),[]);
   if(!Array.isArray(snapshots))snapshots=[];
-  const report=()=>({schema_version:2,sources:institutionViews.SOURCES.map(s=>s.institution),
+  const report=()=>({schema_version:3,sources:institutionViews.SOURCES.map(s=>s.institution),
     attribution:institutionViews.ATTRIBUTION,processed_reports:snapshots.length,
     columns:institutionViews.CURRENCIES.map(currency=>({currency,...institutionViews.buildInstitutionColumn(currency,snapshots)}))});
   if(req.query.mode!=='sync')return res.status(200).json(report());
@@ -9672,31 +9672,49 @@ async function institutionViewsHandler(req,res) {
   if(!process.env.CRON_SECRET || !safeEqual(secret,process.env.CRON_SECRET))return res.status(401).json({error:'Unauthorized'});
   const source=req.query.source||'ING';
   if(!institutionViews.SOURCES.some(s=>s.institution===source))return res.status(400).json({error:'institution_not_enabled'});
-  const lock=await redisCmd('SET','lock:institution_views',String(Date.now()),'NX','EX',58);
+  const lockToken=require('node:crypto').randomUUID();
+  const lock=await redisCmd('SET','lock:institution_views',lockToken,'NX','EX',58);
   if(lock!=='OK')return res.status(200).json({...report(),skipped:'sync_locked'});
+  let attemptKey=null;
   try {
-    const article=await institutionViews.fetchLatest(fetch,Date.now(),source);
-    if(snapshots.some(s=>s.content_hash===article.content_hash && s.extractor_version===institutionViews.VERSION))return res.status(200).json({...report(),skipped:'unchanged'});
-    const cooldown='institution_views:attempt:'+institutionViews.VERSION+':'+source+':'+article.content_hash;
-    if(await redisCmd('GET',cooldown))return res.status(200).json({...report(),skipped:'retry_cooldown'});
-    await redisCmd('SET',cooldown,'1','EX',21600);
-    const ai=await _callDeepSeekAnalyze(institutionViews.extractionPrompt(article),{
-      maxTokens:2400,timeoutMs:25000,cbKey:resolveDeepSeekCircuit('ai:deepseek:institutions'),
-      budgetKey:'deepseek_institutions',modelName:'deepseek-v4-flash',tag:'institution_views',
-    });
-    if(!ai.rawText || ai.truncated)throw Error(ai.error||'extraction_incomplete');
-    const claims=institutionViews.validateClaims(_parseModelJson(ai.rawText),article);
-    const snapshot={institution:article.institution,title:article.title,url:article.url,published_at:article.published_at,
-      content_hash:article.content_hash,extractor_version:institutionViews.VERSION,claims,model:ai.model,
-      extracted_at:new Date().toISOString()};
-    snapshots=[snapshot,...snapshots.filter(s=>s.url!==snapshot.url)].slice(0,40);
+    // Re-read under the shared lock: concurrent bank syncs must not overwrite
+    // snapshots written since this request's initial cache read.
+    snapshots=_parseJsonValue(await redisCmd('GET',institutionViews.KEY).catch(()=>null),[]);
+    if(!Array.isArray(snapshots))snapshots=[];
+    const articles=await institutionViews.fetchRecent(fetch,Date.now(),source);
+    const pending=articles.filter(a=>!snapshots.some(s=>s.url===a.url&&s.content_hash===a.content_hash&&s.extractor_version===institutionViews.VERSION));
+    if(!pending.length)return res.status(200).json({...report(),skipped:'unchanged'});
+    const modelPending=pending.filter(institutionViews.hasWeeklyContext);
+    let parsed=[],ai={model:null};
+    if(modelPending.length){
+      const batchHash=require('node:crypto').createHash('sha256').update(JSON.stringify(modelPending.map(a=>[a.url,a.content_hash]))).digest('hex');
+      const cooldown='institution_views:attempt:'+institutionViews.VERSION+':'+source+':'+batchHash;
+      attemptKey=cooldown;
+      if(await redisCmd('GET',cooldown))return res.status(200).json({...report(),skipped:'retry_cooldown'});
+      await redisCmd('SET',cooldown,'1','EX',21600);
+      ai=await _callDeepSeekAnalyze(institutionViews.extractionBatchPrompt(modelPending),{
+        maxTokens:5000,timeoutMs:25000,cbKey:resolveDeepSeekCircuit('ai:deepseek:institutions'),
+        budgetKey:'deepseek_institutions',modelName:'deepseek-v4-flash',tag:'institution_views',
+      });
+      if(!ai.rawText || ai.truncated)throw Error(ai.error||'extraction_incomplete');
+      parsed=institutionViews.validateBatch(_parseModelJson(ai.rawText),modelPending);
+    }
+    parsed.push(...pending.filter(a=>!institutionViews.hasWeeklyContext(a)).map(article=>({article,claims:[]})));
+    const fresh=parsed.map(({article,claims})=>({institution:article.institution,title:article.title,url:article.url,published_at:article.published_at,
+      content_hash:article.content_hash,extractor_version:institutionViews.VERSION,claims,
+      model:institutionViews.hasWeeklyContext(article)?ai.model:null,extraction_method:institutionViews.hasWeeklyContext(article)?'validated_model':'no_weekly_time_cue',
+      extracted_at:new Date().toISOString()}));
+    snapshots=[...fresh,...snapshots.filter(s=>!fresh.some(f=>f.url===s.url))].sort((a,b)=>Date.parse(b.published_at)-Date.parse(a.published_at)).slice(0,40);
     await redisCmd('SET',institutionViews.KEY,JSON.stringify(snapshots));
     await redisCmd('DEL',SMART_BIAS_CACHE_KEY);
-    return res.status(200).json({...report(),synced:true,accepted_claims:claims.length});
+    return res.status(200).json({...report(),synced:true,updated_reports:fresh.length,ai_requests:modelPending.length?1:0,accepted_claims:parsed.reduce((n,r)=>n+r.claims.length,0)});
   } catch(error) {
+    if(attemptKey&&/internal server error|timed?\s*out|fetch failed|429|50[0234]|rate limit/i.test(error.message)){
+      await redisCmd('EXPIRE',attemptKey,60).catch(()=>null);
+    }
     console.warn('institution_views sync failed:',error.message);
     return res.status(502).json({...report(),error:error.message});
-  } finally {await redisCmd('DEL','lock:institution_views').catch(()=>null);}
+  } finally {await redisCmd('EVAL',"if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end",1,'lock:institution_views',lockToken).catch(()=>null);}
 }
 
 // Tabel Smart Bias adalah ringkasan deterministik per currency. Tiga kolom inti
@@ -9711,7 +9729,7 @@ async function smartBiasHandler(req, res) {
   let cached = null;
   try {
     cached = _parseJsonValue(await redisCmd('GET', SMART_BIAS_CACHE_KEY), null);
-    if (!force && cached?.schema_version === 11) return res.status(200).json(cached);
+    if (!force && cached?.schema_version === 12) return res.status(200).json(cached);
   } catch (e) { /* lanjut hitung fresh */ }
 
   try {
@@ -9758,7 +9776,7 @@ async function smartBiasHandler(req, res) {
     }
     const rows=buildQualitativeBiasRows(conditions,contextRows);
     const payload = {
-      schema_version: 11,
+      schema_version: 12,
       methodology: 'academy_qualitative_core_first',
       rows,
       computed_at: new Date(nowMs).toISOString(),
@@ -9773,7 +9791,7 @@ async function smartBiasHandler(req, res) {
         max_release_age_days: { weekly:21, monthly:75, quarterly:150 },
         numeric_formula:'Local conservative adaptation; Academy does not disclose complete numerical weights.',
       },
-      banks_mode: 'institution_research_explicit_weekly',
+      banks_mode: 'institution_research_weekly_section_context',
       institution_scope: 'weekly_only',
       bank_source: { name:'Institution research',enabled_institutions:institutionViews.SOURCES.map(s=>s.institution),
         attribution:institutionViews.ATTRIBUTION },

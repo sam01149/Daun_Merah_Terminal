@@ -50,9 +50,9 @@ const DEFAULT_LIMITS = {
   // mungkin terkuras diam-diam oleh loop/abuse dalam sehari. Naikkan via env
   // AI_DAILY_LIMIT_DEEPSEEK kalau nanti dipromosikan primary.
   deepseek:        50,
-  // Institutional research: at most two new-article extractions/day, separate
-  // from user analysis. Same existing provider; dashboard reads cost zero calls.
-  deepseek_institutions: 4,
+  // Two bank batches/day normally; bounded room for changed reports and transient
+  // provider retries. Separate from user analysis; dashboard reads cost zero calls.
+  deepseek_institutions: 6,
   relink_institutions: 2,
 
   // Counter ':experimental' (audit S218, 2026-07-22/23) — Plan V-3 sudah memisahkan

@@ -1,4 +1,5 @@
 'use strict';
+const {sectionsFromHtml}=require('./_institution_sections');
 // ABN AMRO permits attributed private use. Enabled for this user's explicitly
 // confirmed personal dashboard; not a licence for commercial redistribution.
 const INDEX_URL='https://www.abnamro.com/research/en/overview/our-research';
@@ -16,10 +17,12 @@ function parseArticle(html,url,plain,nowMs=Date.now()){
   if(!Number.isFinite(published)||published>nowMs||nowMs-published>14*86400000||!/^FX Weekly - /i.test(title))throw Error('abn_date_or_title_invalid');
   const renderedTitle=plain(raw.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/)?.[1]);
   if(renderedTitle!==title||!raw.includes('ABN AMRO Bank N.V.'))throw Error('abn_rendered_identity_changed');
-  const parts=[...raw.matchAll(/<div[^>]*data-component-type="rich-text"[^>]*>([\s\S]*?)<\/div>/g)].map(m=>plain(m[1]));
+  const blocks=[...raw.matchAll(/<div[^>]*data-component-type="rich-text"[^>]*>([\s\S]*?)<\/div>/g)].map(m=>m[1]);
+  const parts=blocks.map(plain);
   const text=plain(data[a.introduction])+' '+parts.join(' ');
   if(parts.length<2||text.length<500||text.length>40000)throw Error('abn_article_length_invalid');
-  return {institution:'ABN AMRO',title,url,published_at:new Date(published).toISOString(),text};
+  return {institution:'ABN AMRO',title,url,published_at:new Date(published).toISOString(),text,
+    sections:sectionsFromHtml(blocks.join('\n'),plain)};
 }
 async function fetchLatest(get,plain,nowMs=Date.now()){
   const urls=discover(await get(INDEX_URL)).slice(0,3);

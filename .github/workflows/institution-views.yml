@@ -2,7 +2,7 @@ name: Institution Research Views
 
 on:
   schedule:
-    - cron: '35 10 * * 1-5' # 17:35 WIB; artikel sama tidak diekstrak ulang
+    - cron: '35 */6 * * *' # setiap enam jam, termasuk pemulihan gangguan akhir pekan; hash sama tidak diulang
   workflow_dispatch:
 
 jobs:

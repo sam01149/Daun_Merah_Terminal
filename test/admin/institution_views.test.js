@@ -38,14 +38,18 @@ test('Institution horizon cannot be borrowed from an unrelated event calendar',(
 test('Institution weekly direction has an actual validity window and never survives expiry',()=>{
   const s=snapshot([claim()]);
   assert.equal(m.buildInstitutionColumn('GBP',[s],NOW).state,'bullish');
-  assert.equal(m.buildInstitutionColumn('GBP',[s],Date.parse('2026-11-07T00:00:00Z')).state,'insufficient');
+  assert.equal(m.buildInstitutionColumn('GBP',[s],Date.parse('2026-11-07T00:00:00Z')).state,'bullish');
+  assert.equal(m.buildInstitutionColumn('GBP',[s],Date.parse('2026-11-09T00:00:00Z')).state,'insufficient');
   assert.equal(m.buildInstitutionColumn('GBP',[s],Date.parse('2026-10-31T12:00:00Z')).state,'insufficient');
 });
 test('Institution pair views stay relative; cannot masquerade as currency-wide weekly votes',()=>{
   const a=article('We expect EUR/GBP to fall next week as sterling benefits from policy divergence.');
-  const c=claim({pair:'EUR/GBP',quote:a.text});
+  const c=claim({currency:'EUR',direction:'bearish',pair:'EUR/GBP',quote:a.text});
   const s=snapshot([c],a),col=m.buildInstitutionColumn('GBP',[s],NOW);
   assert.equal(col.state,'insufficient');assert.equal(col.context.length,0);
+  assert.equal(col.relative_views[0].against,'EUR');assert.equal(col.relative_views[0].state,'bullish');
+  assert.equal(col.eligible_for_overall,false);
+  assert.equal(m.buildInstitutionColumn('EUR',[s],NOW).relative_views[0].state,'bearish');
   assert.equal(m.validateClaims({claims:[{...c,pair:null}]},a).length,0);
   assert.equal(m.buildInstitutionColumn('USD',[s],NOW).context.length,0);
 });
@@ -62,10 +66,10 @@ test('Institution one bank remains one vote; internal contradictions remain expl
   const conflicting=snapshot([claim(),claim({direction:'bearish',quote:'We expect sterling to weaken next week on weaker growth.'})],a);
   assert.equal(m.buildInstitutionColumn('GBP',[conflicting],NOW).state,'mixed');
 });
-test('Institution newer report with no qualifying view supersedes the old direction',()=>{
+test('Institution newer report with no view does not erase an unexpired currency outlook',()=>{
   const old=snapshot([claim()]);
   const newer=snapshot([],{...article(),published_at:'2026-11-03T08:00:00Z'});
-  assert.equal(m.buildInstitutionColumn('GBP',[old,newer],NOW).state,'insufficient');
+  assert.equal(m.buildInstitutionColumn('GBP',[old,newer],NOW).state,'bullish');
 });
 test('Institution malformed, future, stale and wrong-origin stored records do not supply votes',()=>{
   const s=snapshot([claim()]);
