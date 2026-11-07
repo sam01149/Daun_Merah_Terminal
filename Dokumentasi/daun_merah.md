@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 463 - Core CHF resmi dan panel bank pribadi mingguan)
+> **Last updated:** 2026-11-07 (Session 464 - Audit historis kecocokan filter bank)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 464 (2026-11-07) - Audit historis kecocokan filter bank
+
+User meminta bukti apakah artikel lama sumber aktif pernah sesuai filter. Dibaca enam ABN FX Weekly 1 Okt�4 Nov dan pembanding ING 22 Okt�2 Nov dari sumber resmi. Ada contoh ING 27 Okt yang eksplisit mendukung USD pekan itu; kandidat manual dari teks primer lolos validateClaims (1) dan buildInstitutionColumn (bullish pada pekan asal, insufficient sekarang). Ini pengujian validator, bukan uji model historis atau penambahan snapshot produksi; jam publikasi dalam harness sintetis dalam tanggal sumber. Enam ABN tidak memenuhi seluruh filter: marker mingguan yang ada bersifat retrospektif/data, pandangan arah banyak berupa pair dan horizon lebih panjang. Temuan dan rekomendasi perbaikan definisi produk dicatat di daun_merah_riset.md S464, bukan mengganti filter pada tugas audit. Tidak ada perubahan runtime, collector, konfigurasi bank, AI call atau Redis. Bukti .cache/bank-filter-audit/. Suite penuh 1.605/1.605 lulus; diff --check bersih.
 
 ## Changelog Session 463 (2026-11-07) - Core CHF resmi dan panel bank pribadi mingguan
 
