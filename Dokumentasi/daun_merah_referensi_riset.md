@@ -16,6 +16,19 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 > **Tujuan:** perpustakaan rujukan permanen yang dicek SEBELUM memulai proyek makro/forex baru di Daun Merah — supaya tidak menghabiskan waktu membuktikan ulang batas yang sudah diketahui literatur (pola yang terjadi di riset NFP, lihat [[nfp-causal-research-framework]] / Session 150-153 di `daun_merah.md`).
 > **Metodologi verifikasi:** semua sitasi di bawah dicek via web search terhadap sumber primer (NBER/JSTOR/jurnal/RePEc) sebelum dimasukkan — bukan disalin mentah dari konsultasi LLM lain. Kalau ada sitasi baru mau ditambahkan ke file ini, verifikasi dulu (author/tahun/jurnal), jangan percaya nama paper dari LLM tanpa cek.
 
+### Rujukan pendidikan nonakademis — audit Analisa S474 (2026-11-07)
+
+Materi berikut menjelaskan metode yang dibandingkan dengan aplikasi; bukan paper atau bukti strategi menghasilkan keuntungan. Penulis/penerbit: Prime Terminal Academy, tanpa tanggal publikasi yang terverifikasi.
+
+| Dokumen primer | Tipe | Temuan inti / batas verifikasi |
+|---|---|---|
+| [Trend and momentum check](https://prime-terminal.com/academy/lesson/trend-and-momentum-check) | Method, pendidikan | Halaman isi diverifikasi web 7 Nov 2026: EMA200 Daily menentukan sisi; EMA21/100 H4 serta gap > ATR14 H6 menentukan momentum. SMA/MACD bukan ukuran identik. |
+| [Spot a choppy market](https://prime-terminal.com/academy/lesson/spot-a-choppy-market) dan [The macro filter](https://prime-terminal.com/academy/lesson/the-macro-filter) | Method, pendidikan | Arsip transkrip lokal audit 10 Okt: struktur range dan dua cross EMA21/100 H1 dalam 250 bar; range dapat berada di dalam tren/makro jelas. Web 7 Nov hanya mengembalikan kerangka, bukan verifikasi ulang isi transkrip. |
+| [Entry area and trigger](https://prime-terminal.com/academy/lesson/entry-area-and-trigger) dan [Trigger, session and exits](https://prime-terminal.com/academy/lesson/trigger-session-and-exits) | Method, pendidikan | Arsip yang sama: rejection H1 London/NY; body momentum 0,5–1 ATR dan SL melindungi wick. Range tidak memakai syarat ukuran body; risiko ATR14 H6 1:2. Detail berdasarkan arsip, bukan ekstraksi web baru. |
+| [Fading an overreaction](https://prime-terminal.com/academy/lesson/fading-an-overreaction) | Method, pendidikan | Arsip yang sama: koreksi taktis jangka pendek memerlukan cerita rapuh di balik gerak berlebihan; pandangan besar tidak otomatis berubah. Bukan izin fade setiap gerak besar. |
+
+**Implikasi untuk Daun Merah:** cocokkan aturan dengan data yang benar-benar dikirim dan validasi keluaran efektif. Status kontrak atau nama strategi tidak membuktikan syarat terpenuhi. Sumber arsip: `.cache/prime-audit-20261010/transcripts/`; keberadaan pelajaran pada [indeks resmi Academy](https://prime-terminal.com/academy) dikonfirmasi 7 Nov. Temuan kode/probe berada di changelog S474, interpretasi di riset.
+
 Tiga kategori per paper:
 
 - **Constraint** — batas teoritis/empiris: apa yang KEMUNGKINAN tidak bisa dilakukan

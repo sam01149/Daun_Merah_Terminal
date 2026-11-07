@@ -130,6 +130,8 @@ Call 4 (cek kontradiksi posisi terbuka):
 
 ### 3.2 Analisa AI per Pair — `api/admin.js` (`action=ohlcv_analyze`)
 
+**Batas kontrak terverifikasi (audit S474, 2026-11-07).** Uraian `prime-v1` di bawah menjelaskan aturan yang dituju, bukan bukti seluruh syarat ditegakkan. `trigger_contract` berisi aturan deklaratif; status `passed` belum memverifikasi sesi/rejection/body/wick/range/cerita fade. Probe handler offline juga menemukan level teks tanpa angka lolos bila parsing gagal. RR numerik <2 dan momentum melawan arah makro memang ditolak. Prompt manual belum menerima hash rilis ekonomi kedua kaki, hasil `prime_exec:v2`, EMA200 D1/EMA21–100 H4/ATR14 H6 atau bukti cross range H1; sebagian data tersebut ada pada fitur lain. Entry breakout masih diizinkan oleh instruksi level tetapi dilarang instruksi trigger. Narasi tidak tersinkron dengan seluruh penolakan kontrak/level. Rincian dan batas bukti: `daun_merah.md` S474; tindak lanjut di `daun_merah_progress.md`. Audit tidak mengubah provider, budget, model, prompt, policy atau jalur auto; nol panggilan AI nyata.
+
 15 pasangan yang dilacak: EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD, EUR/JPY, GBP/JPY, EUR/GBP, AUD/JPY, EUR/AUD, GBP/AUD, GBP/CAD, XAU/USD.
 
 **Penting:** tombol "Analisa Pair Ini" **selalu memanggil AI baru setiap diklik** — tidak dicek dulu apakah sudah ada hasil baru-baru ini (beda dengan Analisa Fundamental di §3.3 yang pakai cache global). Yang menahan laju supaya tidak boros adalah:

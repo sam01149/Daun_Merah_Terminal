@@ -24,6 +24,14 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07 | S474] Batas kesesuaian prompt Analisa dengan Prime Academy
+
+**Temuan metodologis.** Makro menentukan arah, tetapi nama strategi saja belum membuktikan syarat eksekusi. Momentum memakai EMA200 D1, urutan EMA21/100 H4 dan gap dibanding ATR14 H6; SMA Daily/MACD H4 bukan pengganti identik. Range memerlukan bukti struktur sideways dan dua cross EMA21/100 H1 dalam 250 bar di dalam range, bukan cukup macro_direction mixed. Koreksi atas decision tree 26 Okt: makro campuran adalah konteks yang sering mendasari range, **bukan syarat mutlak**; `the-macro-filter` juga mengizinkan konsolidasi saat gambaran makro jelas, dengan alasan edge yang tetap kuat. Fade menuntut cerita rapuh dan horizon taktis; tidak menyamakan setiap gerak besar dengan overreaction.
+
+**Batas adaptasi.** Fallback range ke SL struktur/RR>=2 saat ATR H6 tidak tersedia adalah adaptasi lokal, bukan aturan range asli Academy. Kontrak deklaratif dan instruksi makro-dulu satu call tidak menjamin model mematuhi proses. Audit S474 mendokumentasikan celah input/pemeriksaan, tetapi tidak mengukur profitabilitas atau frekuensi kesalahan model. Pengujian sintetis bukan output produksi. Detail teknis ada di changelog.
+
+**Sumber.** [Trend and momentum check](https://prime-terminal.com/academy/lesson/trend-and-momentum-check) (web 7 Nov 2026); [indeks Academy](https://prime-terminal.com/academy); arsip `.cache/prime-audit-20261010/transcripts/` untuk `spot-a-choppy-market`, `the-macro-filter`, `trigger-session-and-exits`, `entry-area-and-trigger`, `fading-an-overreaction`. URL lain sebagian hanya menampilkan kerangka saat ekstraksi web 7 Nov; detail bersumber arsip, bukan transkrip live baru. Ini rujukan pendidikan, bukan pembuktian akademis keuntungan strategi.
+
 ### [2026-11-07] Menilai audit AI: kesesuaian prinsip tidak membuktikan akurasi ekonomi (S467)
 
 User memberikan laporan AI lain tentang Smart Bias. Dibandingkan dengan kode saat ini dan transkrip lokal Prime di .cache/prime-audit-20261010/transcripts/ (what-the-smart-bias-is, how-the-bias-is-weighted, the-table-and-the-summary, the-economic-cycle, using-the-bias, where-the-chart-fits). Prinsip inti/pendukung, pembatasan arah dan sifat deskriptif memang sejalan dengan adaptasi yang disepakati. Namun predikat 100% sesuai/lolos semua tidak dibuktikan oleh checklist atau unit test. Academy menjelaskan prioritas empat tier, interpretasi berdasarkan konteks/reaksi pasar dan narasi; tidak mengungkap formula lengkap yang sama dengan mesin kita. Kode sendiri menandai numeric_formula=local_adaptation_not_published_by_academy. Metode simple sign actual-vs-previous, GDP+unemployment, keselarasan inflasi/tone, dan aturan agregasi adalah pilihan implementasi lokal; ini tidak menjamin seluruh penilaian benar atau bebas noise.
