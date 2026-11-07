@@ -11,12 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 474 - Audit prompt Analisa manual)
+> **Last updated:** 2026-11-07 (Session 475 - Audit struktur dan navigasi dokumentasi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 475 (2026-11-07) — Pembagian konteks dan peta baca dokumentasi
+
+**Masalah dan batas audit.** Audit struktur 15 dokumen Markdown yang tersedia, header, visibilitas Git, jalur masuk, pengelompokan dan contoh konflik antarbagian. Pembagian jenis kerja di ATURAN §2 sudah kuat; masalah utama ialah belum ada peta masuk, riwayat umum ~1,53 MB bercampur referensi lama berjudul Current/Known Issues, dokumen lokal tidak tersedia di clone, dan notulen auto-entry tanpa header berada di folder umum. Ini bukan audit ulang kebenaran semua riset, vendor, status plan maupun angka produksi. Tidak menghapus pekerjaan tertunda atau menganggap plan lama selesai tanpa konfirmasi user.
+
+**Perbaikan.** Dokumentasi/README.md menjadi peta masuk: cakupan umum vs auto-entry, kondisi-sekarang vs riwayat/riset/plan/progress/SOP/snapshot, matriks tujuan baca dan urutan verifikasi. Peta menautkan sumber pemilik informasi tanpa menduplikasi aturan ATURAN. Penunjuk ditambahkan di README root, header konteks umum serta entry point lokal ATURAN/AGENTS/CLAUDE. Referensi lama mulai Ringkasan Proyek dan Known Issues diberi batas historis; teks riwayat dipertahankan. Tautan folder Dokumentasi/Dokumentasi yang keliru di pembuka diperbaiki ke peta folder ini. Tidak memecah changelog besar menjadi banyak file karena pola proyek mengutamakan baca selektif dan rujukan sesi yang stabil.
+
+**Notulen.** Snapshot CME 8 Agustus dipindahkan ke professional_llm_trader/rapat_auto_entry_cme_2026-08-08.md, diberi header dan peringatan bahwa n=100/model/filter/epoch di dalamnya bukan kebijakan aktif. Isi teks asli dipertahankan; dua spasi hard-break pada tanggal dinormalisasi. Path lama tetap penunjuk sehingga rujukan historis tidak putus. File baru hanya memindahkan materi yang sudah publik; file auto-entry lain, aturan agent, plan/progress dan SOP tetap lokal sesuai .gitignore, tanpa force-add. Rincian pemindahan juga ditunjuk di changelog auto-entry lokal.
+
+**Contoh konsistensi kondisi-sekarang.** Baris #11 peta AI masih menyebut ING saja, satu call per artikel, cron hari kerja, 20 laporan/v1 dan maksimum dua/hari, bertentangan dengan pembaruan S465–466 pada pembuka file. Diselaraskan setelah membaca api/_institution_views.js, handler institutionViews di api/admin.js, _ai_guard.js dan workflow institution-views: dua bank, batch/hash, setiap enam jam, 40 laporan/v3, bucket direct enam/gateway dua, cooldown sementara 60 detik vs validasi enam jam. Hanya dokumentasi yang dikoreksi; tidak memanggil AI atau mengganti konfigurasi runtime.
+
+**Navigasi dan verifikasi.** scripts/docs-context.cjs menyediakan --list (ukuran/status Git), --outline (heading di luar blok kode), --find (literal case-insensitive, konteks heading, batas hasil), --check (header semua dokumen tersedia + tautan relatif peta/penunjuk). Indeks dihitung saat dipakai, bukan salinan nomor baris yang mudah basi. Pemeriksaan 17 dokumen lulus; fixture terisolasi membuktikan clone tanpa file lokal, heading kode diabaikan, batas hasil, argumen/path tidak valid, link hilang dan header hilang. Bukti .cache/docs-audit-proof.json dan docs-audit-tests.log pada workspace utama. Suite penuh sebelum commit pertama 1.636/1.636 lulus; pemeriksaan akhir pada checkout bersih setelah rebase juga 1.636/1.636 lulus; pemeriksaan header/tautan pada clone-like checkout lulus untuk delapan dokumen publik yang tersedia. Percobaan awal checkout baru menemukan empat kegagalan pencarian marker teks karena CRLF hasil checkout Windows; newline index.html dinormalisasi lokal ke LF tanpa diff isi Git, lalu suite lulus penuh. Tidak mengubah tes atau kode runtime untuk menutupi kegagalan. Tidak ada perubahan runtime aplikasi sehingga tidak mengklaim verifikasi fitur live baru.
+
+**Koordinasi.** S474 selesai di 77c1bba; tidak ada isinya yang di-stage ulang sebagai hasil audit. Saat api/admin.js dan modul manual sesi lain mulai berubah, pull --rebase utama tertahan working tree kotor. Publikasi dipindah ke checkout bersih docs-audit-publish; pull --rebase origin main berhasil tanpa stash/reset atau perubahan kode sesi lain. Stage hanya tujuh file lingkup dokumentasi/tooling. Papan klaim sesi di plan lokal mencatat reservasi S475 dan hasil publikasi.
 
 ## Changelog Session 474 (2026-11-07) — Audit prompt Analisa manual terhadap Prime Academy
 

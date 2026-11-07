@@ -18,7 +18,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 > isi rapat asli berikut dipertahankan tanpa perubahan.
 
 # Ringkasan Rapat & Evaluasi Arsitektur Auto-Entry Daun Merah
-**Tanggal Rapat:** 8 Agustus 2026  
+**Tanggal Rapat:** 8 Agustus 2026
 **Topik Utama:** Status Auto-Entry Live, Analisis Edge, Evaluasi CME Risk Reversals, dan Desain Top-Down Macro Framework.
 
 ---
