@@ -1,4 +1,6 @@
 {
+  "id": "/dev-auto-entry.html",
+  "scope": "/dev-auto-entry.html",
   "name": "Auto Entry Trader — Daun Merah",
   "short_name": "Auto Entry",
   "description": "Pemantauan performa dan pengelolaan posisi virtual AATAS untuk administrator Daun Merah.",

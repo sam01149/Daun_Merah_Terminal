@@ -1,4 +1,6 @@
 {
+  "id": "/index.html",
+  "scope": "/index.html",
   "name": "Daun Merah",
   "short_name": "DaunMerah",
   "description": "Financial news & AI digest untuk trader forex",
