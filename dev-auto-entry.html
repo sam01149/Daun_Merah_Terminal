@@ -12,7 +12,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Auto-Entry Dev Console</title>
+<title>Auto Entry Trader — Daun Merah</title>
 <!-- Shortcut "Add to Home Screen" (2026-08-18, permintaan user: buka cepat dari HP/desktop)
      — manifest & meta app SENDIRI, TERPISAH dari manifest.json aplikasi publik supaya
      install-nya tidak numpuk/collide dengan ikon Daun Merah utama, dan supaya identitas
@@ -26,7 +26,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="AutoEntry Dev">
+<meta name="apple-mobile-web-app-title" content="Auto Entry">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
@@ -232,54 +232,117 @@ body.light-theme .pairtab.active{color:var(--accent);}
 .chartcard.noposition .chartbox{opacity:.85;}
 .chart-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px;}
 
-/* Tampilan terminal: bagian dipisah garis, angka tetap mudah dipindai. */
-.wrap{max-width:1180px;padding:18px 20px 36px;}
-header{padding-bottom:14px;margin-bottom:0;gap:12px;}
-header h1{font-size:21px;letter-spacing:-.03em;margin-bottom:3px;}
-header .sub{letter-spacing:.1em;}
-.secret-status{gap:8px 10px;}
-button,input,select,textarea{border-radius:6px;}
-button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-.tabs{gap:0;flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;margin-bottom:14px;scrollbar-width:thin;}
-.tab{flex:none;padding:10px 14px 9px;font-size:11px;white-space:nowrap;}
+/* Auto Entry Trader: identitas Daun Merah, hierarki informasi yang lebih tenang. */
+:root{--muted:#9aa59b;--interactive:#df9589;--negative:#e28d81;--soft:rgba(232,228,217,.035);}
+body.light-theme{--muted:#626b61;--interactive:#9a3025;--negative:#a83226;--soft:rgba(33,31,26,.025);}
+html{scroll-behavior:smooth;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.6;}
+.wrap{max-width:1320px;padding:28px 32px 48px;}
+header{padding:0 0 22px;margin:0;gap:20px;align-items:center;}
+.brand{display:flex;align-items:center;gap:14px;min-width:0;}
+.brand img{width:40px;height:40px;flex:none;border-radius:9px;}
+.brand .eyebrow{font-family:'DM Mono',Consolas,monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--interactive);margin-bottom:4px;}
+header h1{font-size:25px;letter-spacing:-.045em;color:var(--fg);line-height:1.2;margin:0;}
+header .sub{font-family:inherit;font-size:12px;letter-spacing:0;text-transform:none;margin-top:5px;}
+.secret-status{gap:8px;font-size:11px;max-width:100%;}
+.secret-status button{font-size:11px;min-height:34px;}
+button,input,select,textarea{font-family:inherit;font-size:12px;border-radius:6px;padding:8px 11px;}
+button{font-weight:500;}
+button:hover{border-color:var(--interactive);color:var(--interactive);}
+button.primary{background:var(--accent);color:#fff;}
+body.light-theme button.primary{color:#fff;}
+button.primary:hover{filter:brightness(1.14);}
+button,input,select,textarea{touch-action:manipulation;}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--interactive);outline-offset:3px;}
+label{font-family:inherit;font-size:11px;font-weight:600;letter-spacing:.03em;}
+.tabs{position:sticky;top:0;z-index:25;background:var(--bg);gap:4px;flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;margin:0 0 18px;padding-top:6px;scrollbar-width:thin;}
+.tab{flex:none;border:0;border-bottom:2px solid transparent;background:transparent;border-radius:0;padding:13px 16px;font-size:12px;white-space:nowrap;color:var(--muted);}
 .tab:first-child{padding-left:0;}
-.quicknav{gap:2px 16px;margin:0;padding:0 0 9px;border-bottom:1px solid var(--border);}
-.quicknav a{border:0;border-radius:0;background:none;padding:4px 0;font-size:10px;}
-.quicknav a:hover{color:var(--accent);}
-.card{background:transparent;border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;padding:13px 0;margin:0;scroll-margin-top:12px;}
-.card h2{font-size:14px;letter-spacing:0;margin-bottom:8px;}
-.card .hint{max-width:92ch;line-height:1.55;margin:5px 0 9px;}
+.tab.active{color:var(--fg);border-bottom-color:var(--accent);font-weight:600;}
+.tab:hover{background:var(--soft);color:var(--fg);}
+.tab:hover:not(.active){border-bottom-color:transparent;}
+.tab.active:hover{border-bottom-color:var(--accent);}
+.quicknav{gap:6px 18px;margin:0;padding:0 0 17px;border-bottom:1px solid var(--border);}
+.quicknav a{font-family:inherit;border:0;border-radius:0;background:none;padding:3px 0;font-size:11px;color:var(--muted);}
+.quicknav a:hover{color:var(--fg);}
+.card{background:transparent;border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;padding:22px 0;margin:0;scroll-margin-top:70px;min-width:0;}
+.card h2{font-size:16px;letter-spacing:-.02em;color:var(--fg);margin-bottom:12px;}
+.card .hint{max-width:100ch;font-size:12px;line-height:1.65;margin:5px 0 14px;color:var(--muted);}
+.section-note{font-size:12px;color:var(--muted);margin:5px 0 14px;}
+.section-note summary{cursor:pointer;font-size:11px;letter-spacing:.02em;width:fit-content;}
+.section-note[open] summary{color:var(--fg);margin-bottom:8px;}
+.section-note .hint{margin-bottom:0;}
 .grid{gap:0;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
-.stat{background:transparent;border:0;border-left:1px solid var(--border);border-radius:0;padding:6px 12px;}
+.stat{background:transparent;border:0;border-left:1px solid var(--border);border-radius:0;padding:10px 16px;min-width:0;}
 .stat:hover{border-color:var(--border);}
-.stat .v{font-size:18px;}
-.stat .l{line-height:1.5;}
-.subhead{padding:9px 0 4px;}
-@media(min-width:900px){
-  #pane-dash.active{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:28px;align-items:start;}
-  #pane-dash > .quicknav,#card-global,#card-mgmt,#card-gateghost,#card-symbols,#card-recent{grid-column:1/-1;}
-  #pane-dash > .card{min-width:0;align-self:stretch;}
-}
-.symbols{gap:0;}
-.symcard{background:transparent;border:0;border-left:1px solid var(--border);border-radius:0;padding:7px 12px;}
+.stat .v{font-family:'DM Mono',Consolas,monospace;font-size:23px;font-weight:400;line-height:1.3;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.stat .l{font-family:inherit;font-size:11px;text-transform:none;letter-spacing:0;line-height:1.45;margin-top:6px;}
+.stat .v.red{color:var(--negative);}
+.subhead{font-family:inherit;font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.09em;padding:16px 0 8px;}
+#card-global .grid{grid-template-columns:repeat(5,minmax(0,1fr));row-gap:16px;}
+#card-global .stat:nth-child(-n+5) .v{font-size:30px;}
+#card-global .stat:nth-child(n+6) .v{font-size:20px;}
+#card-global .stat:first-child{border-left:0;padding-left:0;}
+.symbols{gap:0;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));}
+.symcard{background:transparent;border:0;border-left:1px solid var(--border);border-radius:0;padding:10px 16px;min-width:0;}
 .symcard:hover{border-color:var(--border);}
-.chartcard{box-shadow:none;}
-#gate .box{max-width:calc(100% - 32px);}
-@media(max-width:600px){
-  .wrap{padding:12px 14px 28px;}
-  header{align-items:flex-start;}
-  header h1{font-size:18px;}
-  .secret-status{width:100%;}
-  .tabs{margin-bottom:10px;}
-  .tab{padding:10px 11px 9px;}
-  .quicknav{gap:4px 14px;}
-  .card{padding:11px 0;}
-  .grid{grid-template-columns:repeat(2,minmax(0,1fr));}
-  .stat{min-width:0;padding:5px 10px;overflow-wrap:anywhere;}
-  .symbols{grid-template-columns:repeat(2,minmax(0,1fr));}
-  .symcard{min-width:0;padding:6px 10px;}
-  .symcard .row{gap:6px;flex-wrap:wrap;}
+.symcard h3{font-family:inherit;font-size:13px;font-weight:600;color:var(--fg);margin-bottom:12px;}
+.symcard .row{font-size:12px;gap:12px;padding:4px 0;}
+.symcard .row b{font-family:'DM Mono',Consolas,monospace;font-size:11px;font-variant-numeric:tabular-nums;}
+table{font-size:12px;}
+th,td{padding:11px 12px;}
+th{font-family:inherit;font-size:10px;font-weight:600;letter-spacing:.07em;background:var(--soft);color:var(--muted);}
+td{font-variant-numeric:tabular-nums;}
+#recentTable td:nth-child(n+6):nth-child(-n+8){font-family:'DM Mono',Consolas,monospace;font-size:11px;}
+.badge{font-family:inherit;font-size:10px;line-height:1.6;padding:2px 7px;border-radius:4px;}
+.badge.sl,.badge.invalid{color:var(--negative);}
+.filterbtns{grid-template-columns:repeat(3,max-content);gap:7px 10px;}
+.filtertoggle{min-height:34px;}
+tr.rowdetail .row{font-size:12px;padding:5px 0;}
+tr.rowdetail .row span{min-width:170px;}
+tr.rowdetail .longtext{font-size:13px;line-height:1.7;}
+.chartcard{box-shadow:none;border-radius:7px;padding:16px;}
+.chartcard-head h3{font-family:inherit;font-size:15px;}
+.chartcard-meta{font-family:inherit;font-size:11px;}
+.chart-tf button,.pairtab{font-family:inherit;font-size:11px;padding:6px 9px;}
+.chartcard.maximized{z-index:60;}
+.warnbox{font-size:12px;}
+.small,.empty{font-size:12px;line-height:1.65;}
+#gate{background:rgba(0,0,0,.78);backdrop-filter:blur(10px);}
+#gate .box{width:390px;max-width:calc(100% - 36px);padding:30px;border-radius:10px;box-shadow:0 24px 80px rgba(0,0,0,.22);}
+#gate h1{font-size:23px;color:var(--fg);}
+#gate input{margin:5px 0 8px;min-height:42px;}
+#respHead{padding:10px 20px;}
+#respBody{font-family:'DM Mono',Consolas,monospace;font-size:11px;}
+@media(min-width:1000px){
+ #pane-dash.active{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:32px;align-items:start;}
+ #pane-dash > .quicknav,#card-global,#card-operation,#card-symbols,#card-recent{grid-column:1/-1;}
+ #pane-dash > .card{min-width:0;align-self:stretch;}
 }
+@media(max-width:700px){
+ .wrap{padding:20px 18px 32px;}
+ header{align-items:flex-start;padding-bottom:18px;gap:16px;}
+ header h1{font-size:22px;}
+ .brand img{width:34px;height:34px;}
+ .secret-status{width:100%;gap:7px;}
+ .tabs{margin-bottom:16px;}
+ .tab{padding:12px 13px;font-size:12px;}
+ .quicknav{gap:5px 15px;flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;scrollbar-width:thin;}
+ .quicknav a{flex:none;}
+ .card{padding:19px 0;}
+ .grid,#card-global .grid{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:10px;}
+ .stat{padding:9px 12px;}
+ #card-global .stat:first-child{border-left:1px solid var(--border);padding-left:12px;}
+ .stat .v,#card-global .stat:nth-child(-n+5) .v{font-size:24px;}
+ #card-global .stat:nth-child(n+6) .v{font-size:19px;}
+ .symbols{grid-template-columns:1fr;gap:12px;}
+ .symcard{padding:7px 12px;}
+ tr.rowdetail .row{flex-direction:column;gap:2px;}
+ tr.rowdetail .row span{min-width:0;}
+ .card h2{font-size:15px;}
+ #gate .box{padding:24px;}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto;}*{animation:none!important;transition:none!important;}}
 </style>
 </head>
 <body>
@@ -297,19 +360,21 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
 
 <div id="gate">
   <div class="box">
-    <h1>Auto-Entry Dev Console</h1>
-    <p class="small">Masukkan CRON_SECRET (sama dengan env var server) untuk akses data eksperimen Plan U. Tersimpan lokal di browser ini saja.</p>
-    <label>x-admin-secret</label>
-    <input type="password" id="secretInput" placeholder="CRON_SECRET">
+    <h1>Auto Entry Trader</h1>
+    <p class="small">Masukkan kunci akses administrator untuk membuka posisi, performa, dan pengelolaan AATAS. Kunci hanya disimpan di browser ini.</p>
+    <label for="secretInput">Kunci akses</label>
+    <input type="password" id="secretInput" placeholder="Kunci akses administrator">
     <button class="primary" id="secretSubmit" style="margin-top:10px;width:100%;">Masuk</button>
   </div>
 </div>
 
 <div class="wrap">
   <header>
-    <div>
-      <h1>Auto-Entry Dev Console</h1>
-      <div class="sub">Plan U — Eksperimen Paper-Trading (developer-only)</div>
+    <div class="brand">
+      <img src="icon.svg" alt="" width="40" height="40">
+      <div><div class="eyebrow">Daun Merah / AATAS</div>
+      <h1>Auto Entry Trader</h1>
+      <div class="sub">Performa dan pengelolaan posisi virtual</div></div>
     </div>
     <div class="secret-status">
       <button class="themebtn" id="btnThemeToggle" title="Ganti tema terang/gelap">
@@ -319,22 +384,22 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       <span class="dot" id="notifDot"></span>
       <button id="btnNotifToggle">Notif AATAS: off</button>
       <span class="dot" id="secretDot"></span>
-      <span id="secretLabel">belum login</span>
-      <button id="btnChangeSecret">ganti secret</button>
+      <span id="secretLabel">Belum masuk</span>
+      <button id="btnChangeSecret">Akses</button>
     </div>
   </header>
 
-  <div class="tabs">
-    <div class="tab active" data-pane="dash">Dashboard</div>
-    <div class="tab" data-pane="charts">Chart Posisi</div>
-    <div class="tab" data-pane="trigger">Trigger Analisa</div>
-    <div class="tab" data-pane="override">Setup Override</div>
-    <div class="tab" data-pane="review">Position Review</div>
-    <div class="tab" data-pane="friday">Friday Tighten</div>
+  <div class="tabs" role="tablist" aria-label="Menu Auto Entry Trader">
+    <button type="button" class="tab active" id="tab-dash" role="tab" aria-controls="pane-dash" aria-selected="true" data-pane="dash">Dashboard</button>
+    <button type="button" class="tab" id="tab-charts" role="tab" aria-controls="pane-charts" aria-selected="false" tabindex="-1" data-pane="charts">Chart Posisi</button>
+    <button type="button" class="tab" id="tab-trigger" role="tab" aria-controls="pane-trigger" aria-selected="false" tabindex="-1" data-pane="trigger">Trigger Analisa</button>
+    <button type="button" class="tab" id="tab-override" role="tab" aria-controls="pane-override" aria-selected="false" tabindex="-1" data-pane="override">Setup Override</button>
+    <button type="button" class="tab" id="tab-review" role="tab" aria-controls="pane-review" aria-selected="false" tabindex="-1" data-pane="review">Position Review</button>
+    <button type="button" class="tab" id="tab-friday" role="tab" aria-controls="pane-friday" aria-selected="false" tabindex="-1" data-pane="friday">Friday Tighten</button>
   </div>
 
   <!-- ── DASHBOARD ── -->
-  <div class="pane active" id="pane-dash">
+  <div class="pane active" id="pane-dash" role="tabpanel" aria-labelledby="tab-dash">
     <!-- Quick nav (2026-08-08, rapikan dashboard) — halaman ini 9 kartu ditumpuk,
          semua tetap ditampilkan penuh (tidak ada yang disembunyikan/dihapus), cuma
          dikasih jalan pintas lompat-ke-bagian supaya tidak perlu scroll manual terus. -->
@@ -351,12 +416,18 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       <a href="#card-recent">Riwayat Setup</a>
     </div>
 
+    <div class="card" id="card-global">
+      <h2>Ringkasan Performa</h2>
+      <details class="section-note"><summary>Penjelasan dan batas data</summary><p class="hint" id="globalEpochHint">Sejak AATAS live (2026-08-22), SEMUA angka agregat di kartu ini dihitung ulang HANYA dari setup kebijakan AATAS ke atas — urutan keputusannya dibalik jadi makro-dulu, jadi win rate arsitektur lama tidak bisa digabung. Angka nol di awal itu wajar, bukan data hilang: tabel Riwayat Setup di bawah tetap menampilkan seluruh histori lama apa adanya.</p></details>
+      <div class="grid" id="globalStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
+    </div>
+
     <div class="card" id="card-saldo">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <h2>Saldo DeepSeek (API resmi, berbayar)</h2>
         <button id="btnCheckBalance">Cek Saldo</button>
       </div>
-      <p class="hint">On-demand saja (tidak auto-refresh) — query langsung ke DeepSeek, bukan generate call, tidak masuk pagar biaya 50/hari. Deteksi saldo habis di jalur produksi tetap reaktif (HTTP 402 saat generate, auto-fallback Gemini) — cek manual di sini untuk tahu LEBIH AWAL sebelum itu terjadi.</p>
+      <details class="section-note"><summary>Penjelasan dan batas data</summary><p class="hint">On-demand saja (tidak auto-refresh) — query langsung ke DeepSeek, bukan generate call, tidak masuk pagar biaya 50/hari. Deteksi saldo habis di jalur produksi tetap reaktif (HTTP 402 saat generate, auto-fallback Gemini) — cek manual di sini untuk tahu LEBIH AWAL sebelum itu terjadi.</p></details>
       <div class="grid" id="balanceStats"><div class="empty">Belum dicek — klik "Cek Saldo".</div></div>
     </div>
 
@@ -373,39 +444,35 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
 
     <div class="card" id="card-gate">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h2>Gate Plan U — Cukup Data?</h2>
+        <h2>Kecukupan Data</h2>
         <button id="btnRefresh">Refresh</button>
       </div>
-      <p class="hint">Kriteria SELESAI (ambang diturunkan 2026-08-22, keputusan permanen): n global ≥30 <b>DAN</b> SETIAP pair individual ≥30 (ambang CLT). Dihitung dari NOL sejak AATAS live — sampel arsitektur lama (teknikal-dulu) tidak ikut, karena itu populasi sistem yang berbeda. n di sini = setup yang sudah <b>closed (TP+SL)</b>, bukan total baris log (pending/canceled/ambiguous tidak dijadikan pelajaran, jadi tidak dihitung). Kalau ada pair di bawah 30 walau n gabungan sudah ≥100, gate BELUM terpenuhi — jangan tarik kesimpulan win-rate dulu.</p>
+      <details class="section-note"><summary>Penjelasan dan batas data</summary><p class="hint">Kriteria SELESAI (ambang diturunkan 2026-08-22, keputusan permanen): n global ≥30 <b>DAN</b> SETIAP pair individual ≥30 (ambang CLT). Dihitung dari NOL sejak AATAS live — sampel arsitektur lama (teknikal-dulu) tidak ikut, karena itu populasi sistem yang berbeda. n di sini = setup yang sudah <b>closed (TP+SL)</b>, bukan total baris log (pending/canceled/ambiguous tidak dijadikan pelajaran, jadi tidak dihitung). Kalau ada pair di bawah 30 walau n gabungan sudah ≥100, gate BELUM terpenuhi — jangan tarik kesimpulan win-rate dulu.</p></details>
       <div class="grid" id="gateStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
-    <div class="card" id="card-global">
-      <h2>Ringkasan Global (setup_log_auto:v1)</h2>
-      <p class="hint" id="globalEpochHint">Sejak AATAS live (2026-08-22), SEMUA angka agregat di kartu ini dihitung ulang HANYA dari setup kebijakan AATAS ke atas — urutan keputusannya dibalik jadi makro-dulu, jadi win rate arsitektur lama tidak bisa digabung. Angka nol di awal itu wajar, bukan data hilang: tabel Riwayat Setup di bawah tetap menampilkan seluruh histori lama apa adanya.</p>
-      <div class="grid" id="globalStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
-    </div>
+
 
     <div class="card" id="card-mgmt">
-      <h2>Manajemen Posisi (U-5a) &amp; Cancel-Flip Ghost (U-3 lanjutan)</h2>
+      <h2>Manajemen Posisi</h2>
       <div class="grid" id="mgmtStats"><div class="empty">—</div></div>
     </div>
 
     <div class="card" id="card-gateghost">
-      <h2>Ghost-Tracking Kandidat Ditahan Gate D/B/A (2026-08-08)</h2>
-      <p class="hint">Kandidat yang ditahan correlation_cap/drawdown/critic_veto SEKARANG dipantau counterfactual-nya (bukan cuma dibuang) — Ghost Saved = gate benar menahan (kandidat memang bakal SL), Ghost Cost = gate salah menahan (kandidat sebenarnya TP).</p>
+      <h2>Evaluasi Kandidat yang Ditahan</h2>
+      <details class="section-note"><summary>Penjelasan dan batas data</summary><p class="hint">Kandidat yang ditahan correlation_cap/drawdown/critic_veto SEKARANG dipantau counterfactual-nya (bukan cuma dibuang) — Ghost Saved = gate benar menahan (kandidat memang bakal SL), Ghost Cost = gate salah menahan (kandidat sebenarnya TP).</p></details>
       <div class="grid" id="gateGhostStats"><div class="empty">—</div></div>
     </div>
 
     <div class="card" id="card-meta">
-      <h2>Konsistensi AI &amp; Latensi Pipeline</h2>
-      <p class="hint">Dua kelompok angka dengan perlakuan BERBEDA sejak AATAS (2026-08-22). <b>Konsistensi</b> (AI ditanya 3x, biasnya sama atau tidak) = properti PROMPT, dan prompt jalur auto sudah diganti total — jadi ikut direset ke populasi AATAS, terisi lagi mulai uji harian berikutnya. <b>Latensi pipeline</b> (kecepatan data rilis kalender masuk) = murni infrastruktur, tidak ada hubungannya dengan cara AI memutuskan — sengaja TIDAK direset, angkanya tetap berlanjut.</p>
+      <h2>Kualitas Sistem</h2>
+      <details class="section-note"><summary>Penjelasan dan batas data</summary><p class="hint">Dua kelompok angka dengan perlakuan BERBEDA sejak AATAS (2026-08-22). <b>Konsistensi</b> (AI ditanya 3x, biasnya sama atau tidak) = properti PROMPT, dan prompt jalur auto sudah diganti total — jadi ikut direset ke populasi AATAS, terisi lagi mulai uji harian berikutnya. <b>Latensi pipeline</b> (kecepatan data rilis kalender masuk) = murni infrastruktur, tidak ada hubungannya dengan cara AI memutuskan — sengaja TIDAK direset, angkanya tetap berlanjut.</p></details>
       <div class="grid" id="metaStats"><div class="empty">—</div></div>
     </div>
 
     <div class="card" id="card-calib">
-      <h2>Kalibrasi Confidence AI</h2>
-      <p class="hint">Confidence (tinggi/sedang/rendah) BUKAN hasil rumus — itu penilaian AI sendiri atas setup yang dibuatnya. Tabel ini yang jadi rumus pengecekannya: kalau win rate tidak turun berurutan tinggi &gt; sedang &gt; rendah, confidence AI belum kalibrasi bagus (jangan dipakai untuk sizing). CATATAN sejak AATAS (2026-08-22): field <b>confidence</b> sudah DIGANTI checklist_pct + verdict di jalur auto, jadi tabel ini PERMANEN kosong untuk setup baru — bukan bug. Histori lama tetap sah dibaca.</p>
+      <h2>Kalibrasi Historis</h2>
+      <details class="section-note"><summary>Penjelasan dan batas data</summary><p class="hint">Confidence (tinggi/sedang/rendah) BUKAN hasil rumus — itu penilaian AI sendiri atas setup yang dibuatnya. Tabel ini yang jadi rumus pengecekannya: kalau win rate tidak turun berurutan tinggi &gt; sedang &gt; rendah, confidence AI belum kalibrasi bagus (jangan dipakai untuk sizing). CATATAN sejak AATAS (2026-08-22): field <b>confidence</b> sudah DIGANTI checklist_pct + verdict di jalur auto, jadi tabel ini PERMANEN kosong untuk setup baru — bukan bug. Histori lama tetap sah dibaca.</p></details>
       <div class="grid" id="calibStats"><div class="empty">—</div></div>
     </div>
 
@@ -445,7 +512,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   </div>
 
   <!-- ── CHART POSISI ── -->
-  <div class="pane" id="pane-charts">
+  <div class="pane" id="pane-charts" role="tabpanel" aria-labelledby="tab-charts">
     <div class="chart-toolbar">
       <button id="btnRefreshCharts">Refresh Semua Chart</button>
     </div>
@@ -453,7 +520,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   </div>
 
   <!-- ── TRIGGER ANALISA ── -->
-  <div class="pane" id="pane-trigger">
+  <div class="pane" id="pane-trigger" role="tabpanel" aria-labelledby="tab-trigger">
     <div class="card">
       <h2>Trigger Analisa Manual (auto=1)</h2>
       <div class="warnbox">
@@ -465,7 +532,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   </div>
 
   <!-- ── SETUP OVERRIDE ── -->
-  <div class="pane" id="pane-override">
+  <div class="pane" id="pane-override" role="tabpanel" aria-labelledby="tab-override">
     <div class="card">
       <h2>Setup Override</h2>
       <p class="hint">Koreksi label kerugian atau perbaikan data korup (status/filled_t/closed_t) untuk 1 id setup eksperimen.</p>
@@ -515,7 +582,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   </div>
 
   <!-- ── POSITION REVIEW ── -->
-  <div class="pane" id="pane-review">
+  <div class="pane" id="pane-review" role="tabpanel" aria-labelledby="tab-review">
     <div class="card">
       <h2>Position Review (simulasi trigger berita)</h2>
       <p class="hint">Hanya berlaku untuk posisi status 'open' di setup_log_auto:v1, tanpa intervention sebelumnya. ID yang cuma ada di setup_log:v1 (manual) akan ditolak tanpa call AI.</p>
@@ -530,7 +597,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
   </div>
 
   <!-- ── FRIDAY TIGHTEN ── -->
-  <div class="pane" id="pane-friday">
+  <div class="pane" id="pane-friday" role="tabpanel" aria-labelledby="tab-friday">
     <div class="card">
       <h2>Friday Tighten (preventif weekend)</h2>
       <p class="hint">Tighten SL semua posisi open di setup_log_auto:v1 yang belum punya intervention — murni kode, tanpa AI.</p>
@@ -541,10 +608,10 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
 
 <div id="respPanel">
   <div id="respHead">
-    <span><b id="respAction">respons</b> <span class="tag" id="respTag">—</span></span>
+    <span><b id="respAction">Respons sistem</b> <span class="tag" id="respTag">—</span></span>
     <span class="small" id="respToggleHint">klik untuk tutup/buka</span>
   </div>
-  <pre id="respBody">Belum ada aksi dijalankan.</pre>
+  <pre id="respBody" class="collapsed">Belum ada aksi dijalankan.</pre>
 </div>
 
 <script>
@@ -686,7 +753,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     const has = !!getSecret();
     document.getElementById('gate').style.display = has ? 'none' : 'flex';
     document.getElementById('secretDot').className = 'dot ' + (has ? 'ok' : 'bad');
-    document.getElementById('secretLabel').textContent = has ? 'secret tersimpan' : 'belum login';
+    document.getElementById('secretLabel').textContent = has ? 'Akses tersimpan' : 'Belum masuk';
   }
   document.getElementById('secretSubmit').addEventListener('click', () => {
     const v = document.getElementById('secretInput').value.trim();
@@ -712,9 +779,11 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         unlock.checked = false;
         document.querySelectorAll('#pairBtns button').forEach(b => { b.disabled = true; });
       }
-      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(x => { x.classList.remove('active'); x.setAttribute('aria-selected', 'false'); x.tabIndex = -1; });
       document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
       t.classList.add('active');
+      t.setAttribute('aria-selected', 'true');
+      t.tabIndex = 0;
       document.getElementById('pane-' + t.dataset.pane).classList.add('active');
       // Polling candle (lihat CHART_POLL_MS) cuma jalan selagi tab Chart Posisi aktif —
       // pindah ke tab lain berhenti, balik lagi lanjut, supaya tidak nge-fetch percuma
@@ -726,6 +795,17 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         stopLiveTicks();
       }
     });
+  });
+
+  document.querySelector('.tabs').addEventListener('keydown', event => {
+    if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    const tabs = [...document.querySelectorAll('.tab')];
+    const index = tabs.indexOf(event.target);
+    if (index < 0) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+      : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[next].focus(); tabs[next].click();
   });
 
   // ── Response panel collapse ──
