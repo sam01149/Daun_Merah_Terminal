@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048" role="img">
+<title>Daun Merah</title>
+<rect width="2048" height="2048" fill="rgb(10,10,10)"/>
+<g transform="translate(204.8 204.8) scale(.8)">
+<defs>
+<clipPath id="leafClip">
+<path d="M1024,300 C1210,460 1470,700 1470,1050 C1470,1400 1250,1650 1024,1780 C798,1650 578,1400 578,1050 C578,700 838,460 1024,300 Z"></path>
+</clipPath>
+</defs>
+<path d="M1004,1758 L1024,1932 L1044,1758 Z" fill="rgb(159,158,153)"></path>
+<g clip-path="url(#leafClip)">
+<rect x="0" y="0" width="1024" height="2048" fill="rgb(13,77,77)"></rect>
+<rect x="1024" y="0" width="1024" height="2048" fill="rgb(178,48,48)"></rect>
+</g>
+<g fill="none" stroke="rgb(245,230,200)" stroke-linecap="round" opacity="0.5">
+<path d="M1042,620 Q1160,560 1230,520" stroke-width="7"></path>
+<path d="M1044,830 Q1190,800 1290,730" stroke-width="7"></path>
+<path d="M1028,1060 Q1190,1075 1300,1000" stroke-width="7"></path>
+<path d="M1018,1290 Q1160,1320 1255,1265" stroke-width="7"></path>
+<path d="M1006,720 Q890,680 815,630" stroke-width="7"></path>
+<path d="M1008,940 Q860,940 750,870" stroke-width="7"></path>
+<path d="M1013,1170 Q850,1195 735,1130" stroke-width="7"></path>
+<path d="M1011,1400 Q890,1435 795,1385" stroke-width="7"></path>
+</g>
+<path d="M1024,1765 C1000,1300 1050,700 1024,330" fill="none" stroke="rgb(245,230,200)" stroke-width="15" stroke-linecap="round"></path>
+</g>
+</svg>

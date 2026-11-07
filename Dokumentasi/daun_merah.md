@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 470 - Penunjuk prompt profesional AATAS)
+> **Last updated:** 2026-11-07 (Session 472 - Perbaikan sudut ikon aplikasi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 472 (2026-11-07) — Penunjuk perbaikan sudut ikon aplikasi
+
+Aset ikon bersama untuk aplikasi utama dan auto-entry kini memakai sudut transparan tanpa bidang krem, PNG desktop dan varian maskable berpadded; rincian perubahan, render visual serta verifikasi ada di `professional_llm_trader/changelog.md` S472.
 
 ## Changelog Session 470 (2026-11-07) — Penunjuk prompt profesional AATAS
 
