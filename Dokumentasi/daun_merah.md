@@ -11,12 +11,22 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 459 - Audit kelengkapan NZD)
+> **Last updated:** 2026-11-07 (Session 460 - Dashboard memakai tone panel bank sentral)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 460 (2026-11-07) - Dashboard memakai tone panel bank sentral
+
+**Arahan user.** Periksa inflasi inti di fitur Fundamental; untuk bank sentral tidak perlu bukti tambahan karena tone sudah tersedia di panel. Ini menggantikan persyaratan evidence headline tambahan untuk jalur Dashboard, bukan perintah membuat ulang tone atau mengambil statement eksternal.
+
+**Pemeriksaan Fundamental.** HGETALL fundamental:NZD dan API fundamental_get HTTP 200 sama-sama memiliki CPI YoY 3.7%/previous 4.1%, CPI QoQ 0.7%/previous 1.5%, dan Food Price Index; tidak ada key Core CPI/Core Inflation/underlying. FUND_SEED NZD juga tidak mempunyai core. Cache fundamental_analysis saat diperiksa tidak tersedia. Bukti .cache/nzd-audit/fundamental-api.json dan fundamental-and-tone.json. Headline tidak diganti namanya menjadi inti; inflasi Dashboard tetap tidak lengkap.
+
+**Perubahan tone.** Panel cb-status dan Dashboard menggunakan cb_bias yang sama. Adapter buildPanelTone membaca bias dan bias_updated langsung, memetakan hawkish/dovish/neutral/split, tanpa mewajibkan source_headlines. Hanya jalur tabel Dashboard memakai adapter ini; buildCentralBank legacy, writer cb_bias, panel CB dan auto-entry tidak diubah. _macro_candidate menerima input bertanda tone_source=cb_bias tanpa gate headline; usia maksimal 21 hari, timestamp valid/tidak future dan label dikenal tetap diperiksa. Provenance menyebut shared_central_bank_panel_tone. Cache smart_bias:v6/schema 9 mencegah cache lama tetap menampilkan RBNZ kosong. API-only, tidak perlu bump HTML/SW.
+
+**Verifikasi.** npm.cmd test 1.584/1.584 lulus. Regresi baru menguji Cautious Dovish/Hawkish/Neutral/Split dari panel walau tanpa headline, serta unknown/missing/future/stale tetap insufficient. Handler lokal aktual schema 9 menghasilkan RBNZ Cautious Dovish/bearish, source cb_bias; inflasi tetap insufficient. Tidak ada panggilan AI baru atau collector eksternal. Verifikasi produksi dicatat setelah push.
 
 ## Changelog Session 459 (2026-11-07) - Audit kelengkapan inflasi dan RBNZ pada NZD
 

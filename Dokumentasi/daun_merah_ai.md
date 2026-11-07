@@ -36,7 +36,7 @@ Ada 2 lapis pembatas yang perlu dibedakan:
 
 ## 2. Peta Fitur AI
 
-**Batas AI vs deterministik (2026-11-07, S456).** Kondisi ekonomi dan agregasi bias dihitung kode. Dashboard read tidak memakai token. Ekstraksi riset institusi mengambil artikel ING baru melalui DeepSeek Flash existing; quote, subjek, tanggal, pair dan horizon divalidasi kode. Maksimal dua panggilan/hari dengan bucket deepseek_institutions (relink_institutions bila gateway aktif), circuit ai:deepseek:institutions; hash sama idempotent dan retry cooldown enam jam. Marc retired atas instruksi user, termasuk cron dan penilaian outcome. Ini ringkasan opini deskriptif, bukan prediksi terkalibrasi.
+**Batas AI vs deterministik (2026-11-07, S456).** Kondisi ekonomi dan agregasi bias dihitung kode. Sejak S460, tone CB pada Dashboard membaca cb_bias yang sama dengan panel bank sentral; tidak ada ekstraksi atau syarat headline tambahan pada read Dashboard. Dashboard read tidak memakai token. Ekstraksi riset institusi mengambil artikel ING baru melalui DeepSeek Flash existing; quote, subjek, tanggal, pair dan horizon divalidasi kode. Maksimal dua panggilan/hari dengan bucket deepseek_institutions (relink_institutions bila gateway aktif), circuit ai:deepseek:institutions; hash sama idempotent dan retry cooldown enam jam. Marc retired atas instruksi user, termasuk cron dan penilaian outcome. Ini ringkasan opini deskriptif, bukan prediksi terkalibrasi.
 
 | # | Fitur | Tombol di UI | Dipicu otomatis? | Cache | Rate limit server |
 |---|-------|--------------|-------------------|-------|--------------------|

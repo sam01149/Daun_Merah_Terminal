@@ -209,6 +209,19 @@ function buildCentralBank(bank, nowMs = Date.now()) {
   };
 }
 
+// Same stored tone shown by the central-bank panel. This adapter does not
+// reinterpret the news or require an additional evidence trail for Dashboard.
+function buildPanelTone(bank, nowMs = Date.now()) {
+  const updatedMs=parseDateMs(bank?.bias_updated);
+  const fresh=updatedMs!=null && updatedMs<=nowMs && nowMs-updatedMs<=21*86400000;
+  return {
+    state:fresh?cbState(bank):'insufficient',confidence:null,
+    bias:bank?.bias || null,as_of:updatedMs!=null?new Date(updatedMs).toISOString():null,
+    freshness:fresh?'fresh':'insufficient',evidence:[],tone_source:'cb_bias',
+    methodology:'shared_central_bank_panel_tone',
+  };
+}
+
 function buildInflation(indicators, centralBank, nowMs = Date.now()) {
   const evidence = [];
   for (const [name, entry] of Object.entries(indicators || {})) {
@@ -448,7 +461,7 @@ function buildSmartBiasRows({ fundamentals = {}, cbBanks = [], cot = {}, bankIte
 
 module.exports = {
   CURRENCIES, VALID_STATES, cleanText, parseEconomicValue, releaseSignal,
-  summarizeSignals, buildGrowth, buildInflation, buildCentralBank,
+  summarizeSignals, buildGrowth, buildInflation, buildCentralBank, buildPanelTone,
   buildGrowthFromMacro, buildInflationFromMacro,
   extractBankStances, buildBanks, buildPositioning, buildOverall, buildSmartBiasRows,
 };

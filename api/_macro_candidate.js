@@ -136,7 +136,7 @@ function buildAcademyPreview(candidate, contextRows=[]) {
       && !/\b(probabilit(?:y|ies)|placeholder|no data|unavailable)\b/i.test(row.title));
     const informationTime=Date.parse(provided?.as_of);
     const referenceTime=Date.parse(candidate.as_of);
-    const central_bank=provided && substantive.length && Number.isFinite(informationTime)
+    const central_bank=provided && (substantive.length || provided.tone_source==='cb_bias') && Number.isFinite(informationTime)
       && informationTime<=referenceTime && referenceTime-informationTime<=21*DAY
       ? {...provided,evidence:substantive,confidence:null}
       : {...missing(),reason:'dated_substantive_policy_evidence_missing'};

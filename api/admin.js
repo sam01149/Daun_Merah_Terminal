@@ -26,7 +26,7 @@ const { allowAiCall } = require('./_ai_guard');
 const { isDeepSeekDisabled, getDeepSeekApiKey, getDeepSeekUrl, isRelinkActive, resolveDeepSeekCircuit } = require('./_deepseek');
 const { requireAppKey, safeEqual } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, mapYahooSymbolToTwelveData, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
-const { buildSmartBiasRows } = require('./_smart_bias');
+const { buildSmartBiasRows, buildPanelTone } = require('./_smart_bias');
 const {loadMacroConditions}=require('./_macro_conditions_store');
 const {buildMacroConditions,buildQualitativeBiasRows}=require('./_macro_candidate');
 const institutionViews = require('./_institution_views');
@@ -9599,7 +9599,7 @@ async function ohlcvDashboardHandler(req, res) {
   }
 }
 
-const SMART_BIAS_CACHE_KEY = 'smart_bias:v5';
+const SMART_BIAS_CACHE_KEY = 'smart_bias:v6';
 const SMART_BIAS_TTL_SECS = 15 * 60;
 
 function _parseJsonValue(raw, fallback) {
@@ -9674,7 +9674,7 @@ async function smartBiasHandler(req, res) {
   let cached = null;
   try {
     cached = _parseJsonValue(await redisCmd('GET', SMART_BIAS_CACHE_KEY), null);
-    if (!force && cached?.schema_version === 8) return res.status(200).json(cached);
+    if (!force && cached?.schema_version === 9) return res.status(200).json(cached);
   } catch (e) { /* lanjut hitung fresh */ }
 
   try {
@@ -9710,11 +9710,12 @@ async function smartBiasHandler(req, res) {
     const conditions=buildMacroConditions(observations,{asOfMs:nowMs,integrated:true});
     const snapshots=_parseJsonValue(rawInstitutions,[]);
     for(const row of contextRows) {
+      row.central_bank=buildPanelTone(cbBanks.find(bank=>bank.currency===row.currency),nowMs);
       row.banks=institutionViews.buildInstitutionColumn(row.currency,snapshots,nowMs);
     }
     const rows=buildQualitativeBiasRows(conditions,contextRows);
     const payload = {
-      schema_version: 8,
+      schema_version: 9,
       methodology: 'academy_qualitative_core_first',
       rows,
       computed_at: new Date(nowMs).toISOString(),

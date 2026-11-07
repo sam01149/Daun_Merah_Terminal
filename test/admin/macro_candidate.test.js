@@ -152,6 +152,24 @@ test('policy-probability placeholders or future/stale source timestamps cannot s
   ]) assert.equal(buildAcademyPreview(candidate,[{currency:'USD',central_bank}])[0].central_bank.state,'insufficient');
 });
 
+test('Dashboard uses the same stored central-bank panel tone without requiring headlines',()=>{
+  const {buildPanelTone}=require('../../api/_smart_bias');
+  const candidate=buildMacroCandidate(core(),{asOfMs:NOW});
+  for(const [bias,state] of [['Cautious Dovish','bearish'],['Hawkish','bullish'],['Neutral','neutral'],['Split','mixed']]) {
+    const tone=buildPanelTone({bias,bias_updated:OBS,source_headlines:[{title:'Interest Rate Probabilities'}]},NOW);
+    const row=buildAcademyPreview(candidate,[{currency:'USD',central_bank:tone}])[0];
+    assert.equal(row.central_bank.state,state);
+    assert.equal(row.central_bank.bias,bias);
+    assert.equal(row.central_bank.tone_source,'cb_bias');
+    assert.equal(row.central_bank.evidence.length,0);
+  }
+  for(const bank of [{bias:'Hawkish'}, {bias:'Hawkish',bias_updated:'2026-12-01'},
+    {bias:'Hawkish',bias_updated:'2026-08-01'}, {bias:'unknown',bias_updated:OBS}]) {
+    const tone=buildPanelTone(bank,NOW);
+    assert.equal(buildAcademyPreview(candidate,[{currency:'USD',central_bank:tone}])[0].central_bank.state,'insufficient');
+  }
+});
+
 test('GDP annualized data stays in the declared national series without invented conversions',()=>{
   const input=core();const gdp=input.find(row=>row.series.startsWith('gdp:'));
   gdp.series='gdp:annualized:quarterly';gdp.actual=4;gdp.previous=2;

@@ -24,6 +24,11 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07] Keputusan user: tone Dashboard mengikuti panel bank sentral
+
+Setelah audit S459, user menegaskan tidak memerlukan bukti tambahan untuk kolom CB; gunakan tone dari panel yang sudah ada. Implementasi S460 memakai cb_bias bersama, tidak meminta pernyataan resmi tambahan untuk mengisi tone Dashboard. Guard freshness/label tetap ada. Rekomendasi collector statement RBNZ pada audit sebelumnya bukan lagi prasyarat integrasi Dashboard. Pemeriksaan langsung Fundamental/API tetap tidak menemukan inflasi inti NZD; CPI YoY/QoQ yang ada adalah headline, sehingga celah underlying tetap terbuka.
+
+
 ### [2026-11-07] NZD: data resmi ada, pipeline Dashboard belum lengkap
 
 Audit S459 membedakan input yang hilang dari data yang tidak dipublikasikan. [Stats NZ September 2026](https://www.stats.govt.nz/information-releases/consumers-price-index-september-2026-quarter/) mengonfirmasi headline 3.7% YoY/previous 4.1%; angka 2.9% adalah CPI yang mengecualikan food group, household energy subgroup dan vehicle fuels, bukan generic core tanpa definisi. Untuk memasukkannya, identitas seri, current/previous, periode, tanggal rilis dan pembaruan berkelanjutan perlu eksplisit. [RBNZ Prices M1](https://www.rbnz.govt.nz/statistics/series/economic-indicators/prices) menjelaskan factor/sectoral factor model berbeda dan berpotensi revisi; jangan menganggap semua underlying saling identik.
