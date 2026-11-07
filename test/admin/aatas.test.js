@@ -1,3 +1,4 @@
+require('./_manual_market_fixture').isolateManualMarketEvidence();
 // test/admin/aatas.test.js — AATAS ("Auto AI to Auto System", 2026-08-22).
 // Porting checklist SMC/ICT manual ke jalur auto-entry: urutan keputusan dibalik jadi
 // MAKRO DULU (REGIME CHECK + gate driver/fundamental), teknikal cuma presisi timing.
@@ -193,7 +194,7 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
       await handler({ headers: {}, method: 'POST', body: {}, query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' } }, fakeRes());
     } finally { global.fetch = origFetch; }
     assert.equal(cap.length, 1);
-    assert.doesNotMatch(cap[0].messages[1].content, /\[DATA RILIS EKONOMI/, 'jalur manual publik byte-identik: blok tidak pernah dikirim');
+    assert.match(cap[0].messages[1].content, /\[DATA RILIS EKONOMI/, 'Prime v2 manual kini menerima rilis kedua kaki; Call 2 auto tetap terisolasi');
   });
 });
 
@@ -1129,7 +1130,7 @@ const BASE_JSON = {
   macro_reason: 'BoE lebih dovish daripada Fed',
   bias: 'bearish',
   entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
-  sl: '1.2850', tp: '1.2700',
+  sl: '1.2850', tp: '1.2670',
   trigger: 'tunggu rejection H1', invalidation_condition: 'close H4 di atas 1.2860',
   time_horizon_days: 3,
   conflict: 'none', conflict_note: null,
@@ -1339,10 +1340,10 @@ test('AATAS e2e: Call 1 tanpa positioning; Gate A dan jalur manual tetap menerim
     const manualUser = capManual[0].messages[1].content;
     const manualSys  = capManual[0].messages[0].content;
     assert.doesNotMatch(manualUser, /CHECKLIST AATAS/, 'isolasi Opsi A: fitur publik tidak boleh kena porting ini');
-    assert.match(manualUser, /- makro_alignment:/);
-    assert.match(manualUser, /- confidence:/);
-    assert.match(manualUser, /Isi paragraf pertama \(tanpa header\) — keputusan arah makro lebih dulu/);
-    assert.match(manualSys, /"makro_alignment"/);
+    assert.match(manualUser, /makro_alignment searah\/konflik\/netral/);
+    assert.match(manualUser, /confidence tinggi\/sedang\/rendah/);
+    assert.match(manualUser, /Putuskan macro_direction dan macro_reason dahulu/);
+    assert.match(manualSys, /makro_alignment/);
     assert.match(manualUser, /COT leveraged net/);
     assert.match(manualUser, /RETAIL SENTIMENT GBPUSD/);
     assert.match(manualUser, /DILARANG otomatis memperketat/);

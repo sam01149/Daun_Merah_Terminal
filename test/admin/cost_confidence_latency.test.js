@@ -1,3 +1,4 @@
+require('./_manual_market_fixture').isolateManualMarketEvidence();
 // test/admin/cost_confidence_latency.test.js
 // Unit test 3 fungsi murni baru (2026-07-20, diskusi user pasca-Plan U — item #2/#4/#5):
 // - _costAdjustedR / _aggCostExpectancy: expectancy R gross vs net-biaya spread estimasi.
@@ -177,7 +178,7 @@ test('ohlcv_analyze: confidence "tinggi" dari AI -> masuk setup_log apa adanya',
     const aiJson = {
       strategy_id: 'momentum', macro_direction: 'bearish', macro_reason: 'BoE dovish vs Fed hawkish',
       bias: 'bearish', entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
-      sl: '1.2850', tp: '1.2700', trigger: 'tunggu rejection H1', invalidation_condition: 'close H4 di atas 1.2860',
+      sl: '1.2850', tp: '1.2670', trigger: 'tunggu rejection H1', invalidation_condition: 'close H4 di atas 1.2860',
       time_horizon_days: 3, makro_alignment: null, makro_alignment_reason: null,
       conflict: 'none', conflict_note: null, confidence: 'tinggi',
     };
@@ -211,7 +212,7 @@ test('ohlcv_analyze: confidence tidak valid dari AI -> dinormalisasi jadi null (
     const aiJson = {
       strategy_id: 'momentum', macro_direction: 'bearish', macro_reason: 'BoE dovish vs Fed hawkish',
       bias: 'bearish', entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
-      sl: '1.2850', tp: '1.2700', trigger: 'tunggu rejection H1', invalidation_condition: 'close H4 di atas 1.2860',
+      sl: '1.2850', tp: '1.2670', trigger: 'tunggu rejection H1', invalidation_condition: 'close H4 di atas 1.2860',
       time_horizon_days: 3, makro_alignment: null, makro_alignment_reason: null,
       conflict: 'none', conflict_note: null, confidence: 'sangat yakin sekali',
     };

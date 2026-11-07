@@ -4914,7 +4914,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.07.6';
+const APP_VERSION = '2026.11.07.7';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6760,19 +6760,14 @@ async function downloadAnalisaPdf() {
 
   b.heading('Analisa Tertulis');
   const text = (st?.commentary || ai.commentary || '').trim();
-  // Prompt ohlcv_analyze (api/admin.js) MENJAMIN urutan 5 paragraf ini persis (bias/trend
-  // daily -> struktur H4 -> momentum & pola -> integrasi & risiko -> "KESIMPULAN:"), ditulis
-  // sengaja TANPA header di teksnya sendiri. Label di sini murni presentasi PDF berdasar
-  // urutan yang sudah pasti itu — bukan parsing konten, jadi aman kalau AI-nya berubah
-  // (paragraf lebih/kurang dari 4 cuma kehilangan label, isinya tetap tampil apa adanya).
-  // Permintaan review eksternal (2026-07-23): paragraf padat 20 baris tanpa struktur
-  // melelahkan dibaca — sub-heading + bullet-split (>220 karakter & >=3 kalimat, pola sama
-  // _renderArticlePdfBlocks Ringkasan) bikin lebih scan-friendly tanpa ubah kontennya.
-  const ANALISA_PARA_LABELS = ['Arah Makro', 'Strategi & Timing', 'Momentum & Pola', 'Integrasi & Risiko'];
+  // Legacy output had fixed paragraph roles; prime-v2 uses a server decision
+  // followed by optional model notes, so positional labels would misattribute it.
+  const ANALISA_PARA_LABELS = st?.analysis_policy_v === 'prime-v2'
+    ? [] : ['Arah Makro', 'Strategi & Timing', 'Momentum & Pola', 'Integrasi & Risiko'];
   let analisaParaIdx = 0;
   text.split('\n').filter(l => l.trim()).forEach(l => {
     const trimmed = l.trim();
-    const m = trimmed.match(/^kesimpulan:\s*(.*)$/i);
+    const m = trimmed.match(/^kesimpulan(?: sistem)?:\s*(.*)$/i);
     if (m) { b.kesimpulanBox(m[1]); return; }
     const label = ANALISA_PARA_LABELS[analisaParaIdx];
     analisaParaIdx++;
@@ -6949,6 +6944,7 @@ let analisaFreshUntil = {}; // { [symbol]: epochMs }
 
 function _analisaResultIsStale(ai, now = Date.now()) {
   if (!ai) return true;
+  if (ai.structured?.analysis_policy_v && ai.structured.analysis_policy_v !== 'prime-v2') return true;
   const analyzedTs = ai.analyzedAt ? new Date(ai.analyzedAt).getTime() : NaN;
   const savedTs = Number(ai.saved_at);
   const sourceTs = Number.isFinite(analyzedTs) ? analyzedTs : savedTs;
@@ -7596,8 +7592,9 @@ function renderAnalisaDecisionPanel() {
   const stale = _analisaResultIsStale(ai);
   const rejected = structured.academy_contract_status === 'rejected' || structured.strategy_id === 'no_trade';
   const complete = !rejected && structured.entry_zone && structured.sl && structured.tp;
-  const statusLabel = stale ? 'HASIL LAMA' : rejected ? 'NO TRADE' : complete ? 'SETUP TERSTRUKTUR' : 'MENUNGGU LEVEL';
-  const statusClass = stale || rejected ? 'blocked' : complete ? 'ready' : '';
+  const conditional = structured.academy_contract_status === 'conditional';
+  const statusLabel = stale ? 'HASIL LAMA' : rejected ? 'NO TRADE' : conditional ? 'RENCANA BERSYARAT' : complete ? 'SETUP TERSTRUKTUR' : 'MENUNGGU LEVEL';
+  const statusClass = stale || rejected ? 'blocked' : conditional ? '' : complete ? 'ready' : '';
   const strategyLabels = { momentum:'Momentum', range:'Range', tactical_fade:'Tactical Fade', no_trade:'No Trade' };
   const direction = structured.bias ? String(structured.bias).toUpperCase() : null;
   const directionTone = ['bullish', 'bearish', 'neutral'].includes(String(structured.bias).toLowerCase()) ? String(structured.bias).toLowerCase() : '';
@@ -7608,6 +7605,7 @@ function renderAnalisaDecisionPanel() {
   el.innerHTML = `<div class="analisa-side-title">Ringkasan Eksekusi</div>
     <div class="analisa-decision-status ${statusClass}">${statusLabel}</div>
     ${stale ? '<div class="analisa-position-note">Level dipertahankan sebagai riwayat. Jalankan analisa ulang sebelum dipakai.</div>' : ''}
+    ${conditional ? '<div class="analisa-position-note">Candle pemicu belum diverifikasi. Tunggu rejection H1 selesai pada sesi London/New York, lalu periksa ulang SL, RR dan kalender.</div>' : ''}
     <div class="analisa-decision-grid">
       ${_analisaDecisionRow('Arah', direction, directionTone)}
       ${_analisaDecisionRow('Strategi', strategyLabels[structured.strategy_id] || structured.strategy_id)}

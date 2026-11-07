@@ -44,7 +44,7 @@ test('manual Academy contract: momentum searah lolos dengan trigger deterministi
     bias: 'bearish', entry_zone: '1.1000-1.1010', entry_basis: 'resistance', sl: '1.1050', tp: '1.0900',
   }, { lockedDirection: 'bearish' });
   assert.strictEqual(out.analysis_policy_v, MANUAL_ANALYSIS_POLICY_VERSION);
-  assert.strictEqual(out.academy_contract_status, 'passed');
+  assert.strictEqual(out.academy_contract_status, 'conditional');
   assert.strictEqual(out.entry_zone, '1.1000-1.1010');
   assert.deepStrictEqual(out.trigger_contract, {
     timeframe: '1h', session: 'london_or_new_york', rejection_required: true,
@@ -70,7 +70,7 @@ test('manual Academy contract: momentum melawan makro atau strategy tidak valid 
 
 test('manual Academy contract: range/fade eksplisit boleh berbeda dari arah besar', () => {
   const range = _enforceManualAcademyContract({ strategy_id: 'range', macro_direction: 'mixed', macro_reason: 'Kebijakan kedua kaki campuran', bias: 'bullish', entry_zone: '100', sl: '98', tp: '104' });
-  assert.strictEqual(range.academy_contract_status, 'passed');
+  assert.strictEqual(range.academy_contract_status, 'conditional');
   assert.strictEqual(range.trigger_contract.body_atr_min, null);
   assert.strictEqual(range.trigger_contract.rsi14_h1_divergence, 'recommended_optional');
   assert.strictEqual(range.trigger_contract.atr_timeframe, '6h');
@@ -78,7 +78,7 @@ test('manual Academy contract: range/fade eksplisit boleh berbeda dari arah besa
   assert.strictEqual(range.trigger_contract.target_atr, 2);
 
   const fade = _enforceManualAcademyContract({ strategy_id: 'tactical_fade', macro_direction: 'bearish', macro_reason: 'Arah besar bearish, kenaikan hanya overreaction', bias: 'bullish', entry_zone: '100', sl: '98', tp: '104' });
-  assert.strictEqual(fade.academy_contract_status, 'passed');
+  assert.strictEqual(fade.academy_contract_status, 'conditional');
   assert.strictEqual(fade.trigger_contract.overreaction_story, 'thin_or_unconfirmed');
   assert.strictEqual(fade.trigger_contract.macro_view_must_remain_unchanged, true);
 });

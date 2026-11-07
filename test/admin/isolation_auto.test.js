@@ -1,3 +1,4 @@
+require('./_manual_market_fixture').isolateManualMarketEvidence();
 // test/admin/isolation_auto.test.js — PLAN U-7 (2026-07-20, REVISI VISIBILITAS)
 // Eksperimen auto-entry & manajemen posisi = developer-only. Publik TIDAK PERNAH
 // boleh melihat jejaknya. Test ini memverifikasi 5 kriteria selesai U-7:
@@ -151,7 +152,7 @@ const AI_JSON = {
   macro_reason: 'BoE dovish vs Fed hawkish',
   bias: 'bearish',
   entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
-  sl: '1.2850', tp: '1.2700',
+  sl: '1.2850', tp: '1.2670',
   trigger: 'tunggu rejection H1', invalidation_condition: 'close H4 di atas 1.2860',
   time_horizon_days: 3, makro_alignment: null, makro_alignment_reason: null,
   conflict: 'none', conflict_note: null,

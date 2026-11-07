@@ -1,3 +1,4 @@
+require('./_manual_market_fixture').isolateManualMarketEvidence();
 // test/admin/sistem_hakim.test.js — [SISTEM HAKIM] aktivasi jalur cron auto-entry
 // (2026-07-29, diskusi user). Sebelum ini, cbDir HANYA datang dari body request
 // manual (index.html POST) — trigger cron auto-entry (vps/daemon.js) adalah GET
@@ -181,7 +182,7 @@ const AI_JSON_BEARISH = {
   macro_reason: 'GBP dovish vs USD hawkish',
   bias: 'bearish',
   entry_zone: '1.2795-1.2805', entry_basis: 'cluster S/R',
-  sl: '1.2850', tp: '1.2700',
+  sl: '1.2850', tp: '1.2670',
   trigger: 'tunggu rejection H1', invalidation_condition: 'close H4 di atas 1.2860',
   time_horizon_days: 3, makro_alignment: null, makro_alignment_reason: null,
   conflict: 'none', conflict_note: null,

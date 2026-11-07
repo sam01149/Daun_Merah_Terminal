@@ -1,3 +1,4 @@
+require('./_manual_market_fixture').isolateManualMarketEvidence();
 // test/admin/pair_context_prompt.test.js — PLAN U-2 (2026-07-20)
 // Integrasi ohlcvAnalyzeHandler (api/admin.js) dengan api/_pair_context.js:
 // - blok [KONTEKS REZIM & KEKUATAN MATA UANG] tersuntik ke prompt AI saat data cukup
@@ -63,7 +64,7 @@ const AI_JSON = {
   macro_reason: 'ECB dovish berlawanan dengan Fed hawkish',
   bias: 'bearish',
   entry_zone: '100.02-100.05', entry_basis: 'cluster S/R 100.03 (2x sentuh)',
-  sl: '100.10', tp: '99.90',
+  sl: '100.10', tp: '99.80',
   trigger: 'tunggu rejection H1 di 100.03',
   invalidation_condition: 'close H4 di atas 100.15',
   time_horizon_days: 3,
@@ -208,7 +209,8 @@ test('ohlcv_analyze: source=manual default (tanpa auto=1); alignment setup_log m
       // ada di commentary AI, tapi field ini sebelumnya TIDAK PERNAH disimpan ke log
       // sama sekali — hilang permanen begitu response dibalas untuk setup auto-entry
       // tanpa penonton live) commentary sekarang ikut tersimpan apa adanya.
-      assert.equal(log[0].commentary, AI_RAW_TEXT.split('===COMMENTARY===')[1].trim());
+      assert.match(log[0].commentary, /^KESIMPULAN SISTEM: RENCANA BERSYARAT/);
+      assert.doesNotMatch(log[0].commentary, /KESIMPULAN: bearish menengah/);
     } finally { global.fetch = origFetch; }
   });
 });

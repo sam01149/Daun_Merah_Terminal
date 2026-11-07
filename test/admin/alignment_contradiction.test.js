@@ -1,3 +1,4 @@
+require('./_manual_market_fixture').isolateManualMarketEvidence();
 // test/admin/alignment_contradiction.test.js — [CEK KONTRADIKSI] (2026-08-10), lihat
 // _detectAlignmentReasonContradiction di api/admin.js. Kasus nyata yang memicu ini:
 // setup CHF/JPY bullish, makro_alignment_reason AI menulis "...mendukung penguatan JPY
@@ -265,7 +266,8 @@ test('CEK KONTRADIKSI manual: reasoning konsisten (tanpa kontradiksi) -> tidak d
       assert.equal(res.body.structured.conflict, 'none');
       // (2026-09-02) Tidak ada guard yang menyala -> commentary TIDAK BOLEH disentuh sama
       // sekali (bukan cuma "tidak salah", betul-betul byte-identik dengan yang AI tulis).
-      assert.equal(res.body.commentary, 'Komentar singkat.');
+      assert.match(res.body.commentary, /KESIMPULAN SISTEM:/);
+      assert.match(res.body.commentary, /Komentar singkat/);
 
       const log = JSON.parse(store.strings['setup_log:v1']);
       assert.equal(log[0].conflict_source, null);
