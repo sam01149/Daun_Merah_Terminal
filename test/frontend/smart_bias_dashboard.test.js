@@ -44,6 +44,7 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   const details=between('function _sbDetailHtml(row)', '\nfunction toggleDashSmartBias');
   assert.doesNotMatch(details, /href=|source_url|source_headlines|forecast|published_at|as_of|hit_rate|confidence|coverage_count/);
   assert.match(details,/Belum ada pandangan mingguan yang cukup jelas/);
+  assert.doesNotMatch(renderer,/Konteks|banks\?\.context/);
   assert.match(renderer,/Bias fundamental kualitatif/);
   assert.match(renderer,/Pembaruan belum berhasil/);
   assert.doesNotMatch(renderer, /<th>Trend<\/th>|<th>Seasonality<\/th>/);

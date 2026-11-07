@@ -24,6 +24,11 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07] Batas scope terbaru: pandangan institusi mingguan saja
+
+User secara eksplisit meminta fokus mingguan dan filter setelah membahas pelengkap lintas horizon. Untuk Dashboard saat ini, monthly/near-term tanpa pekan dan teknikal tidak digabung sebagai suara atau konteks alternatif pada kolom institusi. Implementasi S458 mempertahankan bukti weekly yang berlaku dan status kosong saat tidak cukup. Usulan lintas horizon di percakapan sebelumnya tidak menjadi keputusan produksi.
+
+
 ### [2026-11-07] Fokus HSBC, DBS, UOB dan koreksi discovery DBS
 
 User menyebut tiga institusi tersebut setelah membahas Daily vs Weekly. Pemeriksaan ulang menemukan [library DBS](https://www.dbs.com.sg/treasures/aics/templatedata/article/generic/data/en/GR/012016/000000_group_research_reports.xml) dan [edisi 2 Nov](https://www.dbs.com.sg/treasures/aics/templatedata/article/generic/data/en/GR/112026/261102_insights_weekly.xml). Pernyataan discovery November belum berhasil kini usang. HTML edisi ini membahas Indonesia, bukan bukti stance delapan G10; link full report membuka Insights Direct tanpa teks terbaca melalui web, sehingga bagian FX lengkap belum disahkan. The Week Ahead 30 Okt yang dibaca terutama kalender/data/CB, bukan otomatis arah currency.

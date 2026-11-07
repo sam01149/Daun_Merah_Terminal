@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 457 - Ringkasan Dashboard tanpa sumber eksternal)
+> **Last updated:** 2026-11-07 (Session 458 - Filter pandangan institusi mingguan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 458 (2026-11-07) - Filter pandangan institusi mingguan
+
+**Arahan.** Setelah membahas sumber saling melengkapi, user membatasi fokus ke mingguan dahulu dan meminta filter. Ini menggantikan usulan pencampuran horizon untuk Dashboard saat ini.
+
+**Perubahan.** Ekstraksi menolak horizon selain this_week/next_week; instruksi model diselaraskan. Hasil kolom/API hanya memuat suara weekly yang memenuhi guard existing: berlaku sekarang, arah currency-wide, fundamental/mixed dan base case tanpa syarat. Pair, teknikal, conditional, near-term tanpa pekan, bulanan dan weekly kedaluwarsa tidak tampil sebagai context alternatif. Arsip snapshot lama tetap utuh; context pada DTO kosong. Freshness/cakupan hanya menghitung hasil yang memenuhi syarat. UI memakai indikator kosong saat tidak ada hasil; label Konteks dihapus. Cache smart_bias:v5/schema 8 menghindari payload lama; institution_scope weekly_only; APP_VERSION HTML/SW 2026.11.07.5. Tidak menambah sumber/endpoint atau memanggil ekstraksi berbayar untuk verifikasi ini.
+
+**Verifikasi.** Suite 1.583/1.583 lulus; tes pair/nonweekly/technical/conditional kini memastikan context kosong. Window pekan, expiry, future, konflik, deduplikasi, missing dan core hierarchy tetap lolos. Verifikasi UI/produksi diselesaikan setelah deploy.
 
 ## Changelog Session 457 (2026-11-07) - Ringkasan Dashboard tanpa sumber eksternal
 

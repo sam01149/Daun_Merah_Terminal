@@ -9599,7 +9599,7 @@ async function ohlcvDashboardHandler(req, res) {
   }
 }
 
-const SMART_BIAS_CACHE_KEY = 'smart_bias:v4';
+const SMART_BIAS_CACHE_KEY = 'smart_bias:v5';
 const SMART_BIAS_TTL_SECS = 15 * 60;
 
 function _parseJsonValue(raw, fallback) {
@@ -9674,7 +9674,7 @@ async function smartBiasHandler(req, res) {
   let cached = null;
   try {
     cached = _parseJsonValue(await redisCmd('GET', SMART_BIAS_CACHE_KEY), null);
-    if (!force && cached?.schema_version === 7) return res.status(200).json(cached);
+    if (!force && cached?.schema_version === 8) return res.status(200).json(cached);
   } catch (e) { /* lanjut hitung fresh */ }
 
   try {
@@ -9714,7 +9714,7 @@ async function smartBiasHandler(req, res) {
     }
     const rows=buildQualitativeBiasRows(conditions,contextRows);
     const payload = {
-      schema_version: 7,
+      schema_version: 8,
       methodology: 'academy_qualitative_core_first',
       rows,
       computed_at: new Date(nowMs).toISOString(),
@@ -9729,6 +9729,7 @@ async function smartBiasHandler(req, res) {
         numeric_formula:'Local conservative adaptation; Academy does not disclose complete numerical weights.',
       },
       banks_mode: 'institution_research_explicit_weekly',
+      institution_scope: 'weekly_only',
       bank_source: { name:'Institution research',enabled_institutions:['ING'],
         attribution:institutionViews.SOURCE.attribution },
     };

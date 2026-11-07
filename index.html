@@ -4914,7 +4914,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.07.4';
+const APP_VERSION = '2026.11.07.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -18867,7 +18867,7 @@ function renderDashSmartBias() {
       <td>${_sbStateHtml(row.growth?.state, row.growth?.confidence, 'growth')}</td>
       <td>${_sbStateHtml(row.inflation?.inflation_impulse, row.inflation?.confidence, 'inflation')}</td>
       <td>${_sbStateHtml(row.central_bank?.state, row.central_bank?.confidence, 'policy')}</td>
-      <td>${row.banks?.state==='insufficient' && row.banks?.context?.length?'<span class="sb-detail-text">Konteks</span>':_sbStateHtml(row.banks?.state, row.banks?.confidence)}</td>
+      <td>${_sbStateHtml(row.banks?.state, row.banks?.confidence)}</td>
       <td><div class="sb-pos-line"><span class="sb-pos-lbl">Inst</span>${_sbStateHtml(p.institutional?.state)}</div></td>
       <td>${_sbStateHtml(row.overall?.state, row.overall?.confidence)}</td>
     </tr>${isOpen ? `<tr class="smart-bias-detail"><td colspan="7">${_sbDetailHtml(row)}</td></tr>` : ''}`;

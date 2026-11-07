@@ -45,14 +45,14 @@ test('Institution pair views stay relative; cannot masquerade as currency-wide w
   const a=article('We expect EUR/GBP to fall next week as sterling benefits from policy divergence.');
   const c=claim({pair:'EUR/GBP',quote:a.text});
   const s=snapshot([c],a),col=m.buildInstitutionColumn('GBP',[s],NOW);
-  assert.equal(col.state,'insufficient');assert.equal(col.context.length,1);assert.equal(col.context[0].pair,'EUR/GBP');
+  assert.equal(col.state,'insufficient');assert.equal(col.context.length,0);
   assert.equal(m.validateClaims({claims:[{...c,pair:null}]},a).length,0);
   assert.equal(m.buildInstitutionColumn('USD',[s],NOW).context.length,0);
 });
-test('Institution near-term, technical and conditional views are context, not weekly votes',()=>{
+test('Institution nonweekly, technical and conditional views are excluded from weekly results',()=>{
   for(const c of [claim({horizon:'near_term',horizon_quote:''}),claim({layer:'technical'}),claim({conditional:true})]){
     const col=m.buildInstitutionColumn('GBP',[snapshot([c])],NOW);
-    assert.equal(col.state,'insufficient');assert.equal(col.context.length,1);assert.equal(col.eligible_for_overall,false);
+    assert.equal(col.state,'insufficient');assert.equal(col.context.length,0);assert.equal(col.eligible_for_overall,false);
   }
 });
 test('Institution one bank remains one vote; internal contradictions remain explicit',()=>{
