@@ -954,8 +954,6 @@ const CB_RESEARCH_SOURCES = [
   { key: 'BOE',  url: 'https://www.bankofengland.co.uk/rss/speeches' },
   { key: 'BOEP', url: 'https://www.bankofengland.co.uk/rss/publications' },
   // ── Macro Research / Institutional Analysis ───────────────────────────────
-  // Marc to Market uses FeedBurner (Blogger backend) — direct fetch works fine
-  { key: 'MTM',  url: 'https://feeds.feedburner.com/marctomarket/ujfs' },
   // ING Think has native RSS at /rss/ — direct accessible from Vercel IPs
   { key: 'ING',  url: 'https://think.ing.com/rss/' },
 ];
@@ -974,7 +972,7 @@ async function researchHandler(req, res) {
       if (cached) {
         const obj = JSON.parse(cached);
         if (Date.now() - new Date(obj.fetched_at).getTime() < RESEARCH_CACHE_TTL_MS) {
-          return res.json(obj);
+          return res.json({...obj,items:(obj.items||[]).filter(item=>item.source!=='MTM')});
         }
       }
     } catch(e) {}
@@ -1016,7 +1014,7 @@ async function researchHandler(req, res) {
   if (items.length === 0) {
     try {
       const stale = await redisCmd('GET', RESEARCH_CACHE_KEY);
-      if (stale) return res.json({ ...JSON.parse(stale), stale: true });
+      if (stale) { const data=JSON.parse(stale); return res.json({ ...data, items:(data.items||[]).filter(item=>item.source!=='MTM'), stale: true }); }
     } catch(e) {}
     return res.status(502).json({ error: 'All CB research feeds failed' });
   }
@@ -1066,7 +1064,7 @@ async function fetchCBFeed(source) {
   }
 }
 
-// Atom feeds (e.g. Blogger/FeedBurner like MTM) emit multiple <link> tags —
+// Atom feeds emit multiple <link> tags —
 // rel="edit"/"self" point at the raw feed entry, only rel="alternate" is the
 // readable article page. Picking the first <link> blindly grabs the wrong one.
 function pickAtomLink(b) {

@@ -216,7 +216,6 @@ body {
 .riset-badge.RBA  { background:rgba(251,191,36,.18);  color:#fbbf24; }
 .riset-badge.BOC  { background:rgba(248,113,113,.18); color:#f87171; }
 .riset-badge.BOJ  { background:rgba(56,189,248,.18);  color:#38bdf8; }
-.riset-badge.MTM  { background:rgba(52,211,153,.12);  color:#34d399; }
 .riset-badge.ING  { background:rgba(251,146,60,.18);  color:#fb923c; }
 .riset-badge.FJElite { background:rgba(56,189,248,.18); color:#38bdf8; }
 .riset-badge.NBER      { background:rgba(74,222,128,.18);  color:#4ade80; }
@@ -4911,7 +4910,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.07.1';
+const APP_VERSION = '2026.11.07.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -8959,7 +8958,7 @@ function risetToggleSource(src) {
 }
 
 function risetToggleAllSourcesBtn() {
-  const instItems = (researchCache && researchCache.items) || [];
+  const instItems = ((researchCache && researchCache.items) || []).filter(item=>item.source!=='MTM');
   const fjItems = fjResearchItems.map(i => ({ source: 'FJElite' }));
   const items = [...instItems, ...fjItems];
   const availSources = [...new Set(items.map(it => it.source))];
@@ -18829,14 +18828,13 @@ function _sbEvidenceText(evidence, emptyText = 'Bukti belum cukup.') {
   }).join('') || `<div class="sb-detail-text">${emptyText}</div>`;
 }
 
-function _sbRecordLabel(value) {
-  return ({ terbukti_baik:'Terbukti baik', lemah_tidak_terbukti:'Lemah / belum terbukti', buruk:'Buruk', belum_cukup:'Belum cukup sampel' })[value] || 'Belum cukup sampel';
-}
-
-function _sbRecordText(record) {
-  if (!record) return 'Rekam jejak belum tersedia.';
-  const rate = record.hit_rate != null && Number.isFinite(Number(record.hit_rate)) ? `${(Number(record.hit_rate) * 100).toFixed(0)}%` : '—';
-  return `Rapor: ${_sbRecordLabel(record.quality)} · n=${Number(record.n) || 0} · akurasi ${rate}. ${record.quality === 'terbukti_baik' ? 'Boleh menjadi konfirmasi.' : 'Belum memengaruhi kesimpulan.'}`;
+function _sbInstitutionText(evidence) {
+  return (Array.isArray(evidence)?evidence:[]).slice(0,8).map(ev=>{
+    const horizon=({this_week:'Pekan publikasi',next_week:'Pekan berikutnya',near_term:'Jangka dekat; bukan pekan spesifik',unspecified:'Horizon tidak ditentukan'})[ev.horizon] || 'Horizon tidak ditentukan';
+    const date=Number.isFinite(Date.parse(ev.published_at))?new Date(ev.published_at).toLocaleDateString('id-ID',{timeZone:'Asia/Jakarta',day:'numeric',month:'short',year:'numeric'}):'Tanggal belum tersedia';
+    const url=typeof ev.url==='string' && /^https:\/\/think\.ing\.com\/articles\//.test(ev.url)?ev.url:null;
+    return `<div class="sb-detail-text">${escHtml(ev.institution || '')} · ${escHtml(ev.currency || '')}${ev.pair?` (${escHtml(ev.pair)}; pandangan relatif pasangan)`:''}: ${escHtml(_sbStateLabel(ev.direction))}. ${escHtml(ev.reason || '')} ${ev.conditional?'Bersyarat. ':''}${ev.layer==='technical'?'Teknikal; konteks saja. ':''}${escHtml(horizon)} · ${escHtml(date)}${url?` · <a href="${escHtml(url)}" target="_blank" rel="noopener noreferrer">Laporan asli</a>`:''}</div>`;
+  }).join('');
 }
 
 function _sbDetailHtml(row) {
@@ -18845,7 +18843,7 @@ function _sbDetailHtml(row) {
   const am = inst.asset_manager || {};
   const lev = inst.leveraged_funds || {};
   const pct = v => v != null && Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}% OI` : '—';
-  const conflictLabels = { banks:'Pandangan ekonom', positioning:'Posisi pasar' };
+  const conflictLabels = { banks:'Pandangan institusi', positioning:'Posisi pasar' };
   const conflicts = row.overall?.conflicts?.length ? `Bertentangan dengan inti: ${row.overall.conflicts.map(x => conflictLabels[x] || x).join(', ')}.` : 'Pendukung yang tersedia tidak membalik arah inti.';
   const g=row.growth?.conditions || {}, inf=row.inflation?.conditions || {};
   const quality=value=>({complete:'lengkap',partial:'sebagian',missing:'belum tersedia'})[value] || 'belum tersedia';
@@ -18856,7 +18854,7 @@ function _sbDetailHtml(row) {
     <div class="sb-detail-group"><div class="sb-detail-title">Pertumbuhan</div><div class="sb-detail-text">${escHtml(growthSummary)}</div><div class="sb-detail-text">Membaca perubahan kondisi ekonomi, bukan sekadar hasil di atas perkiraan. Konsensus hanya pelengkap. Data usang tidak digunakan; angka historis dapat memuat revisi.</div>${(g.components || []).map(_sbConditionText).join('')}${_sbConditionText(g.consumption_context)}${_sbConditionText(g.survey_context)}</div>
     <div class="sb-detail-group"><div class="sb-detail-title">Inflasi</div><div class="sb-detail-text">${escHtml(inflationSummary)}</div><div class="sb-detail-text">Inflasi umum dan inti dibaca pada periode yang sama. Harga produsen hanya pelengkap. Dukungan terhadap mata uang tetap dibaca bersama bank sentral.</div>${(inf.components || []).map(_sbConditionText).join('')}${_sbConditionText(inf.producer_context)}</div>
     <div class="sb-detail-group"><div class="sb-detail-title">Bank sentral</div><div class="sb-detail-text">Sikap: ${escHtml(row.central_bank?.bias || 'Data belum cukup')}. Pembaruan analisis: ${escHtml(row.central_bank?.as_of || '—')}.</div>${_sbEvidenceText(row.central_bank?.evidence)}<div class="sb-detail-text">Waktu pembaruan analisis tidak selalu sama dengan tanggal berita asli.</div></div>
-    <div class="sb-detail-group"><div class="sb-detail-title">Pandangan ekonom</div><div class="sb-detail-text">Sumber: Marc to Market · Marc Chandler</div>${_sbEvidenceText(row.banks?.evidence, 'Tidak ada outlook week-ahead eksplisit yang lolos validasi.')}<div class="sb-detail-text">Pandangan analis menjadi pendukung, bukan penentu arah inti.</div></div>
+    <div class="sb-detail-group"><div class="sb-detail-title">Pandangan institusi</div><div class="sb-detail-text">Cakupan panel: ${Number(row.banks?.coverage_count)||0} institusi. Pandangan mingguan yang memenuhi syarat: ${Number(row.banks?.institution_count)||0}. Ini cakupan panel yang tersedia, bukan seluruh pasar.</div>${_sbInstitutionText(row.banks?.evidence)}${row.banks?.evidence?.length?'':'<div class="sb-detail-text">Belum ada pandangan mata uang dengan horizon mingguan yang cukup jelas.</div>'}${_sbInstitutionText(row.banks?.context)}<div class="sb-detail-text">Pandangan pasangan kurs, bersyarat, teknikal, atau tanpa horizon mingguan menjadi konteks saja. Satu institusi dihitung sekali. Pandangan institusi menjadi pendukung, bukan penentu arah inti.</div><div class="sb-detail-text">${escHtml(row.banks?.attribution || '')}</div></div>
     <div class="sb-detail-group"><div class="sb-detail-title">Posisi pasar</div><div class="sb-detail-text">Asset Manager: ${escHtml(_sbStateLabel(am.state))} · ${pct(am.net_pct_oi)}</div><div class="sb-detail-text">Leveraged Funds: ${escHtml(_sbStateLabel(lev.state))} · ${pct(lev.net_pct_oi)}</div><div class="sb-detail-text">Laporan: ${escHtml(inst.report_date || '—')}</div></div>
     <div class="sb-detail-group"><div class="sb-detail-title">Bias</div><div class="sb-detail-text">${escHtml(_sbStateLabel(row.overall?.state))}. ${escHtml(conflicts)}</div><div class="sb-detail-text">Kondisi pertumbuhan: ${quality(g.coverage)}. Inflasi: ${quality(inf.coverage)}. Bukti yang bertentangan tetap ditampilkan sebagai Campur.</div><div class="sb-detail-text">Ringkasan dukungan fundamental, bukan kepastian arah harga atau sinyal masuk transaksi.</div></div>
   </div>`;
@@ -18909,13 +18907,13 @@ function renderDashSmartBias() {
       <td>${_sbStateHtml(row.growth?.state, row.growth?.confidence, 'growth')}</td>
       <td>${_sbStateHtml(row.inflation?.inflation_impulse, row.inflation?.confidence, 'inflation')}</td>
       <td>${_sbStateHtml(row.central_bank?.state, row.central_bank?.confidence, 'policy')}</td>
-      <td>${_sbStateHtml(row.banks?.state, row.banks?.confidence)}</td>
+      <td>${row.banks?.state==='insufficient' && row.banks?.context?.length?'<span class="sb-detail-text">Konteks</span>':_sbStateHtml(row.banks?.state, row.banks?.confidence)}</td>
       <td><div class="sb-pos-line"><span class="sb-pos-lbl">Inst</span>${_sbStateHtml(p.institutional?.state)}</div></td>
       <td>${_sbStateHtml(row.overall?.state, row.overall?.confidence)}</td>
     </tr>${isOpen ? `<tr class="smart-bias-detail"><td colspan="7">${_sbDetailHtml(row)}</td></tr>` : ''}`;
   }).join('');
   const staleNotice=dashSmartBiasData?.stale ? '<div class="dash-no-data">Pembaruan belum berhasil. Menampilkan data terakhir yang tersedia.</div>' : '';
-  el.innerHTML = `${staleNotice}<div class="smart-bias-meta"><span>Bias fundamental kualitatif</span><span>Klik mata uang untuk melihat alasan dan data</span></div><div class="smart-bias-wrap"><table class="smart-bias-table"><thead><tr><th>Mata uang</th><th>Pertumbuhan</th><th>Inflasi</th><th>Bank sentral</th><th>Pandangan ekonom</th><th>Posisi pasar</th><th>Bias</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  el.innerHTML = `${staleNotice}<div class="smart-bias-meta"><span>Bias fundamental kualitatif</span><span>Klik mata uang untuk melihat alasan dan data</span></div><div class="smart-bias-wrap"><table class="smart-bias-table"><thead><tr><th>Mata uang</th><th>Pertumbuhan</th><th>Inflasi</th><th>Bank sentral</th><th>Pandangan institusi</th><th>Posisi pasar</th><th>Bias</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function renderDashPositionAlerts() {

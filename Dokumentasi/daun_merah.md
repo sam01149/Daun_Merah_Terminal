@@ -11,14 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 454 — Calon tabel Bias kualitatif sesuai Prime Academy)
+> **Last updated:** 2026-11-07 (Session 456 — Pandangan institusi dan penghapusan Marc)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
 
-## Changelog Session 455 (2026-11-07) ? Aktivasi fondasi Bias kualitatif
+## Changelog Session 456 (2026-11-07) — Pandangan institusi dan penghapusan Marc
+
+**Arahan.** Setelah fondasi selesai, user meminta integrasi pandangan institusi dan secara eksplisit membuang Marc. Kolom diganti menjadi Pandangan institusi; Marc dilepas dari Dashboard, endpoint sync/read, collector, workflow mingguan, dan feed Artikel (termasuk filter cache lama). Helper/tes fitur retired dihapus. Riwayat dokumentasi dan Redis arsip lama tidak dihapus, tetapi tidak lagi dibaca atau diperbarui.
+
+**Integrasi sumber.** Modul api/_institution_views.js mengambil FX Daily terbaru melalui RSS dan artikel resmi ING. Memeriksa host/path HTTPS, tanggal feed vs timestamp artikel, struktur body, umur dan content hash; gagal tertutup ketika struktur/tanggal berubah. Public Dashboard hanya membaca snapshot, tidak memicu AI. Action existing institution_views mode=sync wajib secret; cron hari kerja 17:35 WIB, lock 58 detik, artikel/hash sama tidak diekstrak ulang, retry cooldown 6 jam, provider DeepSeek Flash existing dengan bucket/circuit terpisah maksimal dua panggilan/hari. Tidak ada provider AI atau endpoint Vercel baru. Snapshot menyimpan maksimal 20 ringkasan/provenance/kutipan audit, tanpa salinan full report publik. Schema Dashboard 7/cache smart_bias:v4, APP_VERSION HTML/SW 2026.11.07.2.
+
+**Arti sederhana dan guard.** Satu institusi satu suara. Hanya pandangan currency-wide fundamental/mixed dengan horizon this/next week eksplisit pada bukti arah, base case tanpa syarat dan window pekan yang sedang berlaku yang masuk panah. Pandangan pasangan tetap relatif, tidak dijadikan USD/global; technical/conditional/near-term/tanpa horizon mingguan hanya konteks. Publikasi terbaru menggantikan laporan lama sekalipun tidak mengandung arah yang memenuhi syarat. Konflik internal tetap Campur, data kurang bukan Netral. Bank hanya konfirmasi/konflik, tidak membalik core. UI menampilkan cakupan panel, tanggal, alasan ringkas Bahasa Indonesia, horizon, batas, tautan dan atribusi; tanpa peluang/akurasi/keyakinan numerik. Sumber saat ini satu institusi ING, tidak disebut konsensus banyak bank.
+
+**Hak sumber dan batas nyata.** ING Terms of Use memberi penggunaan konten milik ING dengan atribusi; copyright dinyatakan di detail. MUFG terms mensyaratkan persetujuan tertulis untuk quote/circulation/reference sehingga tidak diotomasi. UOB disclaimer membatasi transmisi/copy; HSBC/DBS dan bank lain belum diterima sebagai writer otomatis karena hak penggunaan/discovery/horizon belum lengkap. Baca vendor/riset untuk URL primer. Penggunaan AI adalah ekstraksi kandidat yang divalidasi, bukan jaminan interpretasi sempurna atau bebas noise.
+
+**Verifikasi.** Artikel ING 6 Nov 08:00 UTC berhasil diambil dan diekstrak satu kali; dua kandidat lolos: USD bersyarat terkait jobs dan EUR/USD konsolidasi bersyarat. Keduanya konteks, nol suara mingguan; tidak dipaksa menjadi panah. Hasil kutipan diperiksa terhadap sumber asli. Handler lokal schema 7 membaca delapan currency dan 947 observasi; Marc tidak ada. Playwright desktop 1440/ponsel 390: delapan baris/tujuh kolom, detail institusi/sumber dapat dibuka, atribusi/tautan tampil, tidak ada overflow halaman atau rapor Marc; screenshot diperiksa. Suite final npm.cmd test 1.582/1.582 lulus. Verifikasi produksi dicatat setelah deploy. Bukti lokal .cache/institution-views/. Tes retired Marc dikurangi delapan, ditambah dua belas tes institusi termasuk autentikasi, idempotensi dan nol panggilan model pada read; jumlah total tidak membuktikan kelengkapan coverage bank.
+
+## Changelog Session 455 (2026-11-07) — Aktivasi fondasi Bias kualitatif
 
 **Arahan.** User mengizinkan aktivasi metode S454, kemudian meminta integrasi pandangan institusi setelah fondasi selesai. Scope tetap deskriptif/dukungan fundamental, tanpa probabilitas atau target harga.
 
@@ -26,7 +38,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Penyimpanan.** Namespace macro_conditions_*:v1 terpisah dari surprise v2, mendukung actual tanpa consensus serta estimasi terbaru yang sudah diketahui. Seed 947 observasi/180 hari terverifikasi; manifest ready 7 Nov 00:40 WIB, digest ff2770e0dc891b0611bbdda5270dc7752e71c8972d68ff1eacc714bae09ae349. GDP/jobs lengkap 8/8, consumer headline/core 6/8; CHF/NZD tetap tidak lengkap. Ingestion kalender gratis dan parser existing memperbarui kondisi; source_fetched_at mencegah cache lama menimpa revisi baru. Lua atomik menyimpan versi unik; fingerprint batch 6 jam menghindari tulis berulang. Manifest/record rusak gagal tertutup. Dataset surprise lama tidak ditulis ulang.
 
-**Verifikasi.** npm.cmd test 1.578/1.578 lulus. Lua diuji terhadap Redis terisolasi (revisi baru bertahan, replay cache lama ditolak, arsip unik, payload rusak diperbaiki). Handler lokal membaca 947 observasi dan menghasilkan delapan baris schema 6. Playwright desktop 1440/ponsel 390: delapan baris/tujuh kolom, detail dapat dibuka, tidak ada overflow halaman; screenshot diperiksa. Bukti lokal .cache/macro-conditions-seed/. Verifikasi produksi menyusul setelah deploy. Ini verifikasi arti/data/aturan, bukan klaim bebas noise atau akurasi prediksi. Tanggal CB masih timestamp pemrosesan; keterbatasan dijelaskan di detail. Pandangan institusi menjadi pekerjaan lanjutan yang sudah diotorisasi.
+**Verifikasi.** npm.cmd test 1.578/1.578 lulus. Lua diuji terhadap Redis terisolasi (revisi baru bertahan, replay cache lama ditolak, arsip unik, payload rusak diperbaiki). Handler lokal membaca 947 observasi dan menghasilkan delapan baris schema 6. Playwright desktop 1440/ponsel 390: delapan baris/tujuh kolom, detail dapat dibuka, tidak ada overflow halaman; screenshot diperiksa. Bukti lokal .cache/macro-conditions-seed/. Verifikasi produksi commit 1b4812c: Vercel/Railway sukses; endpoint HTTP 200 schema 6, delapan baris, 947 observasi dan methodology academy_qualitative_core_first. Bukti live.json pada folder tersebut. Ini verifikasi arti/data/aturan, bukan klaim bebas noise atau akurasi prediksi. Tanggal CB masih timestamp pemrosesan; keterbatasan dijelaskan di detail. Pandangan institusi menjadi pekerjaan lanjutan yang sudah diotorisasi.
 
 ## Changelog Session 454 (2026-11-07) — Calon tabel Bias kualitatif sesuai Prime Academy
 

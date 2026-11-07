@@ -21,16 +21,16 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.doesNotMatch(markup, /id="dashDigestSection"|id="dashBiasList"|id="dashFundStrip"|id="dashRetailStrip"/);
 
   const renderer = between('function renderDashSmartBias()', '\nfunction renderDashPositionAlerts()');
-  for (const heading of ['Pertumbuhan', 'Inflasi', 'Bank sentral', 'Pandangan ekonom', 'Posisi pasar', 'Bias']) {
+  for (const heading of ['Pertumbuhan', 'Inflasi', 'Bank sentral', 'Pandangan institusi', 'Posisi pasar', 'Bias']) {
     assert.match(renderer, new RegExp(`<th>${heading}</th>`));
   }
   assert.match(html, /<div class="sb-detail-title">Bias<\/div>/);
   assert.doesNotMatch(renderer, /<th>Kesimpulan<\/th>/);
   assert.doesNotMatch(html, /<div class="sb-detail-title">Overall<\/div>/);
-  assert.match(html, /<div class="sb-detail-title">Pandangan ekonom<\/div><div class="sb-detail-text">Sumber: Marc to Market · Marc Chandler<\/div>/);
+  assert.match(html, /Cakupan panel:/);
+  assert.doesNotMatch(html, /Marc Chandler|marcRecord|_sbRecordText/);
   assert.doesNotMatch(html, /Pandangan bank/);
   assert.doesNotMatch(renderer, /Sumber Pandangan bank|Rapor forward|Buka artikel minggu ini|Snapshot minggu ini terlambat|sb-track-record|marcRecord/);
-  assert.match(html, /Belum cukup sampel/);
   assert.match(html, /growth:[^}]*bullish:'Membaik'[^}]*bearish:'Melemah'/);
   assert.match(html, /inflation:[^}]*bullish:'Memanas'[^}]*bearish:'Mendingin'/);
   assert.match(html, /policy:[^}]*bullish:'Hawkish'[^}]*bearish:'Dovish'/);

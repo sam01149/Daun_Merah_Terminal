@@ -1,0 +1,19 @@
+name: Institution Research Views
+
+on:
+  schedule:
+    - cron: '35 10 * * 1-5' # 17:35 WIB; artikel sama tidak diekstrak ulang
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Perbarui riset institusi
+        run: |
+          STATUS=$(curl -sS -o /tmp/institution-views.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" --max-time 58 \
+            "https://financial-feed-app.vercel.app/api/admin?action=institution_views&mode=sync")
+          cat /tmp/institution-views.json
+          if [ "$STATUS" -ne 200 ]; then exit 1; fi
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/institution-views.json','utf8'));if(x.error)process.exit(1)"

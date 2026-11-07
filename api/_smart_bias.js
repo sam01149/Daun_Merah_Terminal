@@ -330,9 +330,8 @@ function buildBanks(currency, stances) {
   const bull = evidence.filter(x => x.direction === 'bullish').length;
   const bear = evidence.length - bull;
   const state = bull && bear ? 'mixed' : bull ? 'bullish' : 'bearish';
-  // Sumber Marc ditampilkan di kolom "Pandangan bank" atas keputusan user,
-  // tetapi baru boleh mengonfirmasi kesimpulan setelah track record currency itu
-  // mencapai n>=30 dan berstatus terbukti_baik. Outlook tetap terlihat sebelum itu.
+  // Legacy adapter honors explicit eligibility supplied by its caller.
+  // Production institution aggregation uses _institution_views instead.
   const guarded = evidence.some(x => x.track_record_eligible === false);
   return {
     state,
