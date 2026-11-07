@@ -29,6 +29,7 @@ const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooS
 const { buildSmartBiasRows, buildPanelTone } = require('./_smart_bias');
 const {loadMacroConditions}=require('./_macro_conditions_store');
 const {buildMacroConditions,buildQualitativeBiasRows}=require('./_macro_candidate');
+const statsNzCore=require('./_statsnz_core');
 const institutionViews = require('./_institution_views');
 const { computePrimeExecution, resampleCandles } = require('./_prime_execution');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
@@ -155,6 +156,7 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
   if (action === 'smart_bias')         return smartBiasHandler(req, res);
   if (action === 'institution_views')  return institutionViewsHandler(req, res);
+  if (action === 'statsnz_core')       return statsNzCoreHandler(req, res);
   if (action === 'prime_execution')    return primeExecutionHandler(req, res);
   if (action === 'setup_stats')        return setupStatsHandler(req, res);
   if (action === 'setup_override')     return setupOverrideHandler(req, res);
@@ -163,7 +165,7 @@ module.exports = async function handler(req, res) {
   if (action === 'polymarket')         return polymarketHandler(req, res);
   if (action === 'push_subscribe_dev') return pushSubscribeDevHandler(req, res);
   if (action === 'setup_log_archive')  return setupLogArchiveHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, ohlcv_dashboard, smart_bias, institution_views, prime_execution, setup_stats, setup_override, position_review, friday_tighten, polymarket, push_subscribe_dev, or setup_log_archive' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, ohlcv_dashboard, smart_bias, institution_views, statsnz_core, prime_execution, setup_stats, setup_override, position_review, friday_tighten, polymarket, push_subscribe_dev, or setup_log_archive' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -804,6 +806,9 @@ const KEY_REGISTRY = [
   { key: 'macro_conditions_vintages:v1', owner: 'api/_macro_conditions_store.js', ttl_expected: null, note: 'Arsip versi kondisi menurut source event dan content hash' },
   { key: 'macro_conditions_manifest:v1', owner: 'scripts/seed_macro_conditions.js', ttl_expected: null, note: 'Seed kondisi diaktifkan setelah hitung ulang dan pemeriksaan isi' },
   { key: 'macro_conditions_batch:*', owner: 'api/_macro_conditions_store.js', ttl_expected: 21600, note: 'Fingerprint batch kalender/fundamental; polling identik tidak menulis seluruh dataset lagi' },
+  { key: 'statsnz_core_nzd:v1', owner: 'api/_statsnz_core.js', ttl_expected: null, note: 'Snapshot resmi core CPI NZD, rilis dan workbook yang sama untuk current/previous' },
+  { key: 'statsnz_core_nzd:vintages:v1', owner: 'api/_statsnz_core.js', ttl_expected: null, note: 'Versi unik snapshot Stats NZ menurut content hash' },
+  { key: 'lock:statsnz_core', owner: 'api/_statsnz_core.js', ttl_expected: 50, note: 'Single-flight pembaruan Stats NZ' },
   { key: 'institution_views:v1', owner: 'api/_institution_views.js', ttl_expected: null, note: 'Maksimal 20 laporan ringkas; tanggal/horizon diperiksa lagi saat dibaca' },
   { key: 'institution_views:attempt:*', owner: 'api/admin.js', ttl_expected: 21600, note: 'Jeda retry ekstraksi institusi per content hash' },
   { key: 'fundamental_analysis', owner: 'api/admin.js',          ttl_expected: 21600,  note: 'AI analysis of fundamental data (Gemini only), cached 6h' },
@@ -9599,7 +9604,7 @@ async function ohlcvDashboardHandler(req, res) {
   }
 }
 
-const SMART_BIAS_CACHE_KEY = 'smart_bias:v6';
+const SMART_BIAS_CACHE_KEY = 'smart_bias:v7';
 const SMART_BIAS_TTL_SECS = 15 * 60;
 
 function _parseJsonValue(raw, fallback) {
@@ -9619,6 +9624,20 @@ function _parseModelJson(rawText) {
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) throw new Error('model_json_missing');
   return JSON.parse(text.slice(start, end + 1));
+}
+
+async function statsNzCoreHandler(req,res) {
+  res.setHeader('Access-Control-Allow-Origin','*');
+  res.setHeader('Cache-Control','no-cache');
+  if(req.method==='OPTIONS')return res.status(204).end();
+  if(req.query.mode!=='sync')return res.status(200).json({snapshot:await statsNzCore.getSnapshot(redisCmd)});
+  const secret=req.headers['x-cron-secret']||req.headers['x-admin-secret']||'';
+  if(!process.env.CRON_SECRET||!safeEqual(secret,process.env.CRON_SECRET))return res.status(401).json({error:'Unauthorized'});
+  try {
+    const result=await statsNzCore.sync(redisCmd);
+    if(result.updated)await redisCmd('DEL',SMART_BIAS_CACHE_KEY);
+    return res.status(200).json(result);
+  }catch(error){console.warn('statsnz core:',error.message);return res.status(502).json({error:error.message});}
 }
 
 async function institutionViewsHandler(req,res) {
@@ -9674,12 +9693,12 @@ async function smartBiasHandler(req, res) {
   let cached = null;
   try {
     cached = _parseJsonValue(await redisCmd('GET', SMART_BIAS_CACHE_KEY), null);
-    if (!force && cached?.schema_version === 9) return res.status(200).json(cached);
+    if (!force && cached?.schema_version === 10) return res.status(200).json(cached);
   } catch (e) { /* lanjut hitung fresh */ }
 
   try {
     const nowMs=Date.now();
-    const [liveRates, rawBias, rawCot, observations, rawInstitutions] = await Promise.all([
+    const [liveRates, rawBias, rawCot, observations, rawInstitutions, coreSnapshot] = await Promise.all([
       getLiveCbRates().catch(() => []),
       redisCmd('GET', 'cb_bias').catch(() => null),
       redisCmd('GET', 'cot_cache_v2').catch(() => null),
@@ -9688,6 +9707,7 @@ async function smartBiasHandler(req, res) {
         return [];
       }),
       redisCmd('GET',institutionViews.KEY).catch(()=>null),
+      statsNzCore.getSnapshot(redisCmd),
     ]);
     const biasMap = _parseJsonValue(rawBias, {});
     const cbBanks = (Array.isArray(liveRates) ? liveRates : []).map(rate => ({
@@ -9707,6 +9727,8 @@ async function smartBiasHandler(req, res) {
       macroFoundation:{scores:null,stability:null,release_count:0},
       nowMs,
     });
+    const officialCore=statsNzCore.observation(coreSnapshot,nowMs);
+    if(officialCore)observations.push(officialCore);
     const conditions=buildMacroConditions(observations,{asOfMs:nowMs,integrated:true});
     const snapshots=_parseJsonValue(rawInstitutions,[]);
     for(const row of contextRows) {
@@ -9715,13 +9737,14 @@ async function smartBiasHandler(req, res) {
     }
     const rows=buildQualitativeBiasRows(conditions,contextRows);
     const payload = {
-      schema_version: 9,
+      schema_version: 10,
       methodology: 'academy_qualitative_core_first',
       rows,
       computed_at: new Date(nowMs).toISOString(),
       macro_conditions: {
         available: observations.length>0,
         observation_count: observations.length,
+        sources: officialCore ? ['tradingview','statsnz'] : ['tradingview'],
         version:conditions.version,
         interpretation:'Qualitative fundamental support; not a price target, probability or entry signal.',
         surprises:'Consensus comparisons are context only and never determine core conditions.',

@@ -8,6 +8,7 @@
     "test": "node --require ./test/_env.js --test \"test/**/*.test.js\""
   },
   "dependencies": {
+    "read-excel-file": "9.3.14",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

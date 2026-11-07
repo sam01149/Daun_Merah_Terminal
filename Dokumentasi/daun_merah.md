@@ -11,12 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 460 - Dashboard memakai tone panel bank sentral)
+> **Last updated:** 2026-11-07 (Session 461 - Inflasi inti NZD langsung dari Stats NZ)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 461 (2026-11-07) - Inflasi inti NZD langsung dari Stats NZ
+
+**Arahan.** User menyetujui pengambilan langsung seri inti Stats NZ setelah audit memastikan kalender TradingView tidak membawa seri terbaru dan Fundamental belum menyimpannya. Scope hanya pelengkap data CPI NZD, bukan pengganti kalender atau penambahan event/rumus prediksi.
+
+**Collector.** api/_statsnz_core.js menemukan rilis kuartalan terbaru dari halaman indikator resmi, membaca metadata dan workbook yang ditautkan publikasi tersebut. Sheet 3.03 (percentage change from same quarter of previous year), baris SE9NS1450, definisi All groups less food group, household energy subgroup, and vehicle fuels. Current 2.9% (K30/Q3 2026) dan previous 2.5% (I30/Q2 2026) diambil dari workbook September yang sama, bukan campuran vintage atau QoQ/index. Header periode dicari berdasarkan label, tidak kolom tetap. Tanggal 22 Okt 10:45 Auckland dikonversi menjadi 21 Okt 21:45 UTC dengan DST yang benar. Normalisasi observation memakai observed_at saat pembacaan selesai; historical_snapshot tidak diklaim first print.
+
+**Pembaruan dan penyimpanan.** Action existing admin statsnz_core mode=sync wajib CRON_SECRET, lock 50 detik, dijadwalkan setiap enam jam melalui GitHub Actions (jadwal bukan SLA). Read Fundamental/Dashboard hanya membaca cache; tidak ada fetch Stats NZ atau AI saat membuka tabel. Lua menyimpan snapshot statsnz_core_nzd:v1 dan field fundamental:NZD/Core CPI YoY bersama, mengarsipkan versi unik ke statsnz_core_nzd:vintages:v1. Snapshot/field lebih baru tidak ditimpa; source gagal/struktur berubah tidak menghapus data sebelumnya. Age tetap berdasarkan tanggal rilis, tidak disegarkan semu oleh fetch ulang. Host/date/definisi/annual header/seri/current+previous/ukuran respons diperiksa. Cache malformed/future/stale (>150 hari)/hash tidak cocok tidak menjadi bukti Dashboard. read-excel-file 9.3.14 dipin sebagai dependency pembaca XLSX, lazy-load hanya saat sync; npm audit nol temuan saat pemasangan.
+
+**Integrasi.** Fundamental menampilkan key Core CPI YoY yang sudah dikenali renderer, dengan source/definition/period/cadence/previous/tautan/sheet/cells sebagai provenance internal. Dashboard menambahkan satu observation resmi pada store kalender yang sudah ada dan memakai seri khusus cpi_ex_food_household_energy_vehicle_fuels:yoy:quarterly; headline tetap data kalender. Tidak menulis ulang history surprise atau manifest kalender. Headline/core harus tetap satu periode/cadence. Cache smart_bias:v7/schema 10, metadata sources menyebut tradingview+statsnz. API-only; HTML/SW tidak berubah.
+
+**Verifikasi sebelum deploy.** Suite 1.594/1.594 lulus (sepuluh tes baru): discovery current vs future, DST/invalid date, host dan identitas release, data tahunan dan definisi, perpindahan kolom, missing previous/nilai kosong/duplikat, cache rusak/future/stale, sinkronisasi dan sumber gagal, autentikasi/read cache/lock, serta penggabungan NZD tanpa menduplikasi headline. Fetch workbook asli berhasil dan angka cocok dengan key facts resmi. Keadaan sebelum tulis dicadangkan di .cache/nzd-audit/core-prewrite.json; sync nyata memverifikasi snapshot dan field Fundamental 2.9%/2.5%. Handler lokal schema 10 memberi inflation coverage complete/state mixed: headline turun 4.1 ke 3.7, underlying naik 2.5 ke 2.9. Playwright 1440/390 dengan data aktual memperlihatkan ringkasan Inflasi umum turun. Inflasi inti naik.; tidak ada overflow atau sumber eksternal baru di UI. Screenshot core-ui-*.png diperiksa. Bukti lain: statsnz-validated.json, core-local-dashboard.json, core-local-fundamental.json di .cache/nzd-audit/. Lua juga diuji pada Redis asli dengan namespace uji terisolasi: snapshot lebih lama ditolak, field Fundamental yang lebih baru dipertahankan, cache tetap 2.9%; key uji dibersihkan. Bukti redis-guard-verification.json. Verifikasi produksi dicatat sesudah push.
 
 ## Changelog Session 460 (2026-11-07) - Dashboard memakai tone panel bank sentral
 

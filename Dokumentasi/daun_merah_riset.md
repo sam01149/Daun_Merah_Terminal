@@ -24,28 +24,9 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
-### [2026-11-07] Sumber inflasi inti NZD: Stats NZ dan RBNZ M1
+### [2026-11-07] Pelajaran sumber NZD: pertahankan definisi dan vintage
 
-**Kesinambungan dan cakupan kalender, diperiksa ulang 7 Nov.** Ukuran exclusion yang sama tersedia pada rilis CPI kuartalan Juni dan September 2026. Feed TradingView langsung diperiksa untuk NZ 1 Juli–7 Nov: HTTP 200/135 event; rilis CPI Juli/Oktober hanya membawa CPI index, Inflation Rate QoQ dan Inflation Rate YoY, tanpa seri exclusion Stats NZ. Tidak ada tahap filter aplikasi yang bisa menghasilkan seri yang tidak dikirim. Arsip 61 bulan/2.002 event NZ juga mengandung 11 event RBNZ Sectoral Factor, terakhir Q1 2026 (21 April); ukuran berbeda dan data lama, bukan pengganti seri exclusion terbaru. Bukti .cache/nzd-audit/calendar-live-coverage.json, calendar-coverage.json dan sectoral-calendar-rows.json. Alasan kebijakan vendor tidak menayangkan seri lebih baru belum diketahui; jangan mengarang alasannya.
-
-Implikasi: sumber langsung Stats NZ dapat melengkapi angka inti pada rilis CPI yang sama, tanpa membuat event kalender baru atau menganggap data kuartalan harus berubah setiap minggu. [Rencana monthly CPI Stats NZ](https://www.stats.govt.nz/topics/moving-to-a-monthly-cpi/) menyebut mulai Juli 2027, tetapi ketersediaan seluruh seri analitis monthly belum dijamin; jangan mengubah cadence core sekarang. Belum ada perubahan runtime.
-
-Pemeriksaan sumber untuk pertanyaan user: [Stats NZ Q3 2026](https://www.stats.govt.nz/information-releases/consumers-price-index-september-2026-quarter/) menyediakan CPI excluding food group, household energy subgroup and vehicle fuels: 2.9% YoY, dibanding 2.5% pada [Q2 2026](https://www.stats.govt.nz/information-releases/consumers-price-index-june-2026-quarter/). Definisi sama harus dipertahankan saat membandingkan current/previous. Untuk preferensi sederhana, ini kandidat pertama yang lebih mudah dijelaskan daripada model laten.
-
-Alternatif resmi [RBNZ Prices M1](https://www.rbnz.govt.nz/statistics/series/economic-indicators/prices) menyediakan tabel dan XLSX kuartalan: factor model 3.2% dan sectoral factor model 2.8% pada September 2026; keduanya berbeda dari seri exclusion Stats NZ. RBNZ menjelaskan metodologi serta revisi. Jangan merata-ratakan tiga definisi sebagai bukti independen atau memakai non-tradables sebagai generic core. Ini rekomendasi sumber, belum penambahan collector/data aplikasi.
-
-### [2026-11-07] Keputusan user: tone Dashboard mengikuti panel bank sentral
-
-Setelah audit S459, user menegaskan tidak memerlukan bukti tambahan untuk kolom CB; gunakan tone dari panel yang sudah ada. Implementasi S460 memakai cb_bias bersama, tidak meminta pernyataan resmi tambahan untuk mengisi tone Dashboard. Guard freshness/label tetap ada. Rekomendasi collector statement RBNZ pada audit sebelumnya bukan lagi prasyarat integrasi Dashboard. Pemeriksaan langsung Fundamental/API tetap tidak menemukan inflasi inti NZD; CPI YoY/QoQ yang ada adalah headline, sehingga celah underlying tetap terbuka.
-
-
-### [2026-11-07] NZD: data resmi ada, pipeline Dashboard belum lengkap
-
-Audit S459 membedakan input yang hilang dari data yang tidak dipublikasikan. [Stats NZ September 2026](https://www.stats.govt.nz/information-releases/consumers-price-index-september-2026-quarter/) mengonfirmasi headline 3.7% YoY/previous 4.1%; angka 2.9% adalah CPI yang mengecualikan food group, household energy subgroup dan vehicle fuels, bukan generic core tanpa definisi. Untuk memasukkannya, identitas seri, current/previous, periode, tanggal rilis dan pembaruan berkelanjutan perlu eksplisit. [RBNZ Prices M1](https://www.rbnz.govt.nz/statistics/series/economic-indicators/prices) menjelaskan factor/sectoral factor model berbeda dan berpotensi revisi; jangan menganggap semua underlying saling identik.
-
-[RBNZ keputusan 28 Oktober](https://www.rbnz.govt.nz/news-and-events/news/2026/10/ocr-held-at-2-75-percent) memiliki bukti kebijakan substantif yang tidak ditangkap trail cb_bias NZD saat audit. Hold 2.75% dengan kemungkinan pengetatan lanjutan bersyarat tidak bisa direduksi menjadi dovish hanya karena tidak naik sesuai ekspektasi sebagian pelaku pasar. Perbaikan sumber perlu menjaga perbedaan keputusan saat ini, panduan ke depan dan surprise pasar. Rekomendasi: ingestion underlying Stats NZ yang berdefinisi jelas dan pengumpulan statement RBNZ bertanggal, disertai writer guard untuk judul probabilitas tanpa isi. Belum diintegrasikan pada audit ini.
-
-
+Integrasi sumber Stats NZ diselesaikan S461 (rincian teknis/tes di changelog); audit sumber dan tone S459-S460 kini menjadi riwayat, bukan pekerjaan yang belum dikerjakan. Seri exclusion Stats NZ berbeda dari factor/sectoral-factor RBNZ dan non-tradables; jangan mencampurnya. Current dan previous harus dibaca dari workbook rilis yang sama. Fokus Dashboard mingguan tetap dapat membaca kondisi CPI kuartalan terakhir. Rencana monthly CPI 2027 tidak otomatis mengubah cadence setiap seri analitis. Sumber: [rilis Stats NZ](https://www.stats.govt.nz/information-releases/consumers-price-index-september-2026-quarter/), [RBNZ M1](https://www.rbnz.govt.nz/statistics/series/economic-indicators/prices).
 
 ### [2026-11-07] Batas scope terbaru: pandangan institusi mingguan saja
 
