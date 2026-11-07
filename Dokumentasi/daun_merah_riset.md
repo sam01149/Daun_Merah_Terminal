@@ -24,6 +24,14 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07] Fokus HSBC, DBS, UOB dan koreksi discovery DBS
+
+User menyebut tiga institusi tersebut setelah membahas Daily vs Weekly. Pemeriksaan ulang menemukan [library DBS](https://www.dbs.com.sg/treasures/aics/templatedata/article/generic/data/en/GR/012016/000000_group_research_reports.xml) dan [edisi 2 Nov](https://www.dbs.com.sg/treasures/aics/templatedata/article/generic/data/en/GR/112026/261102_insights_weekly.xml). Pernyataan discovery November belum berhasil kini usang. HTML edisi ini membahas Indonesia, bukan bukti stance delapan G10; link full report membuka Insights Direct tanpa teks terbaca melalui web, sehingga bagian FX lengkap belum disahkan. The Week Ahead 30 Okt yang dibaca terutama kalender/data/CB, bukan otomatis arah currency.
+
+Pemetaan kegunaan tetap: HSBC Navigator monthly untuk beberapa minggu; DBS Macro Insights Weekly sebagai kandidat pandangan mingguan setelah bagian FX/horizon/bukti tervalidasi; UOB FX Insights memisahkan 24 jam, 1-3 minggu dan 1-3 bulan, banyak berupa teknikal; FXRM strategis dan WO agenda. PDF UOB gagal dibuka ulang melalui web kali ini; temuan horizon/disclaimer merujuk salinan sumber persis 6 Nov yang sebelumnya diunduh dan diperiksa, bukan klaim fetch baru berhasil. Tidak ada integrasi baru atau perubahan aplikasi; sumber aktif tetap ING. Rights HSBC/UOB dan hak otomatisasi DBS tetap batas terpisah dari kualitas analisis.
+
+
+
 ### [2026-11-07] Pemeriksaan ulang HSBC untuk pertanyaan Daily vs Weekly
 
 [Currency Zone HSBC](https://www.currencyzone.hsbc.com/) diperiksa ulang: format stance lebih terstruktur daripada artikel harian, tetapi FX Navigator adalah monthly; edisi yang terlihat tetap 23 Oktober, horizon beberapa minggu. Tidak menyamakan current/previous dengan perubahan hari ini/kemarin. Batas integrasi lebih konkret daripada catatan lama: halaman mencantumkan larangan reproduksi, penyimpanan dan transmisi tanpa izin tertulis. Maka belum diintegrasikan; tidak ada perubahan aplikasi. Kredibilitas institusi, kesesuaian horizon, freshness dan hak pemakaian adalah pemeriksaan yang berbeda.
