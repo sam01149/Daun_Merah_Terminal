@@ -24,6 +24,17 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07] Sumber mingguan selain ING - pemeriksaan ulang setelah pembaruan S466
+
+Yang aktif selain ING masih ABN AMRO. Edisi 4 Nov tidak menyumbang weekly G10 yang memenuhi filter; hasil USD neutral S466 berasal dari ING saja. Jangan menyebut panel ini konsensus beberapa bank.
+
+[TD Securities Weekly FX Brief 2-6 Nov](https://www.tdsecurities.com/tds/document/tdfx-weekly-commercialbrief) diperiksa ulang 7 Nov: komentar awal secara eksplisit membahas risiko USD/CAD ke atas over the coming week dengan alasan repricing BoC dibanding Fed. Ini contoh pandangan relatif mingguan nyata, berbeda dari tabel forecast kuartal dan range options yang juga ada di PDF. Tidak diubah menjadi USD bullish global atau CAD bearish global. Header seluruh PDF bertanda Internal/Interne; status pemakaian otomatis tetap belum diterima, bukan dianggap lisensi bebas karena URL dapat dibaca. Tidak ada collector atau AI call baru.
+
+[MUFG FX Weekly 6 Nov](https://www.mufgresearch.com/fx/fx-weekly-6-november-2026/) dan [OCBC FX Weekly 2 Nov](https://www.ocbc.com/iwov-resources/sg/ocbc/gbc/pdf/FX%20Outlook/FX%20Ideas/FX%20Weekly%20110226.pdf) tersedia resmi. MUFG mencampur ulasan pekan lalu, risiko lanjutan, trade idea dan kalender; judul Weekly tidak membuktikan setiap tesis berlaku satu pekan. Ketentuan MUFG masih meminta persetujuan tertulis untuk quotation/circulation/reference: https://www.mufgresearch.com/terms-and-conditions. OCBC edisi Firm, Not One-Way banyak membahas USD 1H27, EURUSD 2H27, GBP early 2027; tidak menjadi outlook pekan ini hanya karena jadwal publikasinya. PDF juga membatasi reproduksi/distribusi. [DBS 2 Nov](https://www.dbs.com.sg/treasures/aics/templatedata/article/generic/data/en/GR/112026/261102_insights_weekly.xml) masih halaman Indonesia's Fragility; full report link ke Insights Direct tidak memberi teks pada pemeriksaan web ini. Belum ada bukti delapan stance G10 mingguan yang dapat diambil. UOB WO tetap agenda dan HSBC Navigator monthly sesuai evaluasi sebelumnya.
+
+Implikasi: kandidat perlu diuji isi/horizon dan pemakaiannya, bukan jumlah nama bank. Ada satu contoh TD yang sesuai secara isi, tetapi belum ada penambahan sumber produksi dalam pemeriksaan ini. Daftar kondisi vendor diperbarui in place.
+
+
 ### [2026-11-07] Pelajaran filter sumber: uji kecocokan sebelum integrasi
 
 Audit S464 menemukan ING 27 Okt yang eksplisit mingguan, tetapi enam ABN FX Weekly (1 Okt-4 Nov) tidak memenuhi seluruh syarat literal lama. Frekuensi terbit Weekly tidak menjamin horizon satu minggu; target year-end dan ulasan masa lalu tetap harus dibedakan. Perbaikan konteks bagian, pair relatif, dan pengambilan beberapa artikel telah dieksekusi S465 di changelog, bukan pekerjaan tertunda. Contoh sumber: [ING 2 Nov](https://think.ing.com/articles/fx-daily-dollar-holds-gains-into-midterms/), [ABN 14 Okt](https://www.abnamro.com/research/en/our-research/fx-weekly-recovery-of-the-swiss-franc). Prinsip: validasi waktu memakai konteks yang terkait, tanpa meminjam kalender lain atau menganggap kekuatan satu pair sebagai kekuatan mutlak currency. Bukti asli audit tetap .cache/bank-filter-audit/; integrasi .cache/bank-context/.
