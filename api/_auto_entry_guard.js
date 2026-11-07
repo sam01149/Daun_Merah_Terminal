@@ -591,6 +591,7 @@ const POLICY_EPOCHS = [
   { v: 62, from: '2026-10-12T13:29:08Z', kind: 'fix', impact: 'context', label: 'PLAN AF-4: track record gabungan manual+auto di jalur auto menjadi statistik deskriptif mentah, bukan mandat otomatis untuk memperketat atau melonggarkan trigger, skor, gate, maupun verdict Gate A' },
   { v: 63, from: '2026-10-23T03:20:48Z', kind: 'policy', impact: 'entry', label: 'S404: generator thesis Call 3 Ringkasan dihentikan; AATAS XAU tidak lagi menerima arah terkunci dari latest_thesis dan menilai arah lewat Call 1 makro-first miliknya sendiri' },
   { v: 64, from: '2026-11-07T08:59:37Z', kind: 'policy', impact: 'entry', label: 'PLAN AI: kondisi trend/choppy deterministik, rejection H1 dan fill open berikutnya, sesi London/NY DST, validasi fakta serta reanalisa setelah event; kontrak baru terpisah dari legacy, statistik gabungan tidak direset' },
+  { v: 65, from: '2026-11-07T10:11:31Z', kind: 'policy', impact: 'context', label: 'Prompt profesional Prime: tesis lima unsur, fakta vs interpretasi, opposing evidence, reaction unknown, konsistensi sesi dan review tesis; Call 1 tidak mengarang bukti priced-in tanpa data reaksi, statistik kumulatif tetap' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard

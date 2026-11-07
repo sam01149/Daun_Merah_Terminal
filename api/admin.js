@@ -11,6 +11,7 @@
 //   /api/push   → /api/admin?action=push
 
 const operationalEntry = require('./_aatas_operational_entry');
+const { professionalPrompt } = require('./_aatas_professional_prompt');
 const { SHADOW_ENABLED, groupHistory, summary: operationSummary } = require('./_aatas_operation');
 const PUSH_KW  = require('./_push_keywords');
 const newscat  = require('../newscat');
@@ -5106,7 +5107,7 @@ async function positionReviewHandler(req, res) {
       + 'decision salah satu: HOLD, TIGHTEN_SL, CLOSE_EARLY. new_sl WAJIB angka saat TIGHTEN_SL (arah lebih ketat dari SL lama), null selain itu. confidence salah satu: rendah, sedang, tinggi.';
 
     const messages = [
-      { role: 'system', content: 'Kamu manajer risiko posisi trading yang sedang berjalan (VIRTUAL, bukan eksekusi broker nyata). Tugasmu menilai apakah posisi terbuka ini perlu diintervensi karena headline pemicu terlampir. HOLD = default aman kalau tidak ada alasan kuat. TIGHTEN_SL = geser stop loss lebih ketat (mengunci kerugian lebih kecil / profit) karena risiko meningkat, BUKAN memperlebar. CLOSE_EARLY = tutup posisi sekarang karena tesis awal sudah tidak valid. Kalau trigger BELUM TERKONFIRMASI, default HOLD kecuali bukti lain (candle/kalender) sangat kuat. Jangan mengarang harga — new_sl HARUS masuk akal relatif terhadap SL lama dan harga sekarang. Saat menilai apakah trigger ini MENDUKUNG atau MENGANCAM bias posisi (field "reason"): bias bullish = mata uang BASE (kiri label pair) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair silang non-USD (misal AUD/NZD bearish = diuntungkan kalau NZD menguat, BUKAN diancam olehnya). Cek dulu mata uang mana yang diuntungkan bias ini sebelum menyimpulkan trigger itu mendukung atau mengancam — jangan terbalik. Bahasa Indonesia.' },
+      { role: 'system', content: 'Kamu manajer risiko posisi trading yang sedang berjalan (VIRTUAL, bukan eksekusi broker nyata). Tugasmu menilai apakah posisi terbuka ini perlu diintervensi karena headline pemicu terlampir. HOLD = default aman kalau tidak ada alasan kuat. TIGHTEN_SL = geser stop loss lebih ketat (mengunci kerugian lebih kecil / profit) karena risiko meningkat, BUKAN memperlebar. CLOSE_EARLY = tutup posisi sekarang karena tesis awal sudah tidak valid. Kalau trigger BELUM TERKONFIRMASI, default HOLD kecuali bukti lain (candle/kalender) sangat kuat. Jangan mengarang harga — new_sl HARUS masuk akal relatif terhadap SL lama dan harga sekarang. Saat menilai apakah trigger ini MENDUKUNG atau MENGANCAM bias posisi (field "reason"): bias bullish = mata uang BASE (kiri label pair) menguat vs QUOTE (kanan); bias bearish = mata uang QUOTE menguat vs BASE — berlaku SAMA untuk pair silang non-USD (misal AUD/NZD bearish = diuntungkan kalau NZD menguat, BUKAN diancam olehnya). Cek dulu mata uang mana yang diuntungkan bias ini sebelum menyimpulkan trigger itu mendukung atau mengancam — jangan terbalik. Bahasa Indonesia.' + '\n' + professionalPrompt('review') },
       { role: 'user', content: userMsg },
     ];
 
@@ -5980,7 +5981,7 @@ const COT_CME_PROMPT_VERSION = 2;
 // v14 (PLAN AF-4, 2026-10-12): track record gabungan jalur auto menjadi statistik
 // deskriptif mentah, bukan mandat adaptasi trigger/skor/gate. Gate A menerima pagar
 // yang sama; formatter dan prompt Kritikus manual tetap memakai perilaku lama.
-const AATAS_PROMPT_VERSION = 15;
+const AATAS_PROMPT_VERSION = 16;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -6176,19 +6177,19 @@ function _buildAatasMacroChecklistBlock({ label, isXau, goldCorr }) {
     L.push('- COT & retail sentiment bukan bukti makro pada panggilan ini. Positioning tetap dinilai terpisah oleh lapisan audit risiko; jangan menebak atau memindahkannya ke field makro.');
   }
   L.push('');
-  L.push('STEP 1 VALIDITAS DRIVER (GATE): driver makro yang kamu pakai WAJIB (a) bukan asumsi pribadi, (b) punya bukti nyata — data rilis/statement resmi/event aktual yang ADA di konteks di atas, (c) bisa diverifikasi, (d) sudah mulai tercermin di harga, dan (e) dirumuskan TANPA kata "akan"/"harusnya"/"kemungkinan"/"biasanya". Kalau salah satu tidak terpenuhi: gate_validitas_driver.pass=false dan TIDAK ADA setup.');
+  L.push('STEP 1 VALIDITAS DRIVER (GATE): driver makro yang kamu pakai WAJIB (a) bukan asumsi pribadi, (b) punya bukti nyata — data rilis/statement resmi/event aktual yang ADA di konteks di atas, (c) bisa diverifikasi, (d) relevan pada waktu/horizon keputusan dengan tanggal sumber yang dapat diperiksa, dan (e) dirumuskan TANPA kata "akan"/"harusnya"/"kemungkinan"/"biasanya". Kalau salah satu tidak terpenuhi: gate_validitas_driver.pass=false dan TIDAK ADA setup.');
   L.push('');
   L.push(`STEP 2 FUNDAMENTAL BIAS (GATE, bobot tinggi): ada driver utama yang jelas; ${legA} jelas menguat atau melemah; ${legB} kebalikannya; minimal 2 konfirmasi dari kategori berbeda (data ekonomi / kebijakan moneter / geopolitik-risk sentiment); tidak ada konflik antar faktor; pair ini strong-vs-weak (bukan strong-vs-strong atau weak-vs-weak). Arah hasil step inilah bias-mu, dan itu FINAL — tahap teknikal setelah ini TIDAK BOLEH mengubahnya.`);
   L.push(`- KONVENSI ARAH (WAJIB dipatuhi persis, ini penyebab paling sering kesalahan): pair ${legA}/${legB} ditulis base/quote. "bullish" berarti ${legA} MENGUAT relatif ke ${legB} (pair naik). "bearish" berarti ${legA} MELEMAH relatif ke ${legB} — SAMA ARTINYA DENGAN ${legB} MENGUAT relatif ke ${legA} (pair turun). Sebelum menjawab, cek ulang: setiap driver/konfirmasi yang kamu tulis harus mendukung arah ini, BUKAN kebalikannya — kalau drivermu bilang "${legB} tertekan/melemah/rentan", itu argumen BULLISH (${legA} menang), bukan bearish, walau ${legB} kedengarannya "kena masalah".`);
   L.push('- MEKANISME SHORT SQUEEZE: penutupan short suatu mata uang berarti pembelian mata uang itu, sehingga mendukung penguatannya. Short squeeze mata uang quote mendukung pair turun, bukan naik. Terapkan konvensi ini juga dalam konflik dan paragraf penjelasan; crowded short sendiri tidak membuktikan squeeze akan terjadi.');
   L.push(`- DUA SISI KASUS (case_bullish_pct / case_bearish_pct): sebelum menyimpulkan arah, susun dulu kasus untuk KEDUA arah, lalu bagi 100 di antara keduanya sesuai kekuatan bukti — bukan sesuai seberapa yakin kamu pada kesimpulan yang sudah kamu ambil. case_bullish_pct = kekuatan kasus ${legA} menguat; case_bearish_pct = kekuatan kasus ${legB} menguat; jumlahnya WAJIB tepat 100. Kalau buktinya benar-benar berimbang, tulis apa adanya (mis. 52 dan 48) — angka mepet BUKAN kegagalan dan TIDAK membatalkan setup, itu informasi yang berguna. Yang salah adalah memaksakan angka tinggi supaya kesimpulanmu terlihat kuat: kalau kamu memberi 70 ke satu sisi, itu berarti kasus sisi lawan hanya 30 — pastikan kamu memang bersedia mengatakan itu. "arah" WAJIB sama dengan sisi yang angkanya lebih besar.`);
-  L.push(`- konflik BUKAN tempat menaruh bukti pendukung sekunder — isi HANYA kalau ada faktor yang benar-benar MELAWAN arah yang kamu simpulkan di atas (mis. COT crowded posisi searah risiko squeeze, data lawas yang berlainan sinyal). Bukti yang justru MENDUKUNG arahmu (walau kekuatannya sedang/lemah) masuk konfirmasi, bukan konflik. Kalau semua bukti searah, konflik null.`);
+  L.push(`- konflik BUKAN tempat menaruh bukti pendukung sekunder — isi HANYA kalau ada faktor yang benar-benar MELAWAN arah yang kamu simpulkan di atas (mis. rilis domestik relevan yang berlainan sinyal; jangan mengarang positioning yang tidak dikirim). Bukti yang justru MENDUKUNG arahmu (walau kekuatannya sedang/lemah) masuk konfirmasi, bukan konflik. Kalau semua bukti searah, konflik null.`);
   L.push(`- strong_vs_weak WAJIB kamu nilai sendiri, dan kode MEMERIKSA jawabannya: kalau kamu isi false, setup otomatis dibatalkan. Jangan mengisi true supaya "lolos" — isi apa adanya.`);
   L.push(`- SEBELUM menjawab strong_vs_weak, telusuri MEKANISME lintas-faktornya, jangan cuma membandingkan label bias bank sentral mentah. Dua mata uang bisa sama-sama berlabel "hawkish" tapi salah satunya relatif lebih kuat karena faktor lain: pair komoditas WAJIB dicek ke penggeraknya (CAD ke harga minyak/WTI, NOK ke minyak, AUD & NZD ke logam industri/produk susu dan selera risiko China, JPY & CHF ke arus safe haven, EUR ke differential suku bunga vs Fed) — pola yang sama seperti instruksi WTI -> ekspektasi inflasi -> real yield. Kalau angka penggeraknya ada di data di atas, sebut angkanya.`);
   L.push('- konfirmasi WAJIB minimal 2 item dari KATEGORI BERBEDA, masing-masing menyebut data konkret. Kode menghitung jumlahnya — kurang dari 2 berarti setup dibatalkan.');
   L.push('- Boleh memakai TREN DATA AKUMULATIF sebagai fakta terhitung dari blok [DATA RILIS EKONOMI] (contoh: "3 dari 3 rilis data CAD terakhir meleset di bawah forecast") dan data pasar forward-looking RIIL kalau tersedia di atas (rate path). Driver dan konfirmasi utamamu HARUS tentang negara kaki pair ini sendiri — data negara lain (mis. AS untuk AUD/NZD) hanya boleh jadi pendukung tambahan, bukan satu-satunya alasan. Yang tetap DILARANG: spekulasi ("akan"/"harusnya"/"kemungkinan"/"biasanya") tanpa angka di baliknya.');
   L.push('');
-  L.push('STEP 3 PRE-MARKET DECISION: bias dikunci dan tidak berubah kecuali ada berita besar (market-moving/geopolitik/data ekonomi penting). Pembatalan karena berita besar SUDAH ditangani mekanisme kode terpisah (filter breaking-news + deteksi kejutan ekonomi actual-vs-forecast) — kamu cukup memastikan arahmu eksplisit.');
+  L.push('STEP 3 PRE-MARKET DECISION: bias dikunci dan tidak berubah kecuali ada berita besar (market-moving/geopolitik/data ekonomi penting). Kode melindungi entry dari kalender/breaking-news dan meminta analisa baru setelah event pada pending. Review posisi open tetap membutuhkan pemicu serta bukti baru. Jelaskan katalis berikutnya dan fakta apa yang membatalkan alasan awal; jangan menganggap semua perubahan tesis pasti sudah tertangani otomatis.');
   L.push('');
   L.push('YANG BUKAN URUSANMU DI SINI (ditangani tahap/kode lain, jangan dinilai): struktur teknikal & lokasi entry, level SL/TP & risk/reward, posisi COT/retail, skor akhir checklist. Fokus penuh ke arah makro + buktinya.');
   return L.join('\n');
@@ -6213,7 +6214,7 @@ function _buildAatasTechnicalChecklistBlock({ isXau, lockedBias }) {
   L.push('');
   L.push('STEP 6 RISK MANAGEMENT (GATE): RR minimal 1:2 (ideal 1:3 ke atas) dan SL di balik struktur (bukan angka random). Risiko per entry FLAT 2% tanpa pengecualian kondisi apa pun — konflik/keraguan TIDAK PERNAH mengecilkan ukuran posisi, itu hanya alarm perhatian. Kalau RR di bawah 1:2 atau SL tidak punya dasar struktural: gate_risk_management.pass=false dan TIDAK ADA setup.');
   L.push('');
-  L.push('STEP 7 TIMING: utamakan sesi London/New York; hindari sesi Tokyo kecuali setup sangat jelas; jangan entry berdempetan dengan rilis high-impact. Event high-impact di dalam horizon skenario = CHECKPOINT tesis (laporkan di conflict="waktu"), BUKAN alasan otomatis membatalkan setup atau mengecilkan ukuran posisi.');
+  L.push('STEP 7 TIMING: trigger dan fill hanya pada sesi London/New York dengan DST untuk semua pair, termasuk AUD/NZD; tidak ada pengecualian Tokyo. Jangan entry berdempetan dengan rilis high-impact. Laporkan event di horizon pada conflict="waktu". Kode membatalkan pending yang melewati event relevan untuk meminta analisa baru; tesis makro belum tentu salah. Jangan mengecilkan ukuran posisi.');
   L.push('');
   L.push('STEP 8 VALIDASI TERAKHIR (bobot RENDAH): TIDAK dinilai di sini — data COT/retail TIDAK dikirim ke panggilan ini (sengaja, keterbatasan pipeline saat ini), jadi jangan menebak/mengarang status COT/retail. final_validation diisi kode, bukan kamu.');
   L.push('');
@@ -6856,7 +6857,7 @@ async function _runAatasTwoCall({
   const prompts = { call1: null, call2: null };
 
   // ── Call 1: makro/fundamental ──────────────────────────────────────────────
-  const call1Sys = 'Kamu analis makro/fundamental senior. Kamu HANYA menerima data makro — TIDAK ADA data chart, candle, atau indikator sama sekali, dan lokasi entry bukan urusanmu. WAJIB jawab dalam DUA bagian: (1) SATU objek JSON valid tanpa markdown fence berisi field {"evidence_claims":[...],"regime_check":{...},"gate_validitas_driver":{"pass":true,"note":"..."},"fundamental_bias":{...},"bias":"..."}; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu SATU paragraf prosa (bukan JSON, bebas tanda kutip). Bahasa Indonesia.';
+  const call1Sys = 'Kamu analis makro/fundamental senior. Kamu HANYA menerima data makro — TIDAK ADA data chart, candle, atau indikator sama sekali, dan lokasi entry bukan urusanmu. WAJIB jawab dalam DUA bagian: (1) SATU objek JSON valid tanpa markdown fence berisi field {"evidence_claims":[...],"regime_check":{...},"gate_validitas_driver":{"pass":true,"note":"..."},"fundamental_bias":{...},"bias":"..."}; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu SATU paragraf prosa (bukan JSON, bebas tanda kutip). Bahasa Indonesia.' + '\n' + professionalPrompt('macro');
   const call1User = [
     `Analisa MAKRO/FUNDAMENTAL ${label}:`,
     '',
@@ -6867,7 +6868,7 @@ async function _runAatasTwoCall({
     'Isi field JSON berikut:',
     '- evidence_claims: maksimal empat klaim angka utama yang kamu gunakan, masing-masing {source_id,actual,previous,forecast} dari [FAKTA BERSUMBER], salin nilai persis tanpa mengubah unit. Jika tidak ada fakta bersumber relevan, gunakan []. Jangan mengarang source_id.',
     '- regime_check: hasil Step 0 sebagai objek — {"regime":"risk_on|neutral|elevated|risk_off" atau null, "cb_bias":{"<LEG>":"hawkish|dovish|netral"} untuk kedua leg pair (null kalau tidak ada data), "cb_source_conflict":true/false (bias resmi bank sentral vs pembacaanmu atas data mentah berbeda), "event_wait":true/false, "event_note":"..." atau null, "gold":null untuk pair FX}. Khusus XAU/USD, "gold" WAJIB diisi {"real_yield":"bullish|bearish|netral","dxy":"bullish|bearish|netral","risk_regime":"bullish|bearish|netral"} — ketiganya dinilai dari sudut pandang EMAS (bullish = mendukung emas naik), MASING-MASING diisi sendiri-sendiri apa adanya dari data di atas (jangan mengarang angka yang tidak dikirim); kode yang menghitung berapa yang sepakat, kamu TIDAK perlu (dan JANGAN) menyimpulkan sendiri satu label ringkasan seperti "unanimous".',
-    '- gate_validitas_driver: hasil GATE Step 1 — {"pass":true/false,"note":"satu kalimat, sebut driver + buktinya"}. false kalau driver tidak punya bukti nyata di data, tidak bisa diverifikasi, belum tercermin di harga, atau cuma bisa dirumuskan dengan kata "akan/harusnya/kemungkinan/biasanya".',
+    '- gate_validitas_driver: hasil GATE Step 1 — {"pass":true/false,"note":"satu kalimat, sebut driver + buktinya"}. false kalau driver tidak punya bukti nyata di data, tidak bisa diverifikasi, sudah tidak relevan pada horizon keputusan, atau cuma bisa dirumuskan dengan kata "akan/harusnya/kemungkinan/biasanya".',
     '- fundamental_bias: hasil Step 2 — {"case_bullish_pct":0-100,"case_bearish_pct":0-100,"arah":"bullish|bearish|netral","driver":"...","konfirmasi":["...","..."],"konflik":"..." atau null,"strong_vs_weak":true/false}. konfirmasi minimal 2 item dari kategori berbeda, masing-masing menyebut data konkret DAN mendukung arah yang sama dengan "arah" (lihat KONVENSI ARAH di atas) — bukti yang justru melawan arah masuk konflik, bukan konfirmasi. case_bullish_pct dan case_bearish_pct WAJIB berjumlah TEPAT 100 — dua-duanya angka bulat. Kode akan menolak jawaban yang jumlahnya bukan 100, dan menolak setup kalau sisi yang lebih besar berlawanan dengan \"arah\" yang kamu tulis.',
     '- bias: ARAH AKHIR hasil Step 0-2 — bullish/bearish/neutral/mixed, MURNI dari makro/fundamental. Pakai "neutral" kalau fundamental memang tidak punya arah, "mixed" kalau faktor-faktornya saling bertabrakan. DILARANG menyebut atau memakai RSI/MACD/SMA/EMA/pivot/struktur chart sebagai alasan di field manapun. HARUS PERSIS SAMA dengan fundamental_bias.arah — cek ulang KONVENSI ARAH sebelum memutuskan.',
     '',
@@ -6953,7 +6954,7 @@ async function _runAatasTwoCall({
   }
 
   // ── Call 2: struktur & lokasi entry ────────────────────────────────────────
-  const call2Sys = 'Kamu analis struktur pasar. Arah trade SUDAH DIKUNCI oleh analisa makro terpisah dan TIDAK BOLEH kamu ubah — tugasmu menentukan DI MANA dan KAPAN masuk, plus menilai apakah struktur mengizinkan masuk sama sekali. Kamu sengaja TIDAK menerima pembacaan momentum RSI/MACD, dan DILARANG memakainya sebagai alasan; SMA/pivot boleh dipakai hanya sebagai level harga struktural, tidak pernah sebagai sinyal arah. WAJIB jawab dalam DUA bagian: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","selected_sl_id":"...","selected_tp_id":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"technical":{...},"gate_risk_management":{"pass":true,"note":"..."},"conflict":"...","conflict_note":"...","checklist_pct":0} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field final_validation atau verdict, itu dihitung server (kamu tidak diberi data COT/retail, dan verdict diturunkan dari checklist_pct-mu); (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu SATU paragraf prosa (bukan JSON, bebas tanda kutip). Bahasa Indonesia.';
+  const call2Sys = 'Kamu analis struktur pasar. Arah trade SUDAH DIKUNCI oleh analisa makro terpisah dan TIDAK BOLEH kamu ubah — tugasmu menentukan DI MANA dan KAPAN masuk, plus menilai apakah struktur mengizinkan masuk sama sekali. Kamu sengaja TIDAK menerima pembacaan momentum RSI/MACD, dan DILARANG memakainya sebagai alasan; SMA/pivot boleh dipakai hanya sebagai level harga struktural, tidak pernah sebagai sinyal arah. WAJIB jawab dalam DUA bagian: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"entry_zone":"...","entry_basis":"...","sl":"...","tp":"...","selected_sl_id":"...","selected_tp_id":"...","trigger":"...","invalidation_condition":"...","invalidation_trigger":{"type":"...","level":0,"timeframe":"...","direction":"..."},"time_horizon_days":0,"technical":{...},"gate_risk_management":{"pass":true,"note":"..."},"conflict":"...","conflict_note":"...","checklist_pct":0} — invalidation_trigger boleh null kalau tidak bisa distrukturkan; JANGAN sertakan field final_validation atau verdict, itu dihitung server (kamu tidak diberi data COT/retail, dan verdict diturunkan dari checklist_pct-mu); (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu SATU paragraf prosa (bukan JSON, bebas tanda kutip). Bahasa Indonesia.' + '\n' + professionalPrompt('technical');
   const call2User = [
     `Tentukan lokasi & waktu entry ${label}:`,
     '',
@@ -6982,7 +6983,7 @@ async function _runAatasTwoCall({
     '- conflict_note: SATU kalimat pendek alasan konkret (sebut data/event spesifik) kalau conflict bukan "none"; null kalau "none".',
     '- checklist_pct: skor akhir gabungan seluruh step dalam persen (angka bulat 0-100), tertimbang: GATE (Step 1 & 6) bobot dua kali lipat, Step 2 & 4-5 bobot tinggi (Step 8 tidak dinilai di sini, lihat instruksi Step 8 di atas). Step 1 & 2 sudah lolos dengan skor fundamental yang disebut di atas — pakai angka itu apa adanya, jangan menilai ulang makro. Server yang menentukan label verdict dari angka ini, bukan kamu.',
     '',
-    'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis SATU paragraf ringkas 2-3 kalimat, maksimal 110 kata dan minimal 2 angka konkret, sebagai teks biasa tentang struktur, lokasi entry, dan risiko utamanya.',
+    'Setelah objek JSON, di baris baru tulis PERSIS "===COMMENTARY===" lalu tulis SATU paragraf ringkas 2-3 kalimat, maksimal 110 kata dan angka konkret yang memang tersedia, sebagai teks biasa tentang struktur, lokasi entry, dan risiko utamanya; bila data tidak cukup, jelaskan kekurangannya tanpa mengarang angka.',
   ].filter(x => x !== null).join('\n');
   prompts.call2 = { system: call2Sys, user: call2User };
 
@@ -7024,6 +7025,7 @@ async function _runAatasTwoCall({
     regime_check: base.regime_check,
     gate_validitas_driver: base.gate_validitas_driver,
     fundamental_bias: base.fundamental_bias,
+    evidence_claims: base.evidence_claims,
     final_validation: AATAS_STEP8_UNAVAILABLE,
     reasoning_note: [macroNote, techNote].filter(Boolean).join(' ') || null,
   };
@@ -9337,7 +9339,7 @@ async function _runCriticVerdict(userMsg, {
   descriptiveTrackRecord = false,
 } = {}) {
   const criticSystemPrompt = descriptiveTrackRecord
-    ? `${CRITIC_SYSTEM_PROMPT} Khusus track record gabungan yang terlampir: perlakukan sebagai statistik deskriptif mentah lintas sumber, versi kebijakan, dan arah. DILARANG memberi verdict tunda/batalkan atau meminta trigger/skor/gate diperketat maupun dilonggarkan hanya karena win rate tersebut; keberatan harus ditopang fakta setup sekarang atau data risiko lain.`
+    ? `${CRITIC_SYSTEM_PROMPT.replace('Setup yang diusulkan Senior Trader + fakta pasar terlampir adalah FAKTA, bukan tebakan.', 'Setup analis harus diuji terhadap bukti pasar terlampir; keputusan analis bukan fakta yang kebal koreksi.')} ${professionalPrompt('critic')} Khusus track record gabungan yang terlampir: perlakukan sebagai statistik deskriptif mentah lintas sumber, versi kebijakan, dan arah. DILARANG memberi verdict tunda/batalkan atau meminta trigger/skor/gate diperketat maupun dilonggarkan hanya karena win rate tersebut; keberatan harus ditopang fakta setup sekarang atau data risiko lain.`
     : CRITIC_SYSTEM_PROMPT;
   const messages = [
     { role: 'system', content: criticSystemPrompt },
@@ -10132,3 +10134,6 @@ module.exports._aatasEventWait = _aatasEventWait;
 module.exports._finalizeAatasDataNotes = _finalizeAatasDataNotes;
 
 module.exports._detectSqueezeInversion = _detectSqueezeInversion;
+
+// Export internal untuk uji kontrak prompt tanpa membuat setup/entry produksi.
+module.exports._runAatasTwoCall = _runAatasTwoCall;

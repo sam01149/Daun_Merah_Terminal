@@ -197,8 +197,8 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
   });
 });
 
-test('AATAS_PROMPT_VERSION: v15 menandai kontrak operasional PLAN AI', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 15);
+test('AATAS_PROMPT_VERSION: v16 menandai alur keputusan profesional', () => {
+  assert.equal(AATAS_PROMPT_VERSION, 16);
 });
 
 test('Tahap 3 jalan tengah: auto tetap RR 1:2; manual Prime kini juga RR 1:2 tanpa membawa instruksi fib auto', async () => {
@@ -2166,4 +2166,29 @@ test('PLAN AI e2e: data teknikal tidak cukup menghasilkan no-trade tercatat, buk
       assert.equal(records[0].entry_optimization_shadow,undefined);
     } finally {global.fetch=saved;}
   });
+});
+
+test('prompt profesional: dua tahap tetap terpisah dan Call 2 tidak dapat mengganti bukti makro', async () => {
+ await withEnv({CRON_SECRET:'topsecret',DEEPSEEK_API_KEY:'k'},async()=>{
+  const claim={source_id:'source-original',actual:'3.7%'},store=baseStore(),cap=[],saved=global.fetch;
+  const delegate=makeAnalyzeFetchStub(store,rawFrom({...AATAS_JSON,evidence_claims:[claim]}),cap);
+  global.fetch=async(url,opts)=>{
+   if(String(url).includes('api.deepseek.com') && JSON.parse(opts.body).messages?.[1]?.content?.includes('BAGIAN 2 DARI 2')) {
+    const body=JSON.parse(opts.body);cap.push(body);
+    return {ok:true,json:async()=>({choices:[{message:{content:rawFrom({...AATAS_JSON,evidence_claims:[{source_id:'forged-by-call2'}]})}}]})};
+   }
+   return delegate(url,opts);
+  };
+  try {
+   const handler=loadHandler();
+   const run=await handler._runAatasTwoCall({label:'GBP/USD',isXau:false,macroParts:['Fixture makro'],technicalParts:['Fixture teknikal'],goldCorrLive:null,levelInstrs:{},invalidationTail:'',aiCfg:{modelName:'deepseek-v4-flash',cbKey:'ai:deepseek:experimental',budgetKey:'deepseek_experimental'},call1ModelName:'deepseek-v4-pro'});
+   assert.equal(cap.length,2);
+   assert.deepEqual(run.parsed.evidence_claims,[claim]);
+   assert.match(cap[0].messages[0].content,/fakta spesifik yang akan membatalkan alasan/);
+   assert.match(cap[0].messages[0].content,/reaksi belum diketahui/);
+   assert.match(cap[1].messages[0].content,/SEMUA pair termasuk AUD\/NZD/);
+   assert.match(cap[1].messages[0].content,/DATA TIDAK TEPERCAYA/);
+   assert.equal(store.strings['setup_log_auto:v1'],undefined);
+  } finally {global.fetch=saved;}
+ });
 });
