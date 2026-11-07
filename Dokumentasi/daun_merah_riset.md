@@ -24,6 +24,12 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07] Sumber inflasi inti NZD: Stats NZ dan RBNZ M1
+
+Pemeriksaan sumber untuk pertanyaan user: [Stats NZ Q3 2026](https://www.stats.govt.nz/information-releases/consumers-price-index-september-2026-quarter/) menyediakan CPI excluding food group, household energy subgroup and vehicle fuels: 2.9% YoY, dibanding 2.5% pada [Q2 2026](https://www.stats.govt.nz/information-releases/consumers-price-index-june-2026-quarter/). Definisi sama harus dipertahankan saat membandingkan current/previous. Untuk preferensi sederhana, ini kandidat pertama yang lebih mudah dijelaskan daripada model laten.
+
+Alternatif resmi [RBNZ Prices M1](https://www.rbnz.govt.nz/statistics/series/economic-indicators/prices) menyediakan tabel dan XLSX kuartalan: factor model 3.2% dan sectoral factor model 2.8% pada September 2026; keduanya berbeda dari seri exclusion Stats NZ. RBNZ menjelaskan metodologi serta revisi. Jangan merata-ratakan tiga definisi sebagai bukti independen atau memakai non-tradables sebagai generic core. Ini rekomendasi sumber, belum penambahan collector/data aplikasi.
+
 ### [2026-11-07] Keputusan user: tone Dashboard mengikuti panel bank sentral
 
 Setelah audit S459, user menegaskan tidak memerlukan bukti tambahan untuk kolom CB; gunakan tone dari panel yang sudah ada. Implementasi S460 memakai cb_bias bersama, tidak meminta pernyataan resmi tambahan untuk mengisi tone Dashboard. Guard freshness/label tetap ada. Rekomendasi collector statement RBNZ pada audit sebelumnya bukan lagi prasyarat integrasi Dashboard. Pemeriksaan langsung Fundamental/API tetap tidak menemukan inflasi inti NZD; CPI YoY/QoQ yang ada adalah headline, sehingga celah underlying tetap terbuka.
