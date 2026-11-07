@@ -155,6 +155,27 @@ function replayRecord(record, rawCandles, config = {}, calendarEvents = []) {
   const terminal = new Set(['canceled', 'cancelled', 'expired', 'rejected', 'invalid']);
   if (terminal.has(sourceStatus) && config.replayTerminal !== true) return terminalSourceResult(record, sourceStatus);
 
+  if (record?.entry_execution === 'aatas_rejection_h1_v1') {
+    const op = require('../api/_aatas_operational_entry');
+    if (config.strategy && config.strategy !== 'baseline_touch') return { id: record.id, status: 'unavailable', reason: 'operational_contract_requires_own_evaluator' };
+    const contract = record.operational_contract;
+    if (!contract?.zone) return { id: record.id, status: 'unavailable', reason: 'operational_contract_missing' };
+    const clone = JSON.parse(JSON.stringify(record));
+    clone.status = 'pending';
+    clone.entry_zone = `${contract.zone.low}-${contract.zone.high}`;
+    clone.sl = String(contract.decision_sl ?? contract.planned_sl);
+    clone.tp = String(contract.decision_tp ?? contract.planned_tp);
+    clone.operational_contract = { ...contract, planned_sl: Number(clone.sl), planned_tp: Number(clone.tp) };
+    for (const key of ['filled_t','filled_price','closed_t','choppy_management','intervention','mfe_r','mae_r','net_r_estimate']) delete clone[key];
+    const last = Math.max(0,...(rawCandles || []).map(c=>Number(c.t)||0));
+    op.evaluate(clone, rawCandles, config.nowMs ?? (last+3600)*1000, calendarEvents);
+    return { id:record.id, status:['pending','open'].includes(clone.status)?'unresolved':clone.status,
+      reason:clone.operation_wait_reason || clone.canceled_reason || clone.execution_contract_error || null,
+      filled_t:clone.filled_t ?? null,closed_t:clone.closed_t ?? null,entry:clone.filled_price ?? null,
+      gross_r:clone.status==='tp'?clone.rr:clone.status==='sl'?-1:null,net_r:clone.net_r_estimate ?? null,
+      mfe_r:clone.mfe_r ?? null,mae_r:clone.mae_r ?? null,accounting:'operational_contract_replay' };
+  }
+
   const l = levels(record);
   if (!l) return { id: record?.id || null, status: 'unavailable', reason: 'level_invalid' };
   const contract = validateStoredExecutionContract(record);

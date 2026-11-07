@@ -341,7 +341,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     <div class="quicknav">
       <a href="#card-saldo">Saldo DeepSeek</a>
       <a href="#card-gate">Gate Plan U</a>
-      <a href="#card-entry-shadow">Entry Optimalization Shadow</a>
+      <a href="#card-operation">Operasional &amp; Kebijakan</a>
       <a href="#card-global">Ringkasan Global</a>
       <a href="#card-mgmt">Manajemen &amp; Cancel-Flip</a>
       <a href="#card-gateghost">Ghost-Tracking Gate</a>
@@ -365,10 +365,10 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       <div id="aatasAiHealth"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
-    <div class="card" id="card-entry-shadow">
-      <h2>AATAS Entry Optimalization — Shadow</h2>
-      <p class="hint"><b>Tidak memengaruhi entry produksi.</b> Panel ini membandingkan zona dan target AATAS dengan filter environment, sesi, serta rejection H1 Prime. Kandidat baru berhenti 3 Desember 2026 07:00 WIB; seluruh evaluasi ditutup paling lambat 16 Desember 2026 21:00 WIB. Status produksi tetap menjadi sumber keputusan operasional.</p>
-      <div class="grid" id="entryShadowStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
+    <div class="card" id="card-operation">
+      <h2>Operasional AATAS dan Riwayat Kebijakan</h2>
+      <p class="hint">Momentum menunggu rejection H1; choppy memakai tepi range dan aturan exit terpisah. Statistik gabungan tetap berlanjut sejak AATAS v31. Rincian berikut memisahkan kebijakan, strategi, kondisi pasar dan arah pair. Pengumpulan shadow dihentikan; riwayatnya tetap tersimpan.</p>
+      <div id="operationStats"><div class="empty">Belum dimuat — klik Refresh.</div></div>
     </div>
 
     <div class="card" id="card-gate">
@@ -893,29 +893,16 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     }).join('');
   }
 
-  function renderEntryOptimization(recent){
-    const el = document.getElementById('entryShadowStats');
-    const rows = (recent || []).filter(s => s && s.entry_optimization_shadow);
-    if (!rows.length) {
-      el.innerHTML = '<div class="empty">Belum ada setup yang membawa hasil shadow versi baru.</div>';
-      return;
-    }
-    const count = key => rows.filter(s => s.entry_optimization_shadow.state === key).length;
-    const outcomes = rows.filter(s => ['tp','sl','ambiguous'].includes(s.entry_optimization_shadow.state));
-    const netKnown = outcomes.map(s => Number(s.entry_optimization_shadow.net_r)).filter(Number.isFinite);
-    const netR = netKnown.length ? netKnown.reduce((sum, n) => sum + n, 0) : null;
-    const baselineDecided = rows.filter(s => ['tp','sl'].includes(s.status)).length;
-    el.innerHTML = [
-      statBlock('Total Shadow', rows.length),
-      statBlock('Menunggu Zona', count('waiting_zone')),
-      statBlock('Terkonfirmasi / Filled', count('confirmed') + count('filled'), 'yellow'),
-      statBlock('TP / SL Shadow', `${count('tp')} / ${count('sl')}`, count('tp') >= count('sl') ? 'green' : 'red'),
-      statBlock('Ditolak Trigger', count('rejected')),
-      statBlock('No Fill', count('no_fill')),
-      statBlock('Observe-only / Tidak Eligible', count('observe_only') + count('not_eligible')),
-      statBlock('Net R Shadow (spread)', netR == null ? '—' : netR.toFixed(2), netR == null ? '' : (netR >= 0 ? 'green' : 'red')),
-      statBlock('Baseline Sudah TP/SL', baselineDecided),
-    ].join('');
+  function renderOperations(json){
+    const el = document.getElementById('operationStats');
+    const table = (title, groups) => {
+      const rows = Object.entries(groups || {});
+      if (!rows.length) return `<p class="hint">${esc(title)}: belum ada data.</p>`;
+      return `<h3 class="subhead">${esc(title)}</h3><div style="overflow-x:auto"><table><thead><tr><th>Kelompok</th><th>TP / SL</th><th>Win rate raw</th><th>Net R estimasi</th><th>Net R tanpa hasil terbesar</th><th>Net R choppy dikelola</th></tr></thead><tbody>${rows.map(([key,v]) => `<tr><td>${esc(key)}</td><td>${esc(v.tp)} / ${esc(v.sl)}</td><td>${v.win_rate_raw == null ? '—' : esc(v.win_rate_raw)+'%'}</td><td>${v.net_r_estimate == null ? '—' : esc(v.net_r_estimate.toFixed(2))+' (n='+esc(v.net_sample)+')'}</td><td>${v.net_r_without_largest == null ? '—' : esc(v.net_r_without_largest.toFixed(2))}</td><td>${v.managed_net_r_estimate == null ? '—' : esc(v.managed_net_r_estimate.toFixed(2))+' (n='+esc(v.managed_sample)+')'}</td></tr>`).join('')}</tbody></table></div>`;
+    };
+    el.innerHTML = table('Versi Kebijakan', json.by_policy) + table('Strategi', json.by_strategy)
+      + table('Kondisi Pasar', json.by_environment) + table('Pair dan Arah', json.by_pair_direction)
+      + '<p class="hint">Net R memakai estimasi spread; komisi, swap dan slippage belum termasuk. Tanda — berarti data tidak tersedia. Statistik mentah dan hasil posisi yang dikelola ditampilkan terpisah.</p>';
   }
 
   const RECENT_PAGE_SIZE = 10;
@@ -1212,6 +1199,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     return `${realClosed} Status hantu: ${s.status}.`;
   }
   function buildStatusNarrative(s){
+    if (s.operational_contract && !s.operational_contract.eligible) return 'Tidak ada trade: ' + (s.operational_contract.reason || 'data tidak cukup') + '.';
     if (!s) return '';
     if (isClosedEarly(s)) return buildClosedEarlyNarrative(s);
     if (isTightenResolved(s)) return buildTightenResolvedNarrative(s);
@@ -1237,6 +1225,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     return STATUS_EXPLAIN[s.status] || '';
   }
   function buildExecutiveSummary(s){
+    if (s.operational_contract && !s.operational_contract.eligible) return 'Tidak ada trade: ' + (s.operational_contract.reason || 'data tidak cukup') + '.';
     if (!s) return '';
     const base = `${s.symbol ? symLabel(s.symbol) : '-'} ${s.bias || '-'}${s.entry_zone ? `, entry ${s.entry_zone}` : ''}${s.sl ? `, SL ${s.sl}` : ''}${s.tp ? `, TP ${s.tp}` : ''}.`;
     const risk = [];
@@ -1253,6 +1242,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     return `${base} ${risk.length ? `${risk.join(', ')}.` : ''} ${macro} ${conflict} ${outcome}`;
   }
   function buildExecutiveAction(s){
+    if (s.operational_contract && !s.operational_contract.eligible) return 'Tidak ada trade: ' + (s.operational_contract.reason || 'data tidak cukup') + '.';
     if (!s) return '';
     if (isClosedEarly(s)) {
       if (s.status === 'sl') return 'Post-mortem otomatis: penutupan dini MENYELAMATKAN (hantu kena SL). Bukti mekanisme review posisi bekerja untuk kasus ini — tetap nilai per-batch (close_early_saved vs cost), bukan per-trade.';
@@ -1307,7 +1297,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     return ` <span class="badge canceled" style="font-size:8.5px" title="${esc(INTERVENTION_LABEL[t] || t)}">${esc(txt)}</span>`;
   }
   function buildSetupDetail(s){
-    const opt = s.entry_optimization_shadow;
+    const op = s.operational_contract;
     const groups = [
       fldGroup('Ringkasan', [
         fld('Ringkasan Eksekutif', buildExecutiveSummary(s)),
@@ -1343,29 +1333,23 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
         fldLong('Catatan Penalaran AI', s.reasoning_note),
         fld('Versi Prompt AATAS', s.aatas_v),
       ]),
-      fldGroup('SHADOW: AATAS Entry Optimalization (tidak memengaruhi produksi)', [
-        fld('Mode', opt?.mode === 'shadow_no_entry_effect' ? 'SHADOW — tidak memengaruhi entry produksi' : ''),
-        fld('Experiment ID', opt?.experiment_id),
-        fld('Batas Pengumpulan', opt?.collection_window ? jsonLabel(opt.collection_window) : ''),
-        fld('Environment', opt?.environment),
-        fld('Arah / Kekuatan', opt ? `${opt.direction || '—'} / ${opt.strength || '—'}` : ''),
-        fld('State Shadow', opt?.state),
-        fld('Status Produksi Pembanding', opt ? s.status : ''),
-        fld('Sesi Eligible', opt?.eligible_sessions?.join(', ')),
-        fld('Alasan / Filter', opt ? ([...(opt.reason_codes || []), opt.rejection_reason, opt.no_fill_reason].filter(Boolean).join(', ')) : ''),
-        fld('Coverage Input', opt ? jsonLabel(opt.input_coverage) : ''),
-        fld('Metrik Environment', opt ? jsonLabel(opt.environment_metrics) : ''),
-        fld('Touch H1', opt?.touch_candle ? jsonLabel(opt.touch_candle) : ''),
-        fld('Trigger H1', opt?.trigger_candle ? jsonLabel(opt.trigger_candle) : ''),
-        fld('Metrik Trigger', opt?.trigger_metrics ? jsonLabel(opt.trigger_metrics) : ''),
-        fld('Fill Shadow', opt?.proposed_fill ? jsonLabel(opt.proposed_fill) : ''),
-        fld('RR Efektif', opt?.effective_rr),
-        fld('Outcome Shadow', opt?.raw_outcome),
-        fld('Pembanding Baseline', opt ? `${opt.baseline_status || s.status || '—'}${opt.missed_winner ? ' — missed winner' : ''}${opt.saved_loss ? ' — saved loss' : ''}` : ''),
-        fld('Net R / Stress 2x', opt && (opt.net_r != null || opt.net_r_stress_2x != null) ? `${opt.net_r ?? '—'} / ${opt.net_r_stress_2x ?? '—'}` : ''),
-        fld('MFE R / MAE R', opt && (opt.mfe_r != null || opt.mae_r != null) ? `${opt.mfe_r ?? '—'} / ${opt.mae_r ?? '—'}` : ''),
-        fld('Estimasi Biaya', opt ? jsonLabel(opt.cost_estimate) : ''),
-        fld('Dievaluasi', opt?.evaluated_at ? fmtTs(opt.evaluated_at) : ''),
+      fldGroup('Kontrak Operasional', [
+        fld('Strategi', s.strategy_id),
+        fld('Kontrak Entry', s.entry_execution),
+        fld('Kondisi Pasar', op?.environment?.environment),
+        fld('Kelayakan', op ? (op.eligible ? 'Menunggu rejection H1 sesuai kontrak' : 'Tidak ada trade: ' + (op.reason || 'data tidak cukup')) : ''),
+        fld('Alasan Menunggu', s.operation_wait_reason),
+        fld('Sesi', op?.sessions),
+        fld('Cakupan Data', op ? jsonLabel(op.environment?.coverage) : ''),
+        fld('Pemeriksaan Fakta', op ? jsonLabel(op.factual_check) : ''),
+        fld('Skenario Sebelum Berita', op ? jsonLabel(op.scenarios) : ''),
+        fld('Penilaian Ulang Berita', s.event_revalidation ? jsonLabel(s.event_revalidation) : ''),
+        fld('Candle Pemicu', s.trigger_candle ? jsonLabel(s.trigger_candle) : ''),
+        fld('Harga Fill Efektif', s.filled_price),
+        fld('MFE / MAE R', s.mfe_r != null || s.mae_r != null ? `${s.mfe_r ?? '—'} / ${s.mae_r ?? '—'}` : ''),
+        fld('Net R Estimasi', s.net_r_estimate),
+        fld('Manajemen Choppy', s.choppy_management ? jsonLabel(s.choppy_management) : ''),
+        fld('Dasar Biaya', s.cost_basis),
       ]),
       fldGroup('Makro & Konflik', [
         fld('Alignment', s.alignment),
@@ -1492,7 +1476,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
       document.getElementById('calibStats').innerHTML = '';
       document.getElementById('symbolCards').innerHTML = '';
       document.getElementById('aatasAiHealth').innerHTML = '<div class="empty">Status AI tidak dapat dibaca karena akses ditolak.</div>';
-      document.getElementById('entryShadowStats').innerHTML = '<div class="empty">Shadow tidak dapat dibaca karena akses ditolak.</div>';
+      document.getElementById('operationStats').innerHTML = '<div class="empty">Data operasional tidak dapat dibaca karena akses ditolak.</div>';
       renderRecent([]);
       return;
     }
@@ -1503,7 +1487,7 @@ if (localStorage.getItem('dm_dev_theme') === 'light') {
     renderMeta(json.consistency, json.pipeline_latency);
     renderCalibration(json.global && json.global.confidence_calibration);
     renderAatasAiHealth(json.ai_health);
-    renderEntryOptimization(json.recent);
+    renderOperations(json);
     renderSymbols(json.symbols);
     ACTIVE_FILTER_PAIRS = Object.keys(json.symbols || {});
     POLICY_EPOCHS = Array.isArray(json.policy_epochs) ? json.policy_epochs : [];

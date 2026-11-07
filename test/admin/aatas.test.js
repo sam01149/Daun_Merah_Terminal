@@ -148,7 +148,7 @@ test('Tahap 1 blok: dua kaki dirender berurutan dengan header & cara pakai; kaki
 
 test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritikus; TIDAK masuk Call 2; jalur manual TIDAK berubah', async () => {
   const hashes = {
-    'fundamental:GBP': { 'CPI YoY': { actual: '0.3%', forecast: '0.3%', previous: '0.1%', date: '2026-08-19', source: 'calendar' } },
+    'fundamental:GBP': { 'CPI YoY': { actual: '0.3%', forecast: '0.3%', previous: '0.1%', date: new Date(Date.now()-86400000).toISOString().slice(0,10), source: 'calendar' } },
     'fundamental:USD': { 'NFP': { actual: '162K', forecast: '56K', previous: '21K', date: '2026-09-04', source: 'calendar' } },
   };
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
@@ -197,8 +197,8 @@ test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritiku
   });
 });
 
-test('AATAS_PROMPT_VERSION: v14 menandai track record deskriptif PLAN AF-4', () => {
-  assert.equal(AATAS_PROMPT_VERSION, 14);
+test('AATAS_PROMPT_VERSION: v15 menandai kontrak operasional PLAN AI', () => {
+  assert.equal(AATAS_PROMPT_VERSION, 15);
 });
 
 test('Tahap 3 jalan tengah: auto tetap RR 1:2; manual Prime kini juga RR 1:2 tanpa membawa instruksi fib auto', async () => {
@@ -329,8 +329,8 @@ test('AATAS block TEKNIKAL (Call 2): bias dikunci sebagai fakta, Step 4-8 ada, p
   assert.match(b, /FLAT 2% tanpa pengecualian/);
   assert.match(b, /TIDAK PERNAH mengecilkan ukuran posisi/);
   assert.match(b, /ZONA 0,382-0,618, bukan titik tunggal 0,618/);
-  assert.match(b, /hanya mendukung sentuhan zona setelah waktu tunggu kalender/);
-  assert.match(b, /pola candle boleh membantu memilih zona, tetapi bukan syarat fill tambahan/i);
+  assert.match(b, /menunggu rejection H1 tertutup di zona setelah kalender/);
+  assert.match(b, /Kode memisahkan momentum dan choppy/);
   assert.doesNotMatch(b, /Wajib ada konfirmasi candle di trigger/);
   assert.match(b, /INDIKATOR MOMENTUM DIBUANG/);
   assert.match(b, /TIDAK PERNAH sebagai sinyal arah atau momentum/);
@@ -1093,6 +1093,11 @@ function fakeRes() {
 }
 
 async function withEnv(vars, fn) {
+  // Regresi ini mengisolasi gate lama. Classifier dan dampak eksekusinya
+  // diuji tanpa stub di aatas_operational_entry.test.js.
+  const op = require('../../api/_aatas_operational_entry');
+  const originalBuildContract = op.buildContract;
+  op.buildContract = (...args) => ({...originalBuildContract(...args), eligible:true, reason:null, strategy:'momentum'});
   const prev = { CRON_SECRET: process.env.CRON_SECRET, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY };
   delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY;
   Object.assign(process.env, vars);
@@ -1100,6 +1105,7 @@ async function withEnv(vars, fn) {
   marketHours.isFxMarketOpen = () => true;
   try { return await fn(); }
   finally {
+    op.buildContract = originalBuildContract;
     marketHours.isFxMarketOpen = origIsOpen;
     delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY;
     for (const k of Object.keys(prev)) { if (prev[k] !== undefined) process.env[k] = prev[k]; }
@@ -2137,6 +2143,27 @@ test('S359 squeeze guard checks conflict mechanism, not merely opposite trade di
 test('S359 auto trigger prompt promises only conditions supported by evaluator',()=>{
  const src=require('node:fs').readFileSync(require.resolve('../../api/admin'),'utf8');
  const auto=src.slice(src.indexOf('async function _runAatasTwoCall('),src.indexOf('function _formatAatasCriticLine('));
- assert.match(auto,/- trigger: eksekusi otomatis hanya mendukung sentuhan zona entry/);
+ assert.match(auto,/- trigger: operasional memakai rejection H1 tertutup setelah kalender/);
  assert.doesNotMatch(auto,/- trigger: SATU kondisi price action/);
+});
+
+test('PLAN AI e2e: data teknikal tidak cukup menghasilkan no-trade tercatat, bukan entry live', async () => {
+  const op=require('../../api/_aatas_operational_entry');
+  const actualBuild=op.buildContract;
+  await withEnv({CRON_SECRET:'topsecret',DEEPSEEK_API_KEY:'k'},async()=>{
+    op.buildContract=actualBuild; // jalur classifier produksi asli, tanpa stub gate legacy
+    const store=baseStore(),saved=global.fetch;
+    global.fetch=makeAnalyzeFetchStub(store,rawFrom(AATAS_JSON));
+    try {
+      const handler=loadHandler(),res=fakeRes();
+      await handler({headers:{'x-cron-secret':'topsecret'},method:'GET',query:{action:'ohlcv_analyze',symbol:'GBPUSD=X',label:'GBP/USD',auto:'1'}},res);
+      const records=JSON.parse(store.strings['setup_log_auto:v1']);
+      assert.equal(records[0].entry_execution,op.CONTRACT);
+      assert.equal(records[0].operational_contract.eligible,false);
+      assert.equal(records[0].status,'canceled');
+      assert.equal(records[0].canceled_reason,'operation_no_trade');
+      assert.equal(records[0].operational_status,'no_trade');
+      assert.equal(records[0].entry_optimization_shadow,undefined);
+    } finally {global.fetch=saved;}
+  });
 });

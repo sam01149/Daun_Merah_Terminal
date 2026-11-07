@@ -10,7 +10,8 @@
 //   /api/health → /api/admin?action=health
 //   /api/push   → /api/admin?action=push
 
-const { SHADOW_ENABLED, groupHistory } = require('./_aatas_operation');
+const operationalEntry = require('./_aatas_operational_entry');
+const { SHADOW_ENABLED, groupHistory, summary: operationSummary } = require('./_aatas_operation');
 const PUSH_KW  = require('./_push_keywords');
 const newscat  = require('../newscat');
 const { autoUpdateFundamentals, autoUpdateFundamentalsFromCalendar, _fetchCalendarEventsForFund, reconcileFundamentalKeys } = require('./_fundamental_parser');
@@ -1296,7 +1297,7 @@ async function _notifySetupOutcome(setup) {
   const level = setup.status === 'tp' ? setup.tp : setup.status === 'sl' ? setup.sl : `${setup.sl} / ${setup.tp}`;
   // (2026-09-07) posisi yang sudah ditutup dini: outcome ini HANTU (andai dibiarkan),
   // bukan hasil posisi riil — beri label supaya tidak dibaca sebagai TP/SL sungguhan.
-  const ghost = isClosedEarly(setup);
+  const ghost = isClosedEarly(setup) || !!setup.choppy_management;
   const payload = {
     title: `${label} ${ghost ? 'hantu ' : ''}${outcomeText}`,
     body: `${setup.bias === 'bearish' ? 'Bearish' : 'Bullish'} entry ${setup.entry_zone} — level ${level}${ghost ? ' (posisi riil sudah ditutup dini oleh sistem; ini hasil andai dibiarkan)' : ''}`,
@@ -3646,6 +3647,7 @@ function _evaluateSetups(setups, candlesBySymbol, nowMs, calendarEvents, newsIte
   const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
   for (const st of setups || []) {
     if (!st || (st.status !== 'pending' && st.status !== 'open')) continue;
+    if (operationalEntry.evaluate(st, candlesBySymbol?.[st.symbol] || [], nowMs, calendarEvents)) continue;
     const e = nums(st.entry_zone), sl = nums(st.sl)[0], tp = nums(st.tp)[0];
     if (!e.length || sl == null || tp == null || (st.bias !== 'bullish' && st.bias !== 'bearish')) {
       st.status = 'invalid';
@@ -3832,6 +3834,7 @@ function _evaluateCanceledGhost(setups, candlesBySymbol, nowMs) {
   for (const st of setups || []) {
     if (!st || st.status !== 'canceled' || !GHOST_TRACKED_CANCEL_REASONS.has(st.canceled_reason)) continue;
     if (st.ghost_status) continue; // sudah resolved, jangan re-evaluasi
+    if (st.entry_execution === operationalEntry.CONTRACT) { st.ghost_status = 'unavailable'; st.ghost_note = 'Kontrak rejection tidak direkonstruksi dengan evaluator sentuhan legacy.'; continue; }
     const startTs = st.canceled_t || st.ts;
     if (!Number.isFinite(startTs)) continue;
     const e = nums(st.entry_zone), sl = nums(st.sl)[0], tp = nums(st.tp)[0];
@@ -4210,7 +4213,7 @@ async function _corroborateGoldTransitions(log, transitioned) {
 // Wrapper bersama dipakai _buildAutoScopeStats & positionReviewHandler supaya
 // kedua jalur yang bisa memfinalisasi transisi tp/sl konsisten — sama-sama lewat
 // korroborasi sebelum notifikasi, tidak ada jalur yang lolos tanpa guard ini.
-async function _finalizeSetupTransitions(log, statusBeforeById) {
+async function _finalizeSetupTransitions(log, statusBeforeById, choppyBeforeById = new Map()) {
   const changed = s => s && statusBeforeById.has(s.id) && statusBeforeById.get(s.id) !== s.status;
   // 'outcome' (tp/sl/ambiguous) tetap lewat _corroborateGoldTransitions (basis
   // blowout GC=F) sebelum dianggap final, persis perilaku lama. 'lifecycle'
@@ -4218,7 +4221,8 @@ async function _finalizeSetupTransitions(log, statusBeforeById) {
   // dengan korroborasi basis futures-vs-spot, jadi langsung dianggap confirmed.
   const outcomeTransitioned = log.filter(s => changed(s) && (s.status === 'tp' || s.status === 'sl' || s.status === 'ambiguous'));
   const lifecycleTransitioned = log.filter(s => changed(s) && (s.status === 'open' || s.status === 'expired'));
-  if (!outcomeTransitioned.length && !lifecycleTransitioned.length) return;
+  const choppyTransitioned = log.filter(s => s?.choppy_management?.status && choppyBeforeById.has(s.id) && choppyBeforeById.get(s.id) !== s.choppy_management.status);
+  if (!outcomeTransitioned.length && !lifecycleTransitioned.length && !choppyTransitioned.length) return;
   const divergenceFlagged = outcomeTransitioned.length ? await _corroborateGoldTransitions(log, outcomeTransitioned) : [];
   const divergenceIds = new Set(divergenceFlagged.map(s => s.id));
   const confirmed = outcomeTransitioned.filter(s => !divergenceIds.has(s.id));
@@ -4228,8 +4232,9 @@ async function _finalizeSetupTransitions(log, statusBeforeById) {
   // dikirim dengan label "hantu" (lihat _notifySetupOutcome) karena itu alat audit.
   await Promise.allSettled([
     ...confirmed.map(s => _notifySetupOutcome(s)),
-    ...confirmed.filter(s => !isClosedEarly(s)).map(s => _notifyAutoEntryTelegram(s, s.status)),
-    ...lifecycleTransitioned.map(s => _notifyAutoEntryTelegram(s, s.status)),
+    ...confirmed.filter(s => !isClosedEarly(s) && !s.choppy_management).map(s => _notifyAutoEntryTelegram(s, s.status)),
+    ...lifecycleTransitioned.filter(s => !s.choppy_management).map(s => _notifyAutoEntryTelegram(s, s.status)),
+    ...choppyTransitioned.map(s => _notifyAutoEntryTelegram({ ...s, sl: s.choppy_management.stop }, s.choppy_management.gross_r === 0 ? 'breakeven' : s.choppy_management.gross_r > 0 && s.choppy_management.status !== 'tp' ? 'profit_locked' : s.choppy_management.status)),
     ...divergenceFlagged.map(s => _notifyDivergenceHold(s)),
   ]);
 }
@@ -4531,8 +4536,8 @@ function _statsPayloadFromLog(log) {
   // `stats_from_policy_v` ikut dikirim supaya dashboard bisa menjelaskan sendiri kenapa
   // angkanya nol/kecil (bukan "data hilang") tanpa siapa pun harus membuka source code.
   const grouped = groupHistory(aatasLog);
-  const aggregateGroups = groups => Object.fromEntries(Object.entries(groups).map(([key, rows]) => [key, _aggSetupStats(rows)]));
-  return { symbols, global: _aggSetupStats(aatasLog), by_policy: aggregateGroups(grouped.policies), by_strategy: aggregateGroups(grouped.strategies), shadow_enabled: SHADOW_ENABLED, recent: log, policy_epochs: POLICY_EPOCHS, stats_from_policy_v: AATAS_EPOCH };
+  const aggregateGroups = groups => Object.fromEntries(Object.entries(groups).map(([key, rows]) => [key, operationSummary(rows, _aggSetupStats(rows), rows.map(_costAdjustedR).filter(Boolean).map(r => r.netR))]));
+  return { symbols, global: _aggSetupStats(aatasLog), by_policy: aggregateGroups(grouped.policies), by_strategy: aggregateGroups(grouped.strategies), by_pair_direction: aggregateGroups(grouped.pairDirections), by_environment: aggregateGroups(grouped.environments), shadow_enabled: SHADOW_ENABLED, recent: log, policy_epochs: POLICY_EPOCHS, stats_from_policy_v: AATAS_EPOCH };
 }
 
 // BUG DITEMUKAN & DIFIX (2026-07-25, diskusi user — status 'tp' palsu tersimpan di
@@ -4652,6 +4657,7 @@ async function _buildAutoScopeStats() {
   // di-push ke dev (lihat _notifySetupOutcome) — bukan diam-diam ketinggalan
   // sampai request berikutnya.
   const statusBeforeById = new Map(JSON.parse(before).map(s => [s.id, s.status]));
+  const choppyBeforeById = new Map(JSON.parse(before).map(s => [s.id, s.choppy_management?.status]));
   log = _evaluateSetups(log, candlesBySymbol, Date.now(), calendarEvents, newsItems);
   // Track 1 (2026-08-04): invalidasi teknikal deterministik — SETELAH _evaluateSetups
   // supaya `closed_t` (kalau ada) jadi boundary prioritas TP/SL asli. Candle SAMA
@@ -4684,7 +4690,7 @@ async function _buildAutoScopeStats() {
   } catch (e) { console.warn('AATAS Entry Optimalization shadow gagal (diabaikan):', e.message); }
   const after = JSON.stringify(log);
   if (after !== before) await persistSetupLog(setupLogKey, log);
-  await _finalizeSetupTransitions(log, statusBeforeById);
+  await _finalizeSetupTransitions(log, statusBeforeById, choppyBeforeById);
   await redisCmd('SET', SETUP_STATS_LAST_RUN_KEY, new Date().toISOString(), 'EX', '900').catch(() => {});
   return {
     scope: 'auto', ..._statsPayloadFromLog(log),
@@ -5044,6 +5050,7 @@ async function positionReviewHandler(req, res) {
       await persistTick();
       return res.status(200).json({ skipped: 'not_open', status: st.status });
     }
+    if (isManagedResolved(st)) { await persistTick(); return res.status(200).json({ skipped: 'already_managed' }); }
     // Langkah 2b: satu intervensi per posisi — sudah ada tipe apa pun -> skip.
     if (st.intervention) {
       await persistTick();
@@ -5088,6 +5095,7 @@ async function positionReviewHandler(req, res) {
       `[SETUP SEDANG BERJALAN]`,
       `Pair: ${st.label} | Bias: ${st.bias} | Entry: ${st.entry_zone} | SL: ${st.sl} | TP: ${st.tp}`,
       `Filled: ${st.filled_t ? new Date(st.filled_t * 1000).toISOString() : '—'}`,
+      ...(st.operational_contract ? ['Tesis awal: ' + JSON.stringify(st.fundamental_bias), 'Skenario sebelum berita: ' + JSON.stringify(st.operational_contract.scenarios), 'Fakta saat keputusan: ' + JSON.stringify(st.operational_contract.source_facts)] : []),
     ].join('\n');
 
     const candleBlock = `[±12 CANDLE H1 TERAKHIR]\n${candleLines}`;
@@ -5250,7 +5258,7 @@ async function fridayTightenHandler(req, res) {
     // Satu intervensi per posisi (pola sama position_review langkah 2b) — kalau sudah
     // dikelola (reaktif ATAU preventif minggu lalu kalau entah bagaimana belum resolved),
     // jangan numpuk intervensi kedua di atasnya.
-    const candidates = log.filter(s => s && s.status === 'open' && !s.intervention);
+    const candidates = log.filter(s => s && s.status === 'open' && !s.intervention && !isManagedResolved(s));
     if (!candidates.length) return res.status(200).json({ ok: true, checked: 0, tightened: 0 });
 
     const candlesBySymbol = {};
@@ -5972,7 +5980,7 @@ const COT_CME_PROMPT_VERSION = 2;
 // v14 (PLAN AF-4, 2026-10-12): track record gabungan jalur auto menjadi statistik
 // deskriptif mentah, bukan mandat adaptasi trigger/skor/gate. Gate A menerima pagar
 // yang sama; formatter dan prompt Kritikus manual tetap memakai perilaku lama.
-const AATAS_PROMPT_VERSION = 14;
+const AATAS_PROMPT_VERSION = 15;
 
 // (2026-09-02) `final_validation` (Step 8, COT/retail) dipaksa nilai ini untuk SEMUA
 // setup AATAS — Call 2 (yang mengisi field ini di v1/v2) tidak pernah menerima data
@@ -6201,7 +6209,7 @@ function _buildAatasTechnicalChecklistBlock({ isXau, lockedBias }) {
   L.push('- Kalau struktur teknikal jelas BERLAWANAN dengan bias terkunci, atau pasar ranging sempit: JANGAN membalik bias dan JANGAN memaksakan setup. Set entry_zone/sl/tp null dan jelaskan kondisi yang ditunggu di trigger; server yang menghitung label verdict.');
   L.push('- WAJIB isi technical.struktur_vs_bias, salah satu PERSIS: "selaras" (struktur jelas mendukung arah bias), "netral" (struktur tidak jelas mendukung ATAU melawan), "campur" (ada elemen mendukung DAN melawan sekaligus, timeframe/sinyal tidak sepakat), "berlawanan" (struktur dominan JELAS menunjuk arah kebalikan dari bias — bukan cuma satu pullback/retracement minor). HANYA pilih "berlawanan" jika kamu juga null-kan entry_zone/sl/tp karena struktur tidak layak — kode akan menegakkan ulang isian ini; JANGAN pilih label lain padahal strukturnya jelas berlawanan.');
   L.push('');
-  L.push('STEP 5 ENTRY LOCATION + TRIGGER: entry HANYA di area valid (pullback/retest/liquidity sweep), bukan di tengah impuls. Fibonacci dipakai sebagai ZONA 0,382-0,618, bukan titik tunggal 0,618: tren KUAT (BOS bermomentum kuat) berarti retracement dangkal, condong ke 0,382; tren LEMAH/ranging berarti retracement dalam, condong ke 0,618; kalau kekuatan tren AMBIGU, pakai titik tengah zona (~0,5). Eksekusi otomatis hanya mendukung sentuhan zona setelah waktu tunggu kalender; pola candle boleh membantu memilih zona, tetapi bukan syarat fill tambahan.');
+  L.push('STEP 5 ENTRY LOCATION + TRIGGER: entry HANYA di area valid (pullback/retest/liquidity sweep), bukan di tengah impuls. Fibonacci dipakai sebagai ZONA 0,382-0,618, bukan titik tunggal 0,618: tren KUAT (BOS bermomentum kuat) berarti retracement dangkal, condong ke 0,382; tren LEMAH/ranging berarti retracement dalam, condong ke 0,618; kalau kekuatan tren AMBIGU, pakai titik tengah zona (~0,5). Eksekusi operasional menunggu rejection H1 tertutup di zona setelah kalender, lalu memakai open H1 berikutnya jika sesi dan RR efektif tetap valid. Kode memisahkan momentum dan choppy; zona tengah range dan range sempit tidak layak. Jangan menyebut sentuhan zona saja sebagai entry terkonfirmasi.');
   L.push('');
   L.push('STEP 6 RISK MANAGEMENT (GATE): RR minimal 1:2 (ideal 1:3 ke atas) dan SL di balik struktur (bukan angka random). Risiko per entry FLAT 2% tanpa pengecualian kondisi apa pun — konflik/keraguan TIDAK PERNAH mengecilkan ukuran posisi, itu hanya alarm perhatian. Kalau RR di bawah 1:2 atau SL tidak punya dasar struktural: gate_risk_management.pass=false dan TIDAK ADA setup.');
   L.push('');
@@ -6848,7 +6856,7 @@ async function _runAatasTwoCall({
   const prompts = { call1: null, call2: null };
 
   // ── Call 1: makro/fundamental ──────────────────────────────────────────────
-  const call1Sys = 'Kamu analis makro/fundamental senior. Kamu HANYA menerima data makro — TIDAK ADA data chart, candle, atau indikator sama sekali, dan lokasi entry bukan urusanmu. WAJIB jawab dalam DUA bagian: (1) SATU objek JSON valid tanpa markdown fence berisi HANYA field {"regime_check":{...},"gate_validitas_driver":{"pass":true,"note":"..."},"fundamental_bias":{...},"bias":"..."}; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu SATU paragraf prosa (bukan JSON, bebas tanda kutip). Bahasa Indonesia.';
+  const call1Sys = 'Kamu analis makro/fundamental senior. Kamu HANYA menerima data makro — TIDAK ADA data chart, candle, atau indikator sama sekali, dan lokasi entry bukan urusanmu. WAJIB jawab dalam DUA bagian: (1) SATU objek JSON valid tanpa markdown fence berisi field {"evidence_claims":[...],"regime_check":{...},"gate_validitas_driver":{"pass":true,"note":"..."},"fundamental_bias":{...},"bias":"..."}; (2) setelah JSON, baris berisi PERSIS "===COMMENTARY===", lalu SATU paragraf prosa (bukan JSON, bebas tanda kutip). Bahasa Indonesia.';
   const call1User = [
     `Analisa MAKRO/FUNDAMENTAL ${label}:`,
     '',
@@ -6857,6 +6865,7 @@ async function _runAatasTwoCall({
     _buildAatasMacroChecklistBlock({ label, isXau, goldCorr: goldCorrLive }),
     '',
     'Isi field JSON berikut:',
+    '- evidence_claims: maksimal empat klaim angka utama yang kamu gunakan, masing-masing {source_id,actual,previous,forecast} dari [FAKTA BERSUMBER], salin nilai persis tanpa mengubah unit. Jika tidak ada fakta bersumber relevan, gunakan []. Jangan mengarang source_id.',
     '- regime_check: hasil Step 0 sebagai objek — {"regime":"risk_on|neutral|elevated|risk_off" atau null, "cb_bias":{"<LEG>":"hawkish|dovish|netral"} untuk kedua leg pair (null kalau tidak ada data), "cb_source_conflict":true/false (bias resmi bank sentral vs pembacaanmu atas data mentah berbeda), "event_wait":true/false, "event_note":"..." atau null, "gold":null untuk pair FX}. Khusus XAU/USD, "gold" WAJIB diisi {"real_yield":"bullish|bearish|netral","dxy":"bullish|bearish|netral","risk_regime":"bullish|bearish|netral"} — ketiganya dinilai dari sudut pandang EMAS (bullish = mendukung emas naik), MASING-MASING diisi sendiri-sendiri apa adanya dari data di atas (jangan mengarang angka yang tidak dikirim); kode yang menghitung berapa yang sepakat, kamu TIDAK perlu (dan JANGAN) menyimpulkan sendiri satu label ringkasan seperti "unanimous".',
     '- gate_validitas_driver: hasil GATE Step 1 — {"pass":true/false,"note":"satu kalimat, sebut driver + buktinya"}. false kalau driver tidak punya bukti nyata di data, tidak bisa diverifikasi, belum tercermin di harga, atau cuma bisa dirumuskan dengan kata "akan/harusnya/kemungkinan/biasanya".',
     '- fundamental_bias: hasil Step 2 — {"case_bullish_pct":0-100,"case_bearish_pct":0-100,"arah":"bullish|bearish|netral","driver":"...","konfirmasi":["...","..."],"konflik":"..." atau null,"strong_vs_weak":true/false}. konfirmasi minimal 2 item dari kategori berbeda, masing-masing menyebut data konkret DAN mendukung arah yang sama dengan "arah" (lihat KONVENSI ARAH di atas) — bukti yang justru melawan arah masuk konflik, bukan konfirmasi. case_bullish_pct dan case_bearish_pct WAJIB berjumlah TEPAT 100 — dua-duanya angka bulat. Kode akan menolak jawaban yang jumlahnya bukan 100, dan menolak setup kalau sisi yang lebih besar berlawanan dengan \"arah\" yang kamu tulis.',
@@ -6929,6 +6938,7 @@ async function _runAatasTwoCall({
     conflict: 'none', conflict_note: null,
     checklist_pct: null, verdict: null,
     reasoning_note: macroNote,
+    evidence_claims: Array.isArray(p1.evidence_claims) ? p1.evidence_claims.slice(0, 12) : [],
   };
 
   // Short-circuit: Gate 1 gagal -> Call 2 TIDAK dipanggil sama sekali. Verdict dipaksa
@@ -6961,7 +6971,7 @@ async function _runAatasTwoCall({
     'Isi field JSON berikut:',
     ...(Array.isArray(levelInstrs) ? levelInstrs : []),
     hasLevelCandidates ? '- selected_sl_id dan selected_tp_id: jika [KANDIDAT SL/TP] menyediakan pool SL+TP lengkap untuk ARAH TERKUNCI, WAJIB isi ID kandidat yang persis dipilih (bullish_sl_N/bullish_tp_N atau bearish_sl_N/bearish_tp_N). Jika pool arah terkunci tidak tersedia/lengkap, ikuti fallback struktur pada instruksi sl/tp, set kedua ID null, dan JANGAN mengambil kandidat arah lawan atau mengarang ID.' : null,
-    '- trigger: eksekusi otomatis hanya mendukung sentuhan zona entry setelah waktu tunggu kalender. Jangan mensyaratkan pola candle, close H4, atau konfirmasi tambahan yang tidak dapat dieksekusi evaluator. Pola candle boleh menjadi dasar pemilihan zona, bukan syarat fill yang belum terpenuhi.',
+    '- trigger: operasional memakai rejection H1 tertutup setelah kalender dan fill open H1 berikutnya, sesi London/New York dengan DST, RR efektif minimal 1:2; momentum body 0,5–1 ATR6H, choppy rejection tanpa batas minimum body. Kondisi pasar dan pemilihan strategi ditegakkan kode; jangan mengarang konfirmasi close H4 atau pola lain.',
     '- invalidation_condition: kondisi spesifik yang membatalkan skenario ini sepenuhnya (beda dari sl — ini soal struktur/tesis).',
     '- invalidation_trigger: versi TERSTRUKTUR dari invalidation_condition supaya KODE bisa mendeteksinya otomatis — {"type":"ma_break"|"price_level"|"swing_break","level":<satu angka>,"timeframe":"1h"|"4h"|"1d","direction":"above"|"below"}. "level" WAJIB satu angka konkret yang ADA di data di atas, "direction" = arah CLOSE candle yang membatalkan skenario. Kalau tidak bisa diringkas jadi satu level tunggal, set null — JANGAN mengarang angka.' + (invalidationTail || ''),
     '- time_horizon_days: estimasi jumlah hari realistis skenario ini main out (angka, misal 3, 5, 10) berdasarkan jarak entry-tp dibanding rata-rata gerak harian (ATR/sigma) di data.',
@@ -7432,6 +7442,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // HANYA isAutoCall (jalur manual publik tidak berubah). Numpang Promise.all yang
     // sama (bukan round-trip terpisah). XAU/USD -> kaki USD saja (tidak ada
     // `fundamental:XAU`). Lihat komentar FUND_RELEASE_CATEGORIES.
+    let operationalFacts = [];
     let fundReleaseBlock = '';
     let macroCapturedAt = null;
     const fundLegs = isAutoCall
@@ -7467,7 +7478,12 @@ async function ohlcvAnalyzeHandler(req, res) {
         }
       }
       macroCapturedAt = Date.now();
-      fundReleaseBlock = _formatFundReleaseBlock(fundLegs, rawFundHashes, macroCapturedAt, cbLiveByCur);
+      if (isAutoCall) operationalFacts = operationalEntry.sourceFacts(fundLegs, rawFundHashes.map(_hgetallToObj), macroCapturedAt);
+      const suppliedHashes = isAutoCall ? fundLegs.map((cur, i) => {
+        const original = _hgetallToObj(rawFundHashes[i]);
+        return Object.entries(original).filter(([key]) => operationalFacts.some(f => f.currency === cur && f.indicator === key && f.usable)).flatMap(([key,value]) => [key, JSON.stringify(value)]);
+      }) : rawFundHashes;
+      fundReleaseBlock = _formatFundReleaseBlock(fundLegs, suppliedHashes, macroCapturedAt, cbLiveByCur);
       riskParsed = rawRisk ? JSON.parse(rawRisk) : null;
       autoGuardRegime = riskParsed?.regime || null;
       cbBiasParsed = rawBias ? JSON.parse(rawBias) : null;
@@ -7678,6 +7694,8 @@ async function ohlcvAnalyzeHandler(req, res) {
       // sebelum rate path/CME/kalender, supaya AI membaca "bias resmi CB" lalu "angka
       // rilis mentahnya" berurutan (Step 0(b) membandingkan keduanya).
       if (fundReleaseBlock) aatasMacroParts.push(fundReleaseBlock);
+      if (operationalFacts.length) aatasMacroParts.push('[FAKTA BERSUMBER] ' + JSON.stringify(operationalFacts.filter(f => f.usable)));
+      aatasMacroParts.push('[KONTROL FAKTA OPERASIONAL] Bandingkan actual/previous/forecast tepat sesuai unit dan periode. Angka naik tidak boleh disebut turun. Suku bunga yang terakhir berubah berbulan-bulan lalu bukan bukti bank sentral masih agresif saat ini. Data berlabel stale/LAMA/fallback hanya konteks, bukan bukti driver terkini. Jika buktinya tidak cukup, pilih tidak ada trade.');
       if (ratePathBlock)    aatasMacroParts.push(ratePathBlock);
       if (rrBlock)          aatasMacroParts.push(rrBlock);
       if (calAnalyzeBlock)  aatasMacroParts.push(calAnalyzeBlock);
@@ -8355,6 +8373,19 @@ async function ohlcvAnalyzeHandler(req, res) {
             gate1Override: aatasGate1 ? aatasGate1.override_reason : null,
             structureOpposing,
           });
+          if (!rejectReason && structured.entry_zone && structured.sl && structured.tp) {
+            const op = operationalEntry.buildContract(
+              { ...structured, label: data.label }, data._entry_optimization_inputs,
+              aatasCalendarEvents, Date.now(), operationalFacts);
+            structured.operational_contract = op;
+            structured.strategy_id = op.strategy;
+            if (op.eligible && op.strategy === 'choppy') {
+              structured.sl = String(op.planned_sl); structured.tp = String(op.planned_tp);
+              structured.risk_reward = 2;
+              structured.execution_contract = null;
+              structured.selected_sl_id = structured.selected_tp_id = null;
+            }
+          }
           structured.aatas_reject_reason = rejectReason;
           if (!isDiagnosticOnly && structureOpposing) {
             redisCmd('INCR', 'auto_guard_stats:gate_struktur_melawan_bias').catch(() => {});
@@ -8695,7 +8726,9 @@ async function ohlcvAnalyzeHandler(req, res) {
         // sudah dibatasi alami oleh instruksi prompt (5 paragraf).
         commentary: commentary || null,
         horizon_days: structured.time_horizon_days ?? null,
-        model, ts: createdAt, level_set_at: createdAt, status: 'pending',
+        model, ts: createdAt, level_set_at: createdAt,
+        status: isAutoCall && structured.operational_contract?.eligible !== true ? 'canceled' : 'pending',
+        ...(isAutoCall && structured.operational_contract?.eligible !== true ? { canceled_reason: 'operation_no_trade', canceled_t: createdAt, canceled_detail: structured.operational_contract?.reason || 'operational_contract_missing' } : {}),
         source: isAutoCall ? 'auto' : 'manual',
         ...(!isAutoCall ? {
           strategy_id: structured.strategy_id ?? 'no_trade',
@@ -8812,7 +8845,10 @@ async function ohlcvAnalyzeHandler(req, res) {
             marketData: data._entry_optimization_inputs,
             decisionMs: createdAt,
           }) : undefined,
-          entry_execution: 'zone_touch_after_calendar',
+          entry_execution: operationalEntry.CONTRACT,
+          strategy_id: structured.strategy_id,
+          operational_contract: structured.operational_contract,
+          operational_status: structured.operational_contract?.eligible ? 'waiting_rejection' : 'no_trade',
           selected_sl_id: structured.selected_sl_id ?? null,
           selected_tp_id: structured.selected_tp_id ?? null,
           execution_contract: structured.execution_contract ?? null,
@@ -8875,7 +8911,10 @@ async function ohlcvAnalyzeHandler(req, res) {
           } else {
             const stalePending = log.find(x => x && x.symbol === symbol && x.status === 'pending');
             if (stalePending) {
-              if (stalePending.bias === structured.bias) {
+              if (stalePending.entry_execution !== operationalEntry.CONTRACT || stalePending.policy_v !== POLICY_VERSION || structured.operational_contract?.eligible === false) {
+                // Pending legacy tetap memakai kebijakan saat dibuat.
+                blockedByOpenPosition = true;
+              } else if (stalePending.bias === structured.bias) {
                 // Skenario Refinemen (bias searah): STAGE level baru dulu — JANGAN ditulis
                 // langsung. BUG DITEMUKAN & DIFIX (2026-08-18, audit lanjutan investigasi SL
                 // AUD/NZD): sebelum ini, refine-in-place LANGSUNG menimpa stalePending +
@@ -8963,7 +9002,10 @@ async function ohlcvAnalyzeHandler(req, res) {
                     // regime/model/commentary di blok ini. Level yang benar-benar dipasang
                     // lahir dari penilaian checklist SAAT refine, bukan generasi pertama;
                     // menyimpan skor lama di sebelah level baru itu jejak audit yang bohong.
-                    entry_execution: 'zone_touch_after_calendar',
+                    entry_execution: operationalEntry.CONTRACT,
+                    strategy_id: structured.strategy_id,
+                    operational_contract: structured.operational_contract,
+                    operational_status: structured.operational_contract?.eligible ? 'waiting_rejection' : 'no_trade',
                     selected_sl_id: structured.selected_sl_id ?? null,
                     selected_tp_id: structured.selected_tp_id ?? null,
                     execution_contract: structured.execution_contract ?? null,
@@ -9151,7 +9193,7 @@ async function ohlcvAnalyzeHandler(req, res) {
             shouldSaveLog = true;
             // isAutoCall: cabang ini JUGA dieksekusi manual (lihat komentar di atas) —
             // notifikasi Telegram HANYA untuk auto (setup_log_auto:v1), isolasi U-7.
-            if (isAutoCall) _notifyAutoEntryTelegram(newEntry, 'pending').catch(() => {});
+            if (isAutoCall && newEntry.operational_contract?.eligible) _notifyAutoEntryTelegram(newEntry, 'pending').catch(() => {});
           }
           if (shouldSaveLog) await persistSetupLog(setupLogKey, log.slice(0, 200));
         }
@@ -9229,7 +9271,7 @@ async function ohlcvAnalyzeHandler(req, res) {
               Object.assign(target, refineCandidate.fields);
               redisCmd('INCR', 'auto_guard_stats:saved_refine').catch(() => {});
               await persistSetupLog(setupLogKey, log2.slice(0, 200));
-              _notifyAutoEntryTelegram(target, 'pending', { refined: true }).catch(() => {});
+              if (target.operational_contract?.eligible) _notifyAutoEntryTelegram(target, 'pending', { refined: true }).catch(() => {});
             }
           } else if (dup2 || openNow) {
             console.log(`auto-entry ${symbol}: state berubah selama Gate A berjalan (race_detected) — dibuang, tidak ditulis dobel`);
@@ -9247,7 +9289,7 @@ async function ohlcvAnalyzeHandler(req, res) {
             const newEntry2 = buildNewSetupEntry();
             log2.unshift(newEntry2);
             await persistSetupLog(setupLogKey, log2.slice(0, 200));
-            _notifyAutoEntryTelegram(newEntry2, 'pending').catch(() => {});
+            if (newEntry2.operational_contract?.eligible) _notifyAutoEntryTelegram(newEntry2, 'pending').catch(() => {});
           }
         } catch (e) { console.warn('setup_log write failed (fase 2):', e.message); }
         finally { redisCmd('DEL', lockKey).catch(() => {}); } }

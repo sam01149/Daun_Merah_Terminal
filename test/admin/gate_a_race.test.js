@@ -126,6 +126,11 @@ function makeAnalyzeFetchStub(store, { criticVerdict = 'lanjut', onCriticCall = 
 }
 
 async function withEnv(vars, fn) {
+  // Regresi ini mengisolasi gate lama. Classifier dan dampak eksekusinya
+  // diuji tanpa stub di aatas_operational_entry.test.js.
+  const op = require('../../api/_aatas_operational_entry');
+  const originalBuildContract = op.buildContract;
+  op.buildContract = (...args) => ({...originalBuildContract(...args), eligible:true, reason:null, strategy:'momentum'});
   const prev = { CRON_SECRET: process.env.CRON_SECRET, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY };
   delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY;
   Object.assign(process.env, vars);
@@ -133,6 +138,7 @@ async function withEnv(vars, fn) {
   marketHours.isFxMarketOpen = () => true;
   try { return await fn(); }
   finally {
+    op.buildContract = originalBuildContract;
     marketHours.isFxMarketOpen = origIsOpen;
     delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY;
     for (const k of Object.keys(prev)) { if (prev[k] !== undefined) process.env[k] = prev[k]; }
@@ -243,7 +249,7 @@ test('Flip-cancel lalu Gate A batalkan kandidat baru: pembatalan stalePending TE
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
       'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
-      'setup_log_auto:v1': JSON.stringify([stalePending]),
+      'setup_log_auto:v1': JSON.stringify([currentPending(stalePending)]),
     });
     const origFetch = global.fetch;
     // AI_JSON_BEARISH (bias='bearish') berlawanan dgn stalePending.bias='bullish', conflict
@@ -415,7 +421,7 @@ test('Refine-in-place SEKARANG lewat Gate A juga: verdict lanjut -> level baru d
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
       'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
-      'setup_log_auto:v1': JSON.stringify([oldPending]),
+      'setup_log_auto:v1': JSON.stringify([currentPending(oldPending)]),
     });
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, { criticVerdict: 'lanjut' });
@@ -457,7 +463,7 @@ test('Refine-in-place: Gate A verdict batalkan -> level LAMA dipertahankan, refi
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
       'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
-      'setup_log_auto:v1': JSON.stringify([oldPending]),
+      'setup_log_auto:v1': JSON.stringify([currentPending(oldPending)]),
     });
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store, { criticVerdict: 'batalkan' });
@@ -482,3 +488,12 @@ test('Refine-in-place: Gate A verdict batalkan -> level LAMA dipertahankan, refi
     } finally { global.fetch = origFetch; }
   });
 });
+
+// Fixture untuk pengujian refine/flip kontrak operasional saat ini.
+function currentPending(st) {
+ const nums=String(st.entry_zone).match(/\d+(?:\.\d+)?/g).map(Number);
+ return {...st, policy_v:require('../../api/_auto_entry_guard').POLICY_VERSION, entry_execution:'aatas_rejection_h1_v1', operational_contract:{
+  kind:'aatas_rejection_h1_v1',eligible:true,strategy:'momentum',decided_at:st.ts,
+  zone:{low:Math.min(...nums),high:Math.max(...nums)},planned_sl:Number(st.sl),planned_tp:Number(st.tp),environment:{environment:'trend'}
+ }};
+}

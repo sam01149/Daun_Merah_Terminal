@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 467 - Tinjauan kritis laporan audit AI lain)
+> **Last updated:** 2026-11-07 (Session 469 - Penunjuk perbaikan operasional AATAS)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 469 (2026-11-07) — Penunjuk operasional AATAS
+
+Konsol developer memakai kontrak operasional AATAS v64 dan rincian statistik kumulatif per kebijakan/strategi, menggantikan panel shadow aktif. Rincian perubahan auto-entry, perlindungan histori, tes dan batas verifikasi ada di `professional_llm_trader/changelog.md` Session 469; sesuai routing ATURAN §2, rincian auto-entry tetap di folder tersebut.
 
 ## Changelog Session 467 (2026-11-07) - Tinjauan kritis laporan audit AI lain
 

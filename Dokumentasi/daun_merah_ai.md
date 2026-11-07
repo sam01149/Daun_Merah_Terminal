@@ -21,6 +21,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ---
 
+**AATAS operasional 7 November 2026 (PLAN AI, policy 64/prompt 15).** Provider, dua call analisa dan Gate A beserta quota tetap. Call 1 diminta maksimal empat evidence_claims ke fakta rilis bertanggal; stale/seed disaring dari blok rilis auto. Call 2 mengikuti kontrak rejection H1; classifier, sesi, fill dan choppy management dihitung kode, tanpa call AI tambahan atau shadow. Review berita posisi open menerima tesis/fakta/skenario awal. Detail khusus auto-entry di professional_llm_trader/changelog.md S469. Evaluasi lokal/live smoke tidak memanggil model berbayar.
+
 **Routing aktif 2026-11-04 (S450).** Seluruh fitur bermodel DeepSeek kembali memakai `https://api.deepseek.com/chat/completions` dengan `DEEPSEEK_API_KEY`. Model, prompt, timeout, fallback Gemini, serta pemisahan publik/eksperimen tetap. Pool aktif: `deepseek` 50 request/hari dan `deepseek_experimental` 35 request/hari; circuit `ai:deepseek` dan suffix eksperimen/diagnostik. `DEEPSEEK_DISABLED=true` tetap sakelar nonaktif. `deepseek_balance` kembali membaca saldo resmi. Relink tidak aktif: uji mini berhasil tetapi analisa penuh timeout 20/25/50 detik; keputusan user adalah kembali ke resmi setelah top-up. Dukungan resolver/pool Relink tetap tersimpan tetapi tidak digunakan tanpa `RELINK_AI`; jangan aktifkan ulang tanpa instruksi user.
 
 ## 1. Cara baca dokumen ini (ringkas dulu, baru detail)

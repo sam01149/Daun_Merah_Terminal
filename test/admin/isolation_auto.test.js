@@ -47,6 +47,11 @@ function fakeReqRes({ action, method = 'POST', headers = {}, body = '', query = 
 }
 
 async function withEnv(vars, fn) {
+  // Regresi ini mengisolasi gate lama. Classifier dan dampak eksekusinya
+  // diuji tanpa stub di aatas_operational_entry.test.js.
+  const op = require('../../api/_aatas_operational_entry');
+  const originalBuildContract = op.buildContract;
+  op.buildContract = (...args) => ({...originalBuildContract(...args), eligible:true, reason:null, strategy:'momentum'});
   const prev = { CRON_SECRET: process.env.CRON_SECRET, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY, GROQ_API_KEY: process.env.GROQ_API_KEY };
   delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY; delete process.env.GROQ_API_KEY;
   Object.assign(process.env, vars);
@@ -54,6 +59,7 @@ async function withEnv(vars, fn) {
   marketHours.isFxMarketOpen = () => true;
   try { return await fn(); }
   finally {
+    op.buildContract = originalBuildContract;
     marketHours.isFxMarketOpen = origIsOpen;
     delete process.env.CRON_SECRET; delete process.env.DEEPSEEK_API_KEY; delete process.env.GROQ_API_KEY;
     for (const k of Object.keys(prev)) { if (prev[k] !== undefined) process.env[k] = prev[k]; }
@@ -239,7 +245,7 @@ test('PLAN U-3 lanjutan: auto=1 dengan PENDING lama bias SEARAH di symbol sama -
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
       'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
-      'setup_log_auto:v1': JSON.stringify([oldPending]),
+      'setup_log_auto:v1': JSON.stringify([currentPending(oldPending)]),
     });
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store);
@@ -285,7 +291,7 @@ test('PLAN U-3 lanjutan: auto=1 dengan PENDING lama bias BERLAWANAN (tanpa whips
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
       'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
-      'setup_log_auto:v1': JSON.stringify([oldPending]),
+      'setup_log_auto:v1': JSON.stringify([currentPending(oldPending)]),
     });
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store);
@@ -356,7 +362,7 @@ test('PLAN U-3 lanjutan: call MANUAL dengan pending lama di symbol sama -> TIDAK
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
       'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
-      'setup_log:v1': JSON.stringify([oldPending]),
+      'setup_log:v1': JSON.stringify([currentPending(oldPending)]),
     });
     const origFetch = global.fetch;
     global.fetch = makeAnalyzeFetchStub(store);
@@ -461,7 +467,7 @@ test('PLAN W: refinement in-place (bias sama) memperbarui 4 field mentah ke gene
     const store = makeStore({
       'ohlcv_fresh:GBPUSD=X': '1',
       'ohlcv:GBPUSD=X:1h': JSON.stringify(mkTrendCandles(1.30, 1.28)),
-      'setup_log_auto:v1': JSON.stringify([oldPending]),
+      'setup_log_auto:v1': JSON.stringify([currentPending(oldPending)]),
     });
     const rawText = mkAiRawText({ conflict: 'waktu', conflict_note: 'catatan generasi kedua' });
     const origFetch = global.fetch;
@@ -1103,3 +1109,12 @@ test('Audit S218 (kontrol negatif): call PUBLIK (manual) sukses -> ai_budget:dee
 // sudah dites tuntas lewat DeepSeek di atas ("PLAN V-3: 3x call auto=1 gagal beruntun
 // -> circuit:ai:deepseek:experimental OPEN..." dkk), jadi test khusus SambaNova ini
 // dihapus alih-alih dipertahankan untuk mekanisme yang sudah tidak ada.
+
+// Fixture untuk pengujian refine/flip kontrak operasional saat ini.
+function currentPending(st) {
+ const nums=String(st.entry_zone).match(/\d+(?:\.\d+)?/g).map(Number);
+ return {...st, policy_v:require('../../api/_auto_entry_guard').POLICY_VERSION, entry_execution:'aatas_rejection_h1_v1', operational_contract:{
+  kind:'aatas_rejection_h1_v1',eligible:true,strategy:'momentum',decided_at:st.ts,
+  zone:{low:Math.min(...nums),high:Math.max(...nums)},planned_sl:Number(st.sl),planned_tp:Number(st.tp),environment:{environment:'trend'}
+ }};
+}

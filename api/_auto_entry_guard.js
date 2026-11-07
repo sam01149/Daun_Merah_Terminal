@@ -243,7 +243,7 @@ function isClosedEarly(s) {
 // sama: managed_status apa pun yang sudah resolve = bukan eksposur lagi.
 const MANAGED_RESOLVED = new Set(['sl', 'tp', 'ambiguous', 'closed_early']);
 function isManagedResolved(s) {
-  return !!(s && s.intervention && MANAGED_RESOLVED.has(s.managed_status));
+  return !!(s && ((s.intervention && MANAGED_RESOLVED.has(s.managed_status)) || (s.entry_execution === 'aatas_rejection_h1_v1' && MANAGED_RESOLVED.has(s.choppy_management?.status))));
 }
 function isLiveExposure(s) {
   return !!(s && EXPOSURE_BINDING_STATUSES.has(s.status) && !isClosedEarly(s) && !isManagedResolved(s));
@@ -590,6 +590,7 @@ const POLICY_EPOCHS = [
   { v: 61, from: '2026-10-12T13:27:21Z', kind: 'fix', impact: 'context', label: 'PLAN AF-3: keluarkan COT dan retail sentiment secara struktural dari input Call 1; positioning tetap tersedia pada snapshot audit, Gate A/Kritikus, dan jalur manual publik' },
   { v: 62, from: '2026-10-12T13:29:08Z', kind: 'fix', impact: 'context', label: 'PLAN AF-4: track record gabungan manual+auto di jalur auto menjadi statistik deskriptif mentah, bukan mandat otomatis untuk memperketat atau melonggarkan trigger, skor, gate, maupun verdict Gate A' },
   { v: 63, from: '2026-10-23T03:20:48Z', kind: 'policy', impact: 'entry', label: 'S404: generator thesis Call 3 Ringkasan dihentikan; AATAS XAU tidak lagi menerima arah terkunci dari latest_thesis dan menilai arah lewat Call 1 makro-first miliknya sendiri' },
+  { v: 64, from: '2026-11-07T08:59:37Z', kind: 'policy', impact: 'entry', label: 'PLAN AI: kondisi trend/choppy deterministik, rejection H1 dan fill open berikutnya, sesi London/NY DST, validasi fakta serta reanalisa setelah event; kontrak baru terpisah dari legacy, statistik gabungan tidak direset' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
