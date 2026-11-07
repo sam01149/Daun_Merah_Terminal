@@ -24,6 +24,14 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-07] NZD: data resmi ada, pipeline Dashboard belum lengkap
+
+Audit S459 membedakan input yang hilang dari data yang tidak dipublikasikan. [Stats NZ September 2026](https://www.stats.govt.nz/information-releases/consumers-price-index-september-2026-quarter/) mengonfirmasi headline 3.7% YoY/previous 4.1%; angka 2.9% adalah CPI yang mengecualikan food group, household energy subgroup dan vehicle fuels, bukan generic core tanpa definisi. Untuk memasukkannya, identitas seri, current/previous, periode, tanggal rilis dan pembaruan berkelanjutan perlu eksplisit. [RBNZ Prices M1](https://www.rbnz.govt.nz/statistics/series/economic-indicators/prices) menjelaskan factor/sectoral factor model berbeda dan berpotensi revisi; jangan menganggap semua underlying saling identik.
+
+[RBNZ keputusan 28 Oktober](https://www.rbnz.govt.nz/news-and-events/news/2026/10/ocr-held-at-2-75-percent) memiliki bukti kebijakan substantif yang tidak ditangkap trail cb_bias NZD saat audit. Hold 2.75% dengan kemungkinan pengetatan lanjutan bersyarat tidak bisa direduksi menjadi dovish hanya karena tidak naik sesuai ekspektasi sebagian pelaku pasar. Perbaikan sumber perlu menjaga perbedaan keputusan saat ini, panduan ke depan dan surprise pasar. Rekomendasi: ingestion underlying Stats NZ yang berdefinisi jelas dan pengumpulan statement RBNZ bertanggal, disertai writer guard untuk judul probabilitas tanpa isi. Belum diintegrasikan pada audit ini.
+
+
+
 ### [2026-11-07] Batas scope terbaru: pandangan institusi mingguan saja
 
 User secara eksplisit meminta fokus mingguan dan filter setelah membahas pelengkap lintas horizon. Untuk Dashboard saat ini, monthly/near-term tanpa pekan dan teknikal tidak digabung sebagai suara atau konteks alternatif pada kolom institusi. Implementasi S458 mempertahankan bukti weekly yang berlaku dan status kosong saat tidak cukup. Usulan lintas horizon di percakapan sebelumnya tidak menjadi keputusan produksi.

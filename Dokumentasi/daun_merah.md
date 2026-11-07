@@ -11,12 +11,24 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 458 - Filter pandangan institusi mingguan)
+> **Last updated:** 2026-11-07 (Session 459 - Audit kelengkapan NZD)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 459 (2026-11-07) - Audit kelengkapan inflasi dan RBNZ pada NZD
+
+**Permintaan dan batas.** User meminta memeriksa mengapa inflasi dan bank sentral NZD kurang. Audit kode, data produksi dan sumber primer; tidak mengganti formula, menonaktifkan guard, menambal Redis manual, atau menambah collector dalam tugas pemeriksaan ini. Scope SOP audit: diagnosis dan verifikasi; kelengkapan sumber memerlukan pekerjaan ingestion tersendiri.
+
+**Inflasi: sebab terkonfirmasi.** Snapshot produksi 7 Nov 07:58 WIB (.cache/nzd-audit/before.json) mempunyai headline consumer_prices:yoy:quarterly, periode 2026-Q3, actual 3.7/previous 4.1, released 21 Okt 21:45 UTC, observed historical snapshot. Komponen underlying missing_or_stale, coverage partial/available 1/required 2. _macro_candidate membutuhkan headline dan underlying YoY pada periode/cadence sama. Jadi bukan seluruh CPI hilang dan bukan keliru menerapkan ritme monthly pada NZD. Data headline cocok Stats NZ. Halaman resmi September 2026 (.cache/nzd-audit/statsnz-sep2026.html; fetch HTTP 200) juga mencantumkan CPI excluding food group, household energy subgroup and vehicle fuels 2.9% YoY; ini definisi spesifik dan belum terhubung ke store kondisi. Jangan menggantinya dengan non-tradables, PPI atau sectoral factor tanpa mempertahankan definisinya.
+
+**Bank sentral: sebab terkonfirmasi.** cb_bias.NZD = Cautious Dovish/Medium, updated 6 Nov 12:32 UTC, tetapi source_headlines hanya RBNZ Interest Rate Probabilities dengan description null. buildCentralBank menghasilkan adapter dari label lama; _macro_candidate membuang evidence placeholder/probabilities, lalu mengembalikan insufficient/dated_substantive_policy_evidence_missing. Guard bekerja sesuai desain. Writer market-digest masih memilih recentItems dengan keyword bank dan belum membatasi freshHeadlines ke bukti substantif sebelum menyimpan bias; prompt/description saja tidak menjamin provenance cukup. Tidak dapat menetapkan kapan seluruh trail lama menjadi placeholder hanya dari snapshot ini.
+
+**Cocok sumber resmi.** RBNZ decision list dan [media release 28 Okt](https://www.rbnz.govt.nz/news-and-events/news/2026/10/ocr-held-at-2-75-percent) mengonfirmasi hold 2.75% (voting 4-3). Panduan menyatakan pengetatan lanjutan mungkin diperlukan dan bersyarat pada outlook. Hold tidak otomatis dovish; kejutan terhadap ekspektasi pasar berbeda dari arah panduan kebijakan. Tidak mengklaim hasil klasifikasi pengganti sudah diterapkan. Data resmi ada, tetapi connector/bukti Dashboard belum lengkap.
+
+**Hasil.** Penyebab kedua sel kosong terkonfirmasi; model tidak boleh diisi hanya agar panah muncul. Rincian sumber/arti indikator ada di riset, pekerjaan ingestion yang masih terbuka diperbarui pada progress lokal. Tidak ada perubahan runtime atau panggilan AI berbayar. Pengujian regresi tetap diwajibkan sebelum push dokumentasi.
 
 ## Changelog Session 458 (2026-11-07) - Filter pandangan institusi mingguan
 
