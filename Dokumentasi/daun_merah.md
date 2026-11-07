@@ -14,7 +14,7 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 > **Last updated:** 2026-11-07 (Session 474 - Audit prompt Analisa manual)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
-> **Struktur dokumentasi:** file `daun_merah*.md` sekarang di folder [Dokumentasi/](Dokumentasi/) (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
+> **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
 
@@ -6349,6 +6349,16 @@ Session 139 mewire `thesis_alerts` ke JURNAL/CHECKLIST/SIZING, tapi user menahan
 
 ## Ringkasan Proyek
 
+> **Batas referensi lama (ditandai S475, 2026-11-07).** Bagian referensi mulai
+> di sini hingga akhir file merupakan akumulasi snapshot sejak awal proyek,
+> bukan inventaris kondisi produksi yang seluruhnya telah diverifikasi ulang.
+> Beberapa tabel masih menyebut provider/fitur yang sudah dicabut oleh sesi berikutnya.
+> Gunakan sebagai peta istilah dan alasan historis, lalu cocokkan dengan changelog
+> terbaru serta source code. Konfigurasi AI aktif: [daun_merah_ai.md](daun_merah_ai.md);
+> vendor aktif: [daun_merah_vendor.md](daun_merah_vendor.md); aturan aktif: ATURAN.md.
+> Status pekerjaan: plan/progress lokal sesuai cakupan. Judul lama seperti
+> Current, Known Issues, Constraint Absolut dan Backlog tidak mengalahkan sumber tersebut.
+
 Daun Merah adalah forex news PWA (Progressive Web App) untuk trader forex Indonesia bergaya macro discretionary. Sebelumnya bernama FJFeed. Di-deploy di Vercel, single-file frontend (`index.html`) + Vercel Serverless Functions di folder `api/`.
 
 **Deployment target:** Vercel Hobby plan (max 12 serverless functions) + Upstash Redis REST API
@@ -9264,6 +9274,10 @@ Call 1: SambaNova DeepSeek-V3.2 akun 2 (primary)
 ---
 
 ## Known Issues (P1-P3, belum difix)
+
+> **Snapshot historis, bukan daftar bug aktif.** Status tiap poin di bawah belum
+> diverifikasi ulang pada audit struktur S475. Cari riwayat penyelesaiannya sebelum
+> mengerjakan; daftar tertunda aktif berada pada plan/progress lokal sesuai cakupan.
 
 ### P1 — Risiko akurasi/keamanan modal
 - **Push subscription key collision** — ~~sudah difix 2026-05-12~~ (SHA-256 via `subKey()`).

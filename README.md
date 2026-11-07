@@ -4,6 +4,10 @@
 
 # Daun Merah — Financial Feed PWA
 
+> Peta baca dan pembagian konteks: [Dokumentasi/README.md](Dokumentasi/README.md).
+> Uraian/diagram di README root ini merupakan referensi lama; provider dan fitur
+> aktif harus dicocokkan dengan dokumen pemilik serta source code terkini.
+
 Agregator berita finansial real-time yang dirancang khusus untuk trader forex/XAU Indonesia bergaya macro discretionary. Aplikasi ini menggabungkan data makroekonomi bank sentral, sentimen institusional (COT), indikator teknikal multitimeframe, serta analisis fundamental terstruktur yang ditenagai oleh kecerdasan buatan (AI) multi-provider.
 
 Aplikasi ini menggunakan arsitektur Single-Page PWA pada frontend, Vercel Serverless Functions (Node.js CommonJS) sebagai backend API, Upstash Redis untuk caching dan state persistence, serta Railway VPS Daemon sebagai background processor real-time.
