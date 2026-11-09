@@ -4939,7 +4939,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.09.3';
+const APP_VERSION = '2026.11.09.4';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -7238,7 +7238,7 @@ function renderAnalisaFollowUp() {
   if (!message) {
     if (analisaFollowUpWriting.has(symbol)) message = 'Menyimpan pengaturan...';
     else if (!state) message = 'Memuat pengaturan...';
-    else if (!state.enabled) message = `Aktifkan untuk langsung menganalisis pair ini dan mengulang pada ${schedule}`;
+    else if (!state.enabled) message = 'Aktifkan untuk analisis terjadwal (07.02, 14.02, dan 19.32 WIB) pada pair saat pasar buka.';
     else if (state.market_closed) message = `Pasar tutup. Follow Up menunggu jadwal saat pasar buka. ${schedule}`;
     else if (state.status === 'running') message = 'Sedang menganalisis pair ini...';
     else if (state.status === 'queued') message = `Menunggu analisa pertama. Jadwal ${schedule}`;
