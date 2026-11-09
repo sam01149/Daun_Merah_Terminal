@@ -168,7 +168,7 @@ function assess(result, { evidence, input, symbol, story = '', macroAvailable = 
 
 function plannedTrigger(result) {
   if (!result.trigger_contract || !result.entry_zone) return null;
-  const body=result.strategy_id==='momentum'?' Body candle searah 0,5–1 ATR14 H1; lewatkan bila lebih besar. Referensi SL berada di balik wick pemicu.':'';
+  const body=result.strategy_id==='momentum'?' Referensi body candle searah 0,5–1 ATR14 H1; body yang lebih besar berada di luar rentang tersebut. Referensi SL berada di balik wick pemicu.':'';
   return `Pemicu skenario adalah candle H1 selesai yang menyentuh dan menolak zona ${result.entry_zone}, searah ${result.bias}, pada sesi London atau New York. Pemicu ini memakai pola rejection.${body} Ini rencana bersyarat; candle pemicu belum diverifikasi.`;
 }
 

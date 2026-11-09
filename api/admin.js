@@ -6406,9 +6406,13 @@ function _fundReleaseDateMs(ind) {
 // seed tanpa tanggal.
 function _formatFundIndicatorLines(indicators, nowMs, cbLive) {
   if (!indicators || typeof indicators !== 'object') return [];
+  const clean = value => {
+    if (value == null) return null;
+    const text = String(value).trim();
+    return !text || /^(?:-|—|null|undefined|[+-]?(?:nan|infinity)\s*%?)$/i.test(text) ? null : text;
+  };
   const entries = Object.entries(indicators)
-    .filter(([k, v]) => k && v && typeof v === 'object' && v.actual != null && String(v.actual).trim() !== '' && String(v.actual).trim() !== '—');
-  const clean = s => (s == null) ? null : (String(s).trim() && !['-', '—', 'null'].includes(String(s).trim()) ? String(s).trim() : null);
+    .filter(([key, value]) => key && value && typeof value === 'object' && clean(value.actual) !== null);
   const used = new Set();
   const lines = [];
   // Overlay suku bunga bank sentral (lihat komentar fungsi).

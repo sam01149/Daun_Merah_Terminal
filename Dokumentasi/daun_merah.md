@@ -18,6 +18,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
 
+## Changelog Session 481 (2026-11-09) — Koreksi data dan bahasa Analisa
+
+Pemeriksaan konteks produksi NZD/USD menemukan GDP Nowcast `NaN%` masuk ke input model. Formatter rilis kini menghilangkan nilai nonfinite pada actual, forecast dan previous. Referensi trigger momentum menjelaskan rentang body sebagai informasi tanpa perintah melewatkan transaksi. Suite 1.653 tes lulus, termasuk regresi data nonfinite. Bank sentral NZ mengonfirmasi OCR 2,75% dan BLS menjadwalkan CPI AS pada 10 November pukul 08.30 ET. Verifikasi tersebut tidak membuktikan seluruh klaim narasi model.
+
 ## Changelog Session 480 (2026-11-09) — Tampilan hasil Analisa
 
 Hasil prime-v2/v3 tidak lagi diberi judul paragraf berdasarkan urutan yang dapat salah. Ringkasan sistem yang sudah tampil di kartu skenario tidak diulang dalam analisa detail. RR ditampilkan dengan dua desimal di kartu, panel, PDF dan ringkasan baru, sementara angka perhitungan tetap utuh. Hasil tersimpan tetap dapat ditampilkan. Versi aplikasi dan service worker 2026.11.09.6. Suite penuh 1.652 tes lulus.

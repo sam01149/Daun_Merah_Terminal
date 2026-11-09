@@ -202,6 +202,16 @@ test('AATAS_PROMPT_VERSION: v16 menandai alur keputusan profesional', () => {
   assert.equal(AATAS_PROMPT_VERSION, 16);
 });
 
+test('rilis nonfinite tidak masuk konteks ekonomi model', () => {
+  const lines = _formatFundIndicatorLines({
+    'GDP Nowcast': { actual: 'NaN%', previous: '3.2%' },
+    'GDP QoQ': { actual: '0.2%', forecast: 'Infinity%', previous: '0.9%' },
+  }, NOW_T1).join('\n');
+  assert.doesNotMatch(lines, /NaN|Infinity|Nowcast/);
+  assert.match(lines, /0.2%/);
+  assert.match(lines, /previous 0.9%/);
+});
+
 test('Tahap 3 jalan tengah: auto tetap RR 1:2; manual melaporkan RR aktual tanpa membawa instruksi fib auto', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const cap = [];
