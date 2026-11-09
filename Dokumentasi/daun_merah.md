@@ -26,6 +26,8 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Verifikasi.** 1.652/1.652 tes lulus. Regresi handler dan Follow Up memeriksa entry, SL, TP, narasi, dan RR 1:1,4, serta kondisi bukti dan level yang belum lengkap. Chromium lokal pada 1.440 px dan 390 px menampilkan level, RR dan narasi, menandai cache lama, dan tidak mengalami overflow. Implementasi dilakukan di worktree terpisah berbasis origin/main untuk melindungi perubahan lokal S477.
 
+**Produksi.** Commit `83080f2` tersedia di `main`. Pemicu otomatis tidak membuat deployment untuk SHA tersebut. Vercel membangun SHA yang sama langsung dari repositori Git yang terhubung. HTML dan service worker menyajikan versi 2026.11.09.5. Endpoint konteks NZD/USD menjawab HTTP 200 dengan `prime-v3`. Satu Analisa NZD/USD lewat DeepSeek V4 Flash menjawab HTTP 200 dan tersimpan di cache dengan narasi. Urutan level dari model tidak konsisten dengan arah skenario, sehingga angka level dan RR tidak disajikan. RR 1:1,4 dengan level valid diverifikasi lewat regresi handler, Follow Up dan Chromium, bukan dari panggilan model produksi tersebut.
+
 ## Changelog Session 478 (2026-11-09) — Verifikasi NO TRADE NZD/USD
 
 **Bukti produksi.** Pembacaan cache Analisa NZD/USD mencocokkan hasil 9 November 08:54:52 WIB pada tangkapan layar: `deepseek-v4-flash`, bias dan arah makro bearish, status `rejected`, alasan RR pada sisi entry paling konservatif kurang dari minimum 1:2. Entry, SL, TP, dan nilai RR semuanya kosong pada hasil yang disimpan. Angka RR aktual kandidat tidak bisa dipulihkan dari hasil ini. Pembacaan cache tidak menjalankan AI baru atau membuat setup.
