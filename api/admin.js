@@ -5503,7 +5503,7 @@ const MANUAL_MIN_RR = 2;
 const MANUAL_STRATEGIES = new Set(['momentum', 'range', 'tactical_fade', 'no_trade']);
 
 function _manualTriggerContract(strategyId) {
-  const common = { timeframe: '1h', session: 'london_or_new_york', rejection_required: true, breakout_allowed: false, min_rr: MANUAL_MIN_RR };
+  const common = { timeframe: '1h', session: 'london_or_new_york', rejection_required: true, breakout_allowed: false };
   if (strategyId === 'momentum') return { ...common, body_atr_min: 0.5, body_atr_max: 1, stop_rule: 'beyond_rejection_wick' };
   if (strategyId === 'range') return {
     ...common, body_atr_min: null, body_atr_max: null, rsi14_h1_divergence: 'recommended_optional',
@@ -5521,50 +5521,48 @@ function _enforceManualAcademyContract(structured, { lockedDirection = null, ...
   const result = { ...structured, analysis_policy_v: MANUAL_ANALYSIS_POLICY_VERSION };
   const strategyId = String(result.strategy_id || '').trim().toLowerCase();
   const macroDirection = String(result.macro_direction || '').trim().toLowerCase();
-  result.strategy_id = MANUAL_STRATEGIES.has(strategyId) ? strategyId : 'no_trade';
-  result.macro_direction = ['bullish', 'bearish', 'neutral', 'mixed', 'no_trade'].includes(macroDirection) ? macroDirection : 'no_trade';
-  result.macro_reason = typeof result.macro_reason === 'string' && result.macro_reason.trim() ? result.macro_reason.trim() : null;
-  result.trigger_contract = _manualTriggerContract(result.strategy_id);
-  let rejectReason = null;
-  if (result.strategy_id === 'no_trade') rejectReason = result.academy_contract_status === 'rejected' && result.academy_reject_reason
-    ? result.academy_reject_reason
-    : typeof result.no_trade_reason === 'string' && result.no_trade_reason.trim()
-      ? `Alasan model: ${result.no_trade_reason.trim().slice(0, 700)}`
-      : strategyId ? 'Strategi menetapkan no_trade.' : 'strategy_id tidak valid atau tidak tersedia.';
-  if (!rejectReason && lockedDirection && result.macro_direction !== lockedDirection) {
-    rejectReason = `Arah makro model tidak cocok dengan pengunci data (${lockedDirection}).`;
+  result.strategy_id = MANUAL_STRATEGIES.has(strategyId) && strategyId !== 'no_trade' ? strategyId : null;
+  result.macro_direction = ['bullish', 'bearish', 'neutral', 'mixed'].includes(macroDirection) ? macroDirection : null;
+  result.macro_reason = typeof result.macro_reason === 'string' ? result.macro_reason.trim() || null : null;
+
+  const observations = [];
+  if (lockedDirection && result.macro_direction !== lockedDirection) {
+    observations.push(`Arah berdasarkan data bank sentral: ${lockedDirection}.`);
   }
-  if (!rejectReason && result.strategy_id === 'momentum') {
-    if (!['bullish', 'bearish'].includes(result.macro_direction)) rejectReason = 'Momentum membutuhkan arah makro yang tegas.';
-    else if (result.bias !== result.macro_direction) rejectReason = 'Momentum tidak boleh melawan arah makro.';
+  if (result.strategy_id === 'momentum' && result.bias !== result.macro_direction) {
+    observations.push('Arah skenario momentum berbeda dari arah makro.');
   }
-  if (!rejectReason && !['bullish', 'bearish'].includes(result.bias)) {
-    rejectReason = 'Setup aktif membutuhkan arah trade bullish atau bearish yang tegas.';
-  }
-  if (!rejectReason && !result.macro_reason) rejectReason = 'Setup aktif membutuhkan alasan makro yang eksplisit.';
-  if (!rejectReason && ![result.entry_zone, result.sl, result.tp].every(v => v !== null && v !== undefined && String(v).trim())) {
-    rejectReason = 'Setup aktif membutuhkan entry, stop loss, dan take profit yang lengkap.';
-  }
-  if (!rejectReason) {
+  const measurement = manualAnalysis.measureScenario(result);
+  const hasScenario = !measurement.reason;
+  if (!hasScenario) {
+    const fields = [['entry_zone', 2], ['sl', 1], ['tp', 1]];
+    const allParsed = fields.every(([key, max]) => manualAnalysis.prices(result[key], max));
+    if (fields.some(([key]) => result[key] != null)) observations.push(measurement.reason);
+    for (const [key, max] of fields) {
+      if (allParsed || !manualAnalysis.prices(result[key], max)) result[key] = null;
+    }
+    result.invalidation_condition = null;
+    result.invalidation_trigger = null;
+  } else {
     const assessment = manualAnalysis.assess(result, context);
-    rejectReason = assessment.reason || null;
-    result.risk_reward = rejectReason ? null : Math.round(assessment.rr * 100) / 100;
+    if (assessment.reason) observations.push(assessment.reason);
+    if (Number.isFinite(context.nowPrice) && context.nowPrice <= Math.min(...measurement.sl, ...measurement.tp)) {
+      observations.push('Harga acuan berada di atau di bawah batas bawah skenario.');
+    } else if (Number.isFinite(context.nowPrice) && context.nowPrice >= Math.max(...measurement.sl, ...measurement.tp)) {
+      observations.push('Harga acuan berada di atau di atas batas atas skenario.');
+    }
   }
-  result.academy_contract_status = rejectReason ? 'rejected' : 'conditional';
-  result.academy_reject_reason = rejectReason;
-  result.trigger_state = rejectReason ? 'unavailable' : 'awaiting_closed_h1_rejection';
+  if (!result.macro_reason) observations.push('Alasan makro belum tersedia.');
+  if (context.formatIssue) observations.push(context.formatIssue);
+  result.academy_contract_status = hasScenario ? 'conditional' : 'informational';
+  result.academy_reject_reason = null;
+  result.analysis_observations = observations;
+  result.risk_reward = hasScenario ? Number(measurement.rr.toPrecision(12)) : null;
+  result.trigger_contract = hasScenario ? _manualTriggerContract(result.strategy_id) : null;
+  result.trigger_state = result.trigger_contract ? 'awaiting_closed_h1_rejection' : 'unavailable';
   if (result.strategy_id === 'tactical_fade') {
     result.time_horizon_days = null;
     result.trade_horizon = 'short_term_correction';
-  }
-  if (rejectReason) {
-    result.strategy_id = 'no_trade';
-    result.trigger_contract = null;
-    result.entry_zone = null;
-    result.entry_basis = null;
-    result.sl = null;
-    result.tp = null;
-    result.risk_reward = null;
   }
   result.trigger = manualAnalysis.plannedTrigger(result);
   return result;
@@ -7768,9 +7766,9 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
     const levelCandidates = confZones
       // PLAN AC Tahap 3 bagian 1 (2026-09-06, POLICY_EPOCHS v45): jalur auto menyaring
       // kandidat TP dengan AATAS_MIN_RR (2) supaya menu yang dilihat Call 2 konsisten
-      // dengan gate Step 6 — manual Prime juga memakai minRr 2. Menu yang sama
+      // dengan gate Step 6. Manual menyajikan semua kandidat struktur. Menu auto
       // dipakai snap-atau-tolak di hilir, jadi TP di luar menu auto ikut ditolak.
-      ? computeLevelCandidates({ zones: confZones, atrD: (data.d1_ext?.available ? data.d1_ext.atr_d : null), isXau: data.is_xau, dec: data.dec, minRr: isAutoCall ? AATAS_MIN_RR : MANUAL_MIN_RR })
+      ? computeLevelCandidates({ zones: confZones, atrD: (data.d1_ext?.available ? data.d1_ext.atr_d : null), isXau: data.is_xau, dec: data.dec, minRr: isAutoCall ? AATAS_MIN_RR : 0 })
       : null;
     const levelBlock = _formatLevelCandidatesBlock(levelCandidates);
     const manualLevelBlock = levelBlock ? '[KANDIDAT SL/TP — referensi struktur untuk momentum/fade; range memakai ATR14 H6, bukan daftar kandidat ini]\n' + levelBlock.split('\n').slice(1).join('\n') : '';
@@ -7910,14 +7908,14 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
     const userMsg = [
       `Analisa ${data.label}:`,
       manualAnalysis.PROMPT_RULES,
-      manualMacroDirection ? `Arah makro terkunci data CB: ${manualMacroDirection}. macro_direction wajib sama; range/fade boleh trade berbeda dengan alasan eksplisit.` : 'Tidak ada pengunci CB; simpulkan makro dari bukti tersedia atau pilih no_trade.',
+      manualMacroDirection ? `Arah makro terkunci data CB: ${manualMacroDirection}. macro_direction wajib sama; range/fade boleh trade berbeda dengan alasan eksplisit.` : 'Tidak ada pengunci CB; jelaskan arah atau ketidakpastian dari bukti yang tersedia.',
       makroBlock,
       'Field tambahan: entry_basis menyebut struktur sumber dan level; confidence tinggi/sedang/rendah hanya untuk rencana yang memiliki level; conflict none/arah/waktu dengan conflict_note; makro_alignment searah/konflik/netral sesuai macro_direction vs bias.',
       'invalidation_condition harus spesifik. invalidation_trigger boleh null atau {type:"price_level"|"swing_break"|"ma_break",level:<angka sumber>,timeframe:"1h"|"4h"|"1d",direction:"above"|"below"}. Jangan menciptakan level.',
       'Jawab satu objek JSON, lalu delimiter ===COMMENTARY=== dan narasi biasa singkat. Jangan menulis keputusan penutup kedua.',
     ].join('\n\n');
     const messages = [
-      { role:'system', content:'Kamu analis makro dan struktur pasar. Ikuti kontrak manual Prime V2: makro dahulu, chart untuk strategi/lokasi/waktu, rencana bersyarat tanpa klaim siap entry. Jawab JSON valid tanpa markdown fence, lalu ===COMMENTARY=== dan narasi singkat bahasa Indonesia. Field JSON: strategy_id (momentum/range/tactical_fade/no_trade), macro_direction (bullish/bearish/neutral/mixed/no_trade), macro_reason, bias (bullish/bearish/neutral/mixed), entry_zone, entry_basis, sl, tp, invalidation_condition, invalidation_trigger, time_horizon_days, trade_horizon, range_start_t, fade_evidence, makro_alignment, makro_alignment_reason, \"conflict\", \"conflict_note\", confidence, no_trade_reason. Field tidak berlaku diisi null. Trigger disusun server; jangan mengklaim candle pemicu telah terbentuk.' },
+      { role:'system', content:'Kamu analis makro dan struktur pasar. Ikuti workflow Analisa manual Prime V3: makro dahulu, chart untuk strategi/lokasi/waktu, rencana bersyarat tanpa klaim siap entry. Jawab JSON valid tanpa markdown fence, lalu ===COMMENTARY=== dan narasi singkat bahasa Indonesia. Field JSON: strategy_id (momentum/range/tactical_fade atau null), macro_direction (bullish/bearish/neutral/mixed atau null), macro_reason, bias (bullish/bearish/neutral/mixed), entry_zone, entry_basis, sl, tp, invalidation_condition, invalidation_trigger, time_horizon_days, trade_horizon, range_start_t, fade_evidence, makro_alignment, makro_alignment_reason, \"conflict\", \"conflict_note\", confidence. Field tidak berlaku diisi null. Trigger disusun server; jangan mengklaim candle pemicu telah terbentuk.' },
       { role:'user', content:userMsg },
     ];
 
@@ -8162,7 +8160,8 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
           : mixedAliases.includes(biasRaw) ? 'mixed' : 'neutral';
         if (!isAutoCall) { delete parsed.academy_contract_status; delete parsed.academy_reject_reason; }
         structured    = parsed;
-        commentary    = commentaryPart || parsed.commentary || rawText;
+        commentary    = isAutoCall ? (commentaryPart || parsed.commentary || rawText)
+          : (commentaryPart || (typeof parsed.commentary === 'string' ? parsed.commentary : ''));
         // AATAS v2: narasi 5 paragraf DIHAPUS untuk jalur auto (dashboard developer sudah
         // merender tiap field checklist sebagai kartu terpisah — narasinya duplikat &
         // boros token). `reasoning_note` (gabungan 1 paragraf makro + 1 paragraf teknikal)
@@ -8172,9 +8171,6 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
         if (structured.time_horizon_days != null) {
           const h = Number(structured.time_horizon_days);
           structured.time_horizon_days = (!isAutoCall && (!Number.isFinite(h) || h <= 0)) || isNaN(h) ? null : h;
-        }
-        if (!isAutoCall && structured.academy_contract_status !== 'rejected') {
-          structured = _enforceManualAcademyContract(structured, { lockedDirection: manualMacroDirection, ...manualContext, story: ringkasanContext || '', macroAvailable: !!(ringkasanContext || fundBlock || manualContext?.releaseBlock) });
         }
 
         // PLAN Z (2026-08-18): snap sl/tp ke [KANDIDAT SL/TP] (api/_levels.js) kalau
@@ -8218,11 +8214,9 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
         // drop the levels (keep bias/trigger/commentary) if the model produced a setup
         // that contradicts the live price it was given, atau RR di bawah kontrak
         // jalurnya (manual Prime=2; AATAS=2).
-        // AATAS mempertahankan perilaku lama: validasi ini hanya berjalan bila harga live
-        // tersedia. Jalur manual Prime tetap dapat memeriksa struktur level + RR tanpa
-        // harga live, sehingga kontrak 1:2 tidak diam-diam lolos saat quote sementara kosong.
-        const shouldValidateLevels = structured.entry_zone && structured.sl && structured.tp
-          && (typeof nowPrice === 'number' || !isAutoCall);
+        // AATAS memerlukan harga live. Analisa manual menghitung skenario secara terpisah.
+        const shouldValidateLevels = isAutoCall && structured.entry_zone && structured.sl && structured.tp
+          && typeof nowPrice === 'number';
         if (shouldValidateLevels) {
           const nums = s => (String(s).match(/[\d.]+/g) || []).map(Number).filter(n => !isNaN(n));
           const entryNums = nums(structured.entry_zone);
@@ -8294,20 +8288,14 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
               const risk = Math.abs(entryMid - slNum), reward = Math.abs(tpNum - entryMid);
               if (risk > 0) {
                 structured.risk_reward = Math.round((reward / risk) * 100) / 100;
-                const minRequiredRr = isAutoCall ? AATAS_MIN_RR : MANUAL_MIN_RR;
+                const minRequiredRr = AATAS_MIN_RR;
                 if (reward / risk < minRequiredRr - 1e-9) valid = false;
               } else valid = false;
             }
             if (!valid) {
-              console.warn(`ohlcv_analyze: entry/sl/tp inconsistent or RR<${isAutoCall ? AATAS_MIN_RR : MANUAL_MIN_RR} — dropping levels`, { bias: structured.bias, entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp, nowPrice, rr: structured.risk_reward });
+              console.warn(`ohlcv_analyze: entry/sl/tp inconsistent or RR<${AATAS_MIN_RR} — dropping levels`, { bias: structured.bias, entry_zone: structured.entry_zone, sl: structured.sl, tp: structured.tp, nowPrice, rr: structured.risk_reward });
               structured.entry_zone = structured.sl = structured.tp = null;
               structured.risk_reward = null;
-              if (!isAutoCall) {
-                structured.strategy_id = 'no_trade';
-                structured.trigger_contract = null;
-                structured.academy_contract_status = 'rejected';
-                structured.academy_reject_reason = 'Level entry/SL/TP tidak konsisten atau RR di bawah 1:2.';
-              }
             }
           }
         }
@@ -8315,7 +8303,7 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
         // kontrak awal lolos. Evaluasi ulang jalur manual agar status akhir dan
         // strategy_id selalu mencerminkan payload efektif yang benar-benar dikirim.
         if (!isAutoCall) {
-          structured = _enforceManualAcademyContract(structured, { lockedDirection: manualMacroDirection, ...manualContext, story: ringkasanContext || '', macroAvailable: !!(ringkasanContext || fundBlock || manualContext?.releaseBlock) });
+          structured = _enforceManualAcademyContract(structured, { lockedDirection: manualMacroDirection, ...manualContext, story: ringkasanContext || '', macroAvailable: !!(ringkasanContext || fundBlock || manualContext?.releaseBlock), nowPrice });
         }
         // entry_basis hanya bermakna bersama entry_zone — ikut di-null kalau level
         // di-drop sanity check / model memang tidak memberi setup; buang juga non-string.
@@ -8598,13 +8586,13 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
     }
 
     if (!isAutoCall && rawText && !structured) {
-      structured = _enforceManualAcademyContract({ strategy_id:'no_trade', macro_direction:'no_trade',
-        academy_contract_status:'rejected', academy_reject_reason:'Format jawaban AI tidak dapat divalidasi.' });
+      structured = _enforceManualAcademyContract({ bias: 'neutral' }, { formatIssue: 'Format rincian jawaban AI tidak dapat dibaca.' });
+      commentary = rawText.split(/===COMMENTARY===/i).slice(1).join('').trim();
     }
     if (!isAutoCall && structured) {
       const narrative = typeof commentary === 'string' ? commentary.split(/(?:^|\n)\s*KESIMPULAN[^\n]*:?/i)[0].trim() : '';
       commentary = manualAnalysis.decisionSummary(structured)
-        + (narrative && structured.academy_contract_status !== 'rejected' ? '\n\nCATATAN ANALIS MODEL (bukan keputusan eksekusi; ikuti ringkasan sistem di atas):\n' + narrative : '');
+        + (narrative ? '\n\nCATATAN ANALIS MODEL:\n' + narrative : '');
     }
 
     const resultPayload = {
@@ -8734,7 +8722,10 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
         .catch(() => {});
     }
 
-    if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly && !followUp) {
+    // Keep the historical simulation cohort separate from the scenarios shown in Analisa.
+    const manualLogEligible = !isAutoCall && !!structured?.strategy_id && structured.macro_reason
+      && structured.risk_reward >= MANUAL_MIN_RR - 1e-9 && !structured.analysis_observations?.length;
+    if (structured?.entry_zone && structured.sl && structured.tp && (isAutoCall || manualLogEligible) && !isDiagnosticOnly && !followUp) {
       const setupLogKey = isAutoCall ? AUTO_SETUP_LOG_KEY : 'setup_log:v1';
       // PLAN U-3 lanjutan (2026-07-20, diskusi user): baca-ubah-tulis array ini TIDAK
       // atomik — kalau AUTO_ENTRY_PAIRS diperluas (>1 pair berbagi array yang sama) dan

@@ -115,7 +115,8 @@ test('_renderStructuredAi: tidak crash saat sl/tp/entry_zone dari AI berupa numb
   assert.ok(out.includes('ALASAN MAKRO') && out.includes('Real yield turun dan bias Fed dovish'));
   assert.doesNotMatch(out, /MAKRO BULLISH|MAKRO SEARAH|DXY melemah sejalan bias bullish XAU/);
   assert.ok(out.includes('body 0.5-1 ATR') && out.includes('SL di balik wick rejection'));
-  assert.ok(out.includes('RR minimum 1:2') && out.includes('bukan breakout'));
+  assert.ok(out.includes('RR </span>1:2.3') && out.includes('bukan breakout'));
+  assert.doesNotMatch(out, /RR minimum/);
 
   const staleOut = _renderStructuredAi(structured, '', 'qwen-3-32b', true, true, true, '2026-07-06T10:00:00Z', null, true);
   assert.match(staleOut, /HASIL LAMA/);

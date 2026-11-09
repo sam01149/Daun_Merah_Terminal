@@ -72,7 +72,7 @@ function _slSide(zones, now, buffer, sign, dec) {
 function _direction(slPool, tpPool, now, minRr = 1) {
   if (!slPool || !tpPool) return null;
   const minSlDist = Math.min(...slPool.map(s => Math.abs(s.price - now)));
-  const ratio = (Number.isFinite(minRr) && minRr > 0) ? minRr : 1;
+  const ratio = (Number.isFinite(minRr) && minRr >= 0) ? minRr : 1;
   const tp = tpPool.filter(t => Math.abs(t.price - now) >= minSlDist * ratio);
   if (!tp.length) return null;
   return { sl: slPool, tp };

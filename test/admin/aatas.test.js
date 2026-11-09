@@ -202,7 +202,7 @@ test('AATAS_PROMPT_VERSION: v16 menandai alur keputusan profesional', () => {
   assert.equal(AATAS_PROMPT_VERSION, 16);
 });
 
-test('Tahap 3 jalan tengah: auto tetap RR 1:2; manual Prime kini juga RR 1:2 tanpa membawa instruksi fib auto', async () => {
+test('Tahap 3 jalan tengah: auto tetap RR 1:2; manual melaporkan RR aktual tanpa membawa instruksi fib auto', async () => {
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const cap = [];
     const store = baseStore();
@@ -237,7 +237,8 @@ test('Tahap 3 jalan tengah: auto tetap RR 1:2; manual Prime kini juga RR 1:2 tan
       await handler({ headers: {}, method: 'POST', body: {}, query: { action: 'ohlcv_analyze', symbol: 'GBPUSD=X', label: 'GBP/USD' } }, fakeRes());
     } finally { global.fetch = origFetch; }
     const manual = cap[0].messages[1].content;
-    assert.match(manual, /minimal 1:2/, 'manual Prime harus memakai RR minimum 1:2');
+    assert.match(manual, /meski RR di bawah 1:2/);
+    assert.doesNotMatch(manual, /RR minimal 1:2/);
     assert.doesNotMatch(manual, /konsisten dengan kesimpulanmu sendiri/i, 'manual tidak boleh ikut instruksi auto');
     if (/\[ZONA KONFLUENSI\]/.test(manual)) assert.match(manual, /pilih yang lebih dekat ke Now/, 'tie-break lama tetap di manual');
   });

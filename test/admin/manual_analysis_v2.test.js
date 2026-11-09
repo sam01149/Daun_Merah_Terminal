@@ -56,8 +56,9 @@ test('full market proof passes while missing macro or opposing EMA fails',()=>{
   assert.match(manual.assess(base,{input,evidence,macroAvailable:false}).reason,/makro/);
   assert.match(manual.assess({...base,bias:'bullish',sl:'1.280',tp:'1.300'},{input,evidence}).reason,/momentum searah/);
 });
-test('conservative RR rejects a zone which only passes at its midpoint',()=>{
-  assert.match(manual.assess({...base,entry_zone:'1.2795-1.2805',sl:'1.285',tp:'1.270'}).reason,/konservatif/);
+test('conservative RR reports the edge even when the midpoint is above two',()=>{
+  const { rr } = manual.assess({...base,entry_zone:'1.2795-1.2805',sl:'1.285',tp:'1.270'});
+  assert(Math.abs(rr - 0.0095 / 0.0055) < 1e-9);
 });
 test('macro reason cannot launder COT or chart evidence into direction',()=>{
   assert.match(manual.assess({...base,macro_reason:'COT USD long mendukung bearish EURUSD'}).reason,/positioning/);
@@ -123,9 +124,18 @@ test('manual v2 handler: valid plan, invalid prices, unavailable proof, and read
     const good=await run();assert.equal(good.structured.academy_contract_status,'conditional',JSON.stringify(good.structured));
     assert.equal(good.structured.trigger_state,'awaiting_closed_h1_rejection');
     assert.match(good.structured.trigger,/Rejection|menolak/);assert.doesNotMatch(good.commentary,/BUY breakout sekarang/);
-    assert.match(good.commentary,/^KESIMPULAN SISTEM: RENCANA BERSYARAT BEARISH/);
+    assert.match(good.commentary,/^RINGKASAN SKENARIO: Skenario bearish/);
     assert(reads.some(([cmd,k])=>cmd==='HGETALL'&&k==='fundamental:EUR'));assert(reads.some(([cmd,k])=>cmd==='HGETALL'&&k==='fundamental:USD'));
     const prompt=captured.messages[1].content;assert.match(prompt,/DATA RILIS EKONOMI/);assert.match(prompt,/ema200_d1/);assert.doesNotMatch(prompt,/4 paragraf pertama wajib|pengecualian hanya breakout/);
+    answer = {...base, entry_zone:'1.2000-1.2020', sl:'1.2050', tp:'1.1930'};
+    const lowRr = await run();
+    assert.equal(lowRr.structured.risk_reward, 1.4);
+    assert.equal(lowRr.structured.entry_zone, '1.2000-1.2020');
+    assert.equal(lowRr.structured.sl, '1.2050');
+    assert.equal(lowRr.structured.tp, '1.1930');
+    assert.match(lowRr.commentary, /RR 1:1\.4/);
+    assert.match(lowRr.commentary, /Analisis model/);
+    assert.doesNotMatch(lowRr.commentary, /NO TRADE/);
     const followUp = require('../../api/_analysis_follow_up');
     const originalStore = followUp.createStore;
     process.env.APP_KEY = 'follow-up-fixture';
@@ -150,6 +160,7 @@ test('manual v2 handler: valid plan, invalid prices, unavailable proof, and read
       assert.equal(response.code, 200);
       assert.equal(response.body.status, 'done');
       assert.equal(response.body.result.structured.academy_contract_status, 'conditional');
+      assert.equal(response.body.result.structured.risk_reward, 1.4);
       assert(reads.some(([cmd, key]) => cmd === 'INCR' && key.startsWith('ai_budget:deepseek_follow_up:')));
       assert(!reads.some(([cmd, key]) => cmd === 'SET' && (key.startsWith('ohlcv_analysis:') || key === 'setup_log:v1')));
     } finally {
@@ -157,10 +168,10 @@ test('manual v2 handler: valid plan, invalid prices, unavailable proof, and read
       delete process.env.APP_KEY;
     }
     answer={...base,bias:'short'};const alias=await run();assert.equal(alias.structured.bias,'bearish');assert.equal(alias.structured.bias_reported,'short');assert.equal(alias.structured.academy_contract_status,'conditional');
-    answer={...base,entry_zone:'abc',sl:'def',tp:'ghi'};const bad=await run();assert.equal(bad.structured.academy_contract_status,'rejected');assert.equal(bad.structured.entry_zone,null);assert.doesNotMatch(bad.commentary,/Analisis model/);
+    answer={...base,entry_zone:'abc',sl:'def',tp:'ghi'};const bad=await run();assert.equal(bad.structured.academy_contract_status,'informational');assert.equal(bad.structured.entry_zone,null);assert.match(bad.commentary,/Analisis model/);
     keys['ohlcv:EURUSD=X:1d']=JSON.stringify(input.candles1d.slice(-10));
     keys['manual_prime_inputs:v2:EURUSD=X']=JSON.stringify({captured_at:Date.now(),input:{candles1h:JSON.parse(keys['ohlcv:EURUSD=X:1h']),candles4h:JSON.parse(keys['ohlcv:EURUSD=X:4h']),candles1d:JSON.parse(keys['ohlcv:EURUSD=X:1d'])}});
-    answer={...base};const missing=await run();assert.equal(missing.structured.strategy_id,'no_trade');assert.match(missing.structured.academy_reject_reason,/EMA200/);
-    const previous=calls;market.isFxMarketOpen=()=>false;const context=await run('context');assert.equal(calls,previous);assert.equal(context.analysis_policy_v,'prime-v2');assert.equal(context.market_closed,true);
+    answer={...base};const missing=await run();assert.equal(missing.structured.strategy_id,'momentum');assert.match(missing.structured.analysis_observations.join(' '),/EMA200/);assert.equal(missing.structured.entry_zone,base.entry_zone);
+    const previous=calls;market.isFxMarketOpen=()=>false;const context=await run('context');assert.equal(calls,previous);assert.equal(context.analysis_policy_v,'prime-v3');assert.equal(context.market_closed,true);
   } finally {global.fetch=fetch;market.isFxMarketOpen=open;}
 });

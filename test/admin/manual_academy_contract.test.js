@@ -48,24 +48,23 @@ test('manual Academy contract: momentum searah lolos dengan trigger deterministi
   assert.strictEqual(out.entry_zone, '1.1000-1.1010');
   assert.deepStrictEqual(out.trigger_contract, {
     timeframe: '1h', session: 'london_or_new_york', rejection_required: true,
-    breakout_allowed: false, min_rr: 2, body_atr_min: 0.5, body_atr_max: 1,
+    breakout_allowed: false, body_atr_min: 0.5, body_atr_max: 1,
     stop_rule: 'beyond_rejection_wick',
   });
 });
 
-test('manual Academy contract: momentum melawan makro atau strategy tidak valid menolak level', () => {
-  const base = { macro_direction: 'bearish', bias: 'bullish', entry_zone: '1.1000', entry_basis: 'x', sl: '1.0900', tp: '1.1200' };
-  const conflict = _enforceManualAcademyContract({ ...base, strategy_id: 'momentum' });
-  assert.strictEqual(conflict.academy_contract_status, 'rejected');
-  assert.strictEqual(conflict.strategy_id, 'no_trade');
-  assert.strictEqual(conflict.trigger_contract, null);
-  assert.strictEqual(conflict.entry_zone, null);
-  assert.match(conflict.academy_reject_reason, /tidak boleh melawan/);
+test('manual Academy contract: konflik makro menjadi konteks skenario', () => {
+  const base = { macro_direction: 'bearish', bias: 'bullish', entry_zone: '1.1000', sl: '1.0900', tp: '1.1140' };
+  const out = _enforceManualAcademyContract({ ...base, strategy_id: 'momentum' });
+  assert.strictEqual(out.academy_contract_status, 'conditional');
+  assert.strictEqual(out.entry_zone, '1.1000');
+  assert.strictEqual(out.risk_reward, 1.4);
+  assert.match(out.analysis_observations.join(' '), /berbeda dari arah makro/);
 
   const unknown = _enforceManualAcademyContract({ ...base, strategy_id: 'breakout' });
-  assert.strictEqual(unknown.strategy_id, 'no_trade');
+  assert.strictEqual(unknown.strategy_id, null);
   assert.strictEqual(unknown.trigger_contract, null);
-  assert.strictEqual(unknown.sl, null);
+  assert.strictEqual(unknown.sl, '1.0900');
 });
 
 test('manual Academy contract: range/fade eksplisit boleh berbeda dari arah besar', () => {
@@ -83,24 +82,25 @@ test('manual Academy contract: range/fade eksplisit boleh berbeda dari arah besa
   assert.strictEqual(fade.trigger_contract.macro_view_must_remain_unchanged, true);
 });
 
-test('manual Academy contract: setup aktif tanpa entry/SL/TP lengkap menjadi no-trade rejection', () => {
+test('manual Academy contract: rincian parsial tetap tampil tanpa RR atau trigger', () => {
   const out = _enforceManualAcademyContract({
     strategy_id: 'momentum', macro_direction: 'bullish', macro_reason: 'USD hawkish vs EUR dovish', bias: 'bullish',
     entry_zone: '1.1000', sl: null, tp: '1.1200',
   });
-  assert.strictEqual(out.academy_contract_status, 'rejected');
-  assert.strictEqual(out.strategy_id, 'no_trade');
-  assert.match(out.academy_reject_reason, /entry, stop loss, dan take profit/);
-  assert.strictEqual(out.entry_zone, null);
+  assert.strictEqual(out.academy_contract_status, 'informational');
+  assert.strictEqual(out.entry_zone, '1.1000');
+  assert.strictEqual(out.tp, '1.1200');
+  assert.strictEqual(out.risk_reward, null);
+  assert.strictEqual(out.trigger, null);
 });
 
-test('manual Academy contract: setup aktif tanpa arah trade tegas ditolak sebagai no_trade', () => {
+test('manual Academy contract: arah campuran mempertahankan konteks tanpa menyajikan level sebagai skenario', () => {
   const out = _enforceManualAcademyContract({
     strategy_id: 'range', macro_direction: 'mixed', macro_reason: 'Makro campuran dan harga berada dalam range',
     bias: 'mixed', entry_zone: '100', sl: '98', tp: '104',
   });
-  assert.strictEqual(out.academy_contract_status, 'rejected');
-  assert.strictEqual(out.strategy_id, 'no_trade');
+  assert.strictEqual(out.academy_contract_status, 'informational');
+  assert.strictEqual(out.entry_zone, null);
   assert.strictEqual(out.trigger_contract, null);
-  assert.match(out.academy_reject_reason, /arah trade bullish atau bearish/);
+  assert.match(out.macro_reason, /Makro campuran/);
 });

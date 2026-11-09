@@ -130,7 +130,7 @@ Call 4 (cek kontradiksi posisi terbuka):
 
 ### 3.2 Analisa AI per Pair — `api/admin.js` (`action=ohlcv_analyze`)
 
-**Kontrak aktif (S476, 2026-11-07).** Analisa manual kini `prime-v2`. Harga harus desimal positif valid; RR >=2 diperiksa pada sisi zona paling konservatif. Trigger disusun kode sebagai rencana rejection H1 London/NY, bukan klaim candle sudah terbentuk. Status keluaran valid adalah `conditional`, bukan `passed`; UI menulis RENCANA BERSYARAT. JSON rusak, bukti kurang/basi, level tidak valid atau macro_reason yang memakai COT/retail/indikator teknikal menghasilkan no-trade dengan level null. Ringkasan akhir dibentuk kode dari field efektif; prosa model bukan keputusan eksekusi. Rincian serta batas semantik/pembuktian ada di `daun_merah.md` S476.
+**Kontrak aktif (PLAN AI, 2026-11-09).** Analisa manual `prime-v3` menyajikan makro, teknikal, skenario, pemicu dan risiko sebagai informasi. Server menghitung RR pada sisi zona paling konservatif dan menampilkan rasio aktual, termasuk di bawah 1:2. Kondisi strategi yang belum lengkap menjadi konteks. Level yang tidak bisa dibaca atau tidak konsisten tidak menghasilkan RR, sementara narasi yang tersedia tetap tampil. Angka ini tidak mengubah filter kohort simulasi historis maupun kebijakan auto-entry.
 
 15 pasangan yang dilacak: EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD, EUR/JPY, GBP/JPY, EUR/GBP, AUD/JPY, EUR/AUD, GBP/AUD, GBP/CAD, XAU/USD.
 

@@ -266,7 +266,7 @@ test('CEK KONTRADIKSI manual: reasoning konsisten (tanpa kontradiksi) -> tidak d
       assert.equal(res.body.structured.conflict, 'none');
       // (2026-09-02) Tidak ada guard yang menyala -> commentary TIDAK BOLEH disentuh sama
       // sekali (bukan cuma "tidak salah", betul-betul byte-identik dengan yang AI tulis).
-      assert.match(res.body.commentary, /KESIMPULAN SISTEM:/);
+      assert.match(res.body.commentary, /RINGKASAN SKENARIO:/);
       assert.match(res.body.commentary, /Komentar singkat/);
 
       const log = JSON.parse(store.strings['setup_log:v1']);

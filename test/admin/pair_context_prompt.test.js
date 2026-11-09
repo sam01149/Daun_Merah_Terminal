@@ -209,7 +209,7 @@ test('ohlcv_analyze: source=manual default (tanpa auto=1); alignment setup_log m
       // ada di commentary AI, tapi field ini sebelumnya TIDAK PERNAH disimpan ke log
       // sama sekali — hilang permanen begitu response dibalas untuk setup auto-entry
       // tanpa penonton live) commentary sekarang ikut tersimpan apa adanya.
-      assert.match(log[0].commentary, /^KESIMPULAN SISTEM: RENCANA BERSYARAT/);
+      assert.match(log[0].commentary, /^RINGKASAN SKENARIO:/);
       assert.doesNotMatch(log[0].commentary, /KESIMPULAN: bearish menengah/);
     } finally { global.fetch = origFetch; }
   });

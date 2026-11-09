@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-09 (Session 478 - Verifikasi NO TRADE NZD/USD)
+> **Last updated:** 2026-11-09 (PLAN AI - Analisa informatif untuk keputusan trader)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 479 (2026-11-09) — PLAN AI, Analisa informatif untuk keputusan trader
+
+**Masalah.** S476 menghapus level dan narasi ketika kandidat manual tidak lolos syarat strategi atau RR 1:2. S478 mengonfirmasi dampaknya pada NZD/USD di produksi. User memutuskan bahwa Analisa harus menyajikan skenario dan konteks agar trader dapat menilai sendiri.
+
+**Perubahan.** Policy manual `prime-v3` meminta penjelasan makro, teknikal, skenario, dan agenda. Daftar kandidat manual tidak disaring berdasarkan RR. Server memeriksa urutan dan format level, menghitung RR dari sisi entry paling konservatif, dan mempertahankan skenario dengan RR rendah. Syarat strategi dan harga di luar batas skenario dicatat sebagai konteks. Rincian parsial tetap tampil tanpa RR yang tidak dapat dihitung. Narasi yang tersedia tetap ditampilkan. Hasil cache lama ditandai sebagai riwayat. Kohort simulasi manual masih menggunakan syarat historisnya, dan AATAS serta pemilihan setup oleh trader di Rencana Entry tidak berubah. Versi aplikasi dan service worker 2026.11.09.5.
+
+**Verifikasi.** 1.652/1.652 tes lulus. Regresi handler dan Follow Up memeriksa entry, SL, TP, narasi, dan RR 1:1,4, serta kondisi bukti dan level yang belum lengkap. Chromium lokal pada 1.440 px dan 390 px menampilkan level, RR dan narasi, menandai cache lama, dan tidak mengalami overflow. Implementasi dilakukan di worktree terpisah berbasis origin/main untuk melindungi perubahan lokal S477.
 
 ## Changelog Session 478 (2026-11-09) — Verifikasi NO TRADE NZD/USD
 

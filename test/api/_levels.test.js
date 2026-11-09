@@ -141,10 +141,10 @@ test('computeLevelCandidates minRr=2: TP wajib >= 2x jarak SL terdekat (menu kon
   assert.ok(r.bearish.sl.some(c => c.price === 106));
 });
 
-test('computeLevelCandidates minRr default/invalid: perilaku lama 1:1 (jalur manual byte-identik)', () => {
+test('computeLevelCandidates minRr default/invalid: perilaku lama 1:1', () => {
   const base = computeLevelCandidates(OPTS);
   assert.deepEqual(base.bearish.tp.map(t => t.price), [94, 88]);
-  for (const bad of [undefined, 0, -1, NaN, 'x']) {
+  for (const bad of [undefined, -1, NaN, 'x']) {
     const r = computeLevelCandidates({ ...OPTS, minRr: bad });
     assert.deepEqual(r.bearish.tp.map(t => t.price), [94, 88], `minRr=${bad} harus jatuh ke 1`);
   }
@@ -153,4 +153,9 @@ test('computeLevelCandidates minRr default/invalid: perilaku lama 1:1 (jalur man
 test('computeLevelCandidates minRr terlalu tinggi untuk struktur: arah tanpa TP layak jadi null, keduanya kosong -> null total', () => {
   const r = computeLevelCandidates({ ...OPTS, minRr: 3 });
   assert.equal(r, null, 'tidak ada TP >= 3x jarak SL di kedua arah -> tidak ada menu (bukan menu palsu)');
+});
+
+test('computeLevelCandidates minRr 0 mempertahankan target di bawah RR 1', () => {
+  const result = computeLevelCandidates({ ...OPTS, minRr: 0 });
+  assert.deepEqual(result.bearish.tp.map(t => t.price), [98, 94, 88]);
 });

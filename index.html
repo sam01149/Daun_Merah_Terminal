@@ -4939,7 +4939,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.09.4';
+const APP_VERSION = '2026.11.09.5';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6787,7 +6787,7 @@ async function downloadAnalisaPdf() {
   const text = (st?.commentary || ai.commentary || '').trim();
   // Legacy output had fixed paragraph roles; prime-v2 uses a server decision
   // followed by optional model notes, so positional labels would misattribute it.
-  const ANALISA_PARA_LABELS = st?.analysis_policy_v === 'prime-v2'
+  const ANALISA_PARA_LABELS = ['prime-v2', 'prime-v3'].includes(st?.analysis_policy_v)
     ? [] : ['Arah Makro', 'Strategi & Timing', 'Momentum & Pola', 'Integrasi & Risiko'];
   let analisaParaIdx = 0;
   text.split('\n').filter(l => l.trim()).forEach(l => {
@@ -6972,7 +6972,7 @@ let analisaFreshUntil = {}; // { [symbol]: epochMs }
 
 function _analisaResultIsStale(ai, now = Date.now()) {
   if (!ai) return true;
-  if (ai.structured?.analysis_policy_v && ai.structured.analysis_policy_v !== 'prime-v2') return true;
+  if (ai.structured?.analysis_policy_v && ai.structured.analysis_policy_v !== 'prime-v3') return true;
   const analyzedTs = ai.analyzedAt ? new Date(ai.analyzedAt).getTime() : NaN;
   const savedTs = Number(ai.saved_at);
   const sourceTs = Number.isFinite(analyzedTs) ? analyzedTs : savedTs;
@@ -7390,10 +7390,10 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
     const bias      = (structured.bias || 'neutral').toLowerCase();
     const biasColor = bias === 'bullish' ? 'var(--green)' : bias === 'bearish' ? 'var(--red)' : bias === 'mixed' ? '#f5a623' : 'var(--muted)';
     const biasLabel = bias === 'bullish' ? 'BULLISH' : bias === 'bearish' ? 'BEARISH' : bias === 'mixed' ? 'MIXED' : 'NEUTRAL';
-    const strategyLabels = { momentum: 'MOMENTUM', range: 'RANGE', tactical_fade: 'TACTICAL FADE', no_trade: 'NO TRADE' };
+    const strategyLabels = { momentum: 'MOMENTUM', range: 'RANGE', tactical_fade: 'TACTICAL FADE', no_trade: 'HASIL LAMA' };
     const strategyLabel = strategyLabels[structured.strategy_id] || null;
     html += `<div class="analisa-tf-card" style="border-left-color: var(--accent); margin-bottom: 12px;">
-      <div class="analisa-tf-label" style="color:var(--accent) !important">AI SETUP &amp; BIAS</div>
+      <div class="analisa-tf-label" style="color:var(--accent) !important">SKENARIO &amp; BIAS</div>
       <div style="display:flex;align-items:center;gap:10px;margin:8px 0 10px;flex-wrap:wrap">
         <span style="background:${biasColor};color:#0a0f1a;font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em;flex-shrink:0">${biasLabel}</span>
         ${strategyLabel ? `<span style="border:1px solid var(--accent);color:var(--accent);font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;letter-spacing:.06em">${strategyLabel}</span>` : ''}
@@ -7413,10 +7413,10 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
           : structured.strategy_id === 'tactical_fade'
             ? ' · overreaction tipis/belum terkonfirmasi · jangka pendek · pandangan makro tetap'
             : '';
-      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">ATURAN TRIGGER </span>Rejection H1 · sesi London/New York${bodyRule}${extraRule} · bukan breakout · RR minimum 1:${escHtml(tc.min_rr || 2)}</div>`;
+      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--muted);line-height:1.5"><span style="color:var(--text)">ATURAN TRIGGER </span>Rejection H1 · sesi London/New York${bodyRule}${extraRule} · bukan breakout</div>`;
     }
     if (structured.academy_contract_status === 'rejected' && structured.academy_reject_reason) {
-      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--yellow);line-height:1.5"><span style="color:var(--yellow)">NO TRADE </span>${escHtml(structured.academy_reject_reason)}</div>`;
+      html += `<div style="margin:-4px 0 10px;font-size:10px;color:var(--yellow);line-height:1.5"><span style="color:var(--yellow)">CATATAN HASIL LAMA </span>${escHtml(structured.academy_reject_reason)}</div>`;
     }
 
     if (structured.entry_zone || structured.sl || structured.tp) {
@@ -7723,7 +7723,7 @@ function renderAnalisaDecisionPanel() {
   const ai = analisaAiCache[analisaActive.symbol] || null;
   const structured = ai?.structured || null;
   if (!structured) {
-    el.innerHTML = '<div class="analisa-side-title">Ringkasan Eksekusi</div><div class="analisa-side-empty">Jalankan Analisa Pair Ini untuk membentuk keputusan, trigger, dan level risiko.</div>';
+    el.innerHTML = '<div class="analisa-side-title">Ringkasan Skenario</div><div class="analisa-side-empty">Jalankan Analisa Pair Ini untuk melihat skenario, pemicu, dan level risiko.</div>';
     return;
   }
 
@@ -7731,19 +7731,19 @@ function renderAnalisaDecisionPanel() {
   const rejected = structured.academy_contract_status === 'rejected' || structured.strategy_id === 'no_trade';
   const complete = !rejected && structured.entry_zone && structured.sl && structured.tp;
   const conditional = structured.academy_contract_status === 'conditional';
-  const statusLabel = stale ? 'HASIL LAMA' : rejected ? 'NO TRADE' : conditional ? 'RENCANA BERSYARAT' : complete ? 'SETUP TERSTRUKTUR' : 'MENUNGGU LEVEL';
+  const statusLabel = stale ? 'HASIL LAMA' : rejected ? 'HASIL LAMA' : conditional ? 'SKENARIO BERSYARAT' : complete ? 'SETUP TERSTRUKTUR' : 'KONTEKS PASAR';
   const statusClass = stale || rejected ? 'blocked' : conditional ? '' : complete ? 'ready' : '';
-  const strategyLabels = { momentum:'Momentum', range:'Range', tactical_fade:'Tactical Fade', no_trade:'No Trade' };
+  const strategyLabels = { momentum:'Momentum', range:'Range', tactical_fade:'Tactical Fade', no_trade:'Hasil lama' };
   const direction = structured.bias ? String(structured.bias).toUpperCase() : null;
   const directionTone = ['bullish', 'bearish', 'neutral'].includes(String(structured.bias).toLowerCase()) ? String(structured.bias).toLowerCase() : '';
   const session = structured.trigger_contract?.session === 'london_or_new_york' ? 'London / New York' : structured.trigger_contract?.session;
   const rr = structured.risk_reward ? `1:${structured.risk_reward}` : null;
   const rejectReason = rejected ? structured.academy_reject_reason : null;
 
-  el.innerHTML = `<div class="analisa-side-title">Ringkasan Eksekusi</div>
+  el.innerHTML = `<div class="analisa-side-title">Ringkasan Skenario</div>
     <div class="analisa-decision-status ${statusClass}">${statusLabel}</div>
     ${stale ? '<div class="analisa-position-note">Level dipertahankan sebagai riwayat. Jalankan analisa ulang sebelum dipakai.</div>' : ''}
-    ${conditional ? '<div class="analisa-position-note">Candle pemicu belum diverifikasi. Tunggu rejection H1 selesai pada sesi London/New York, lalu periksa ulang SL, RR dan kalender.</div>' : ''}
+    ${conditional && structured.trigger_contract ? '<div class="analisa-position-note">Candle pemicu belum diverifikasi. Tunggu rejection H1 selesai pada sesi London/New York, lalu periksa ulang SL, RR dan kalender.</div>' : ''}
     <div class="analisa-decision-grid">
       ${_analisaDecisionRow('Arah', direction, directionTone)}
       ${_analisaDecisionRow('Strategi', strategyLabels[structured.strategy_id] || structured.strategy_id)}
@@ -7755,6 +7755,7 @@ function renderAnalisaDecisionPanel() {
       ${_analisaDecisionRow('RR', rr)}
       ${_analisaDecisionRow('Invalidasi', structured.invalidation_condition)}
       ${_analisaDecisionRow('Alasan', rejectReason)}
+      ${Array.isArray(structured.analysis_observations) ? structured.analysis_observations.map(note => _analisaDecisionRow('Konteks', note)).join('') : ''}
     </div>`;
 }
 
