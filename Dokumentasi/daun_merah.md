@@ -18,6 +18,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
 
+## Changelog Session 480 (2026-11-09) — Tampilan hasil Analisa
+
+Hasil prime-v2/v3 tidak lagi diberi judul paragraf berdasarkan urutan yang dapat salah. Ringkasan sistem yang sudah tampil di kartu skenario tidak diulang dalam analisa detail. RR ditampilkan dengan dua desimal di kartu, panel, PDF dan ringkasan baru, sementara angka perhitungan tetap utuh. Hasil tersimpan tetap dapat ditampilkan. Versi aplikasi dan service worker 2026.11.09.6. Suite penuh 1.652 tes lulus.
+
 ## Changelog Session 479 (2026-11-09) — PLAN AI, Analisa informatif untuk keputusan trader
 
 **Masalah.** S476 menghapus level dan narasi ketika kandidat manual tidak lolos syarat strategi atau RR 1:2. S478 mengonfirmasi dampaknya pada NZD/USD di produksi. User memutuskan bahwa Analisa harus menyajikan skenario dan konteks agar trader dapat menilai sendiri.

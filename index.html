@@ -4939,7 +4939,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.09.5';
+const APP_VERSION = '2026.11.09.6';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6775,7 +6775,7 @@ async function downloadAnalisaPdf() {
       if (st.entry_zone) bits.push(`Entry ${st.entry_zone}`);
       if (st.sl) bits.push(`SL ${st.sl}`);
       if (st.tp) bits.push(`TP ${st.tp}`);
-      if (st.risk_reward) bits.push(`RR 1:${st.risk_reward}`);
+      if (st.risk_reward) bits.push(`RR 1:${Number(st.risk_reward).toFixed(2)}`);
       b.kv('Level', bits.join('   '));
       b.kv('Dasar', st.entry_basis);
     }
@@ -7424,7 +7424,7 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
         ${structured.entry_zone ? `<span><span style="color:var(--muted)">ENTRY </span>${escHtml(structured.entry_zone)}</span>` : ''}
         ${structured.sl ? `<span><span style="color:var(--red)">SL </span>${escHtml(structured.sl)}</span>` : ''}
         ${structured.tp ? `<span><span style="color:var(--green)">TP </span>${escHtml(structured.tp)}</span>` : ''}
-        ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(String(structured.risk_reward))}</span>` : ''}
+        ${structured.risk_reward ? `<span><span style="color:var(--muted)">RR </span>1:${escHtml(Number(structured.risk_reward).toFixed(2))}</span>` : ''}
         ${!isStale ? '<button type="button" onclick="analisaGoToChecklist(analisaActive.symbol)" style="margin-left:auto;padding:3px 10px;font-family:\'DM Mono\',monospace;font-size:9px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700">BUAT RENCANA</button>' : '<span style="margin-left:auto;color:var(--yellow);font-size:9px">LEVEL HISTORIS</span>'}
       </div>`;
 
@@ -7458,8 +7458,10 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
     let narrativeParas = [];
     let conclusionText = '';
 
+    const modern = ['prime-v2', 'prime-v3'].includes(structured?.analysis_policy_v);
     text.split('\n').filter(l => l.trim()).forEach(l => {
       const trimmed = l.trim();
+      if (modern && /^(RINGKASAN SKENARIO|KESIMPULAN SISTEM|CATATAN ANALIS MODEL):/i.test(trimmed)) return;
       const m = trimmed.match(/^kesimpulan:\s*(.*)$/i);
       if (m) {
         conclusionText = m[1];
@@ -7478,9 +7480,9 @@ function _renderStructuredAi(structured, commentary, model, hasMakro, isCached, 
       ];
       let narrativeHtml = '';
       narrativeParas.forEach((p, idx) => {
-        const labelText = labels[idx] || 'ANALISIS TAMBAHAN';
+        const labelText = modern ? '' : (labels[idx] || 'ANALISIS TAMBAHAN');
         narrativeHtml += `
-          <div class="r-tag" style="margin-top: ${idx === 0 ? '4px' : '14px'} !important; margin-bottom: 6px !important;">${labelText}</div>
+          ${labelText ? `<div class="r-tag" style="margin-top: ${idx === 0 ? '4px' : '14px'} !important; margin-bottom: 6px !important;">${labelText}</div>` : ''}
           <p style="margin: 0 0 12px; line-height: 1.75;">${_renderAiMarkdownSafe(p)}</p>
         `;
       });
@@ -7737,7 +7739,7 @@ function renderAnalisaDecisionPanel() {
   const direction = structured.bias ? String(structured.bias).toUpperCase() : null;
   const directionTone = ['bullish', 'bearish', 'neutral'].includes(String(structured.bias).toLowerCase()) ? String(structured.bias).toLowerCase() : '';
   const session = structured.trigger_contract?.session === 'london_or_new_york' ? 'London / New York' : structured.trigger_contract?.session;
-  const rr = structured.risk_reward ? `1:${structured.risk_reward}` : null;
+  const rr = structured.risk_reward ? `1:${Number(structured.risk_reward).toFixed(2)}` : null;
   const rejectReason = rejected ? structured.academy_reject_reason : null;
 
   el.innerHTML = `<div class="analisa-side-title">Ringkasan Skenario</div>

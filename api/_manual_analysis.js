@@ -174,7 +174,7 @@ function plannedTrigger(result) {
 
 function decisionSummary(result) {
   const levels = result.academy_contract_status === 'conditional'
-    ? `Skenario ${result.bias} (${result.strategy_id || 'strategi belum ditentukan'}). Entry ${result.entry_zone}; SL ${result.sl}; TP ${result.tp}; RR 1:${result.risk_reward}.`
+    ? `Skenario ${result.bias} (${result.strategy_id || 'strategi belum ditentukan'}). Entry ${result.entry_zone}; SL ${result.sl}; TP ${result.tp}; RR 1:${Number(result.risk_reward).toFixed(2)}.`
     : 'Rincian level skenario belum lengkap.';
   return ['RINGKASAN SKENARIO:', levels, result.trigger, ...result.analysis_observations].filter(Boolean).join(' ');
 }
