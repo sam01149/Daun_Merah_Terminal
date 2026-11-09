@@ -860,6 +860,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .analisa-chip.active { background: var(--accent); border-color: var(--accent); color: #ffffff; font-weight: 600; }
 .analisa-chip.loading { opacity: .6; pointer-events: none; }
 #analisaTrackedChips { display: contents; }
+#analisaFollowUp:not([hidden]) { display:flex; align-items:center; gap:10px; margin:0 0 12px; font:11px/1.5 'DM Mono',monospace; color:var(--muted); flex-wrap:wrap; }
+.follow-up-control { display:inline-flex; align-items:center; gap:8px; color:var(--text); cursor:pointer; }
+.follow-up-control input { position:absolute; opacity:0; width:1px; height:1px; }
+.follow-up-track { width:32px; height:18px; border-radius:12px; background:var(--border); position:relative; transition:background .2s; }
+.follow-up-track::after { content:''; position:absolute; width:14px; height:14px; left:2px; top:2px; border-radius:50%; background:var(--text); transition:transform .2s; }
+.follow-up-control input:checked + .follow-up-track { background:var(--accent); }
+.follow-up-control input:checked + .follow-up-track::after { transform:translateX(14px); }
+.follow-up-control input:focus-visible + .follow-up-track { outline:2px solid var(--text); outline-offset:3px; }
+.follow-up-control input:disabled + .follow-up-track { opacity:.5; cursor:wait; }
+.follow-up-info { position:relative; }
+.follow-up-info summary { display:grid; place-items:center; width:16px; height:16px; border:1px solid var(--muted); border-radius:50%; cursor:pointer; list-style:none; font-weight:700; }
+.follow-up-info summary::-webkit-details-marker { display:none; }
+.follow-up-info[open] > div { position:absolute; top:24px; left:0; z-index:10; width:min(280px,75vw); padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--text); box-shadow:0 4px 16px #0009; }
 .analisa-chip-wrap { position: relative; display: inline-block; }
 .analisa-chip-rm {
   position: absolute; top: -6px; right: -6px; width: 15px; height: 15px; border-radius: 50%;
@@ -3895,12 +3908,17 @@ body:not(.light-theme) .ringkasan-gen-btn {
     </div>
     <div id="analisaContent" style="display:none">
       <div class="analisa-header" id="analisaHeader"></div>
-      <div class="no-print" id="analisaFollowUp" hidden style="margin:0 0 12px;font-size:11px;color:var(--muted);line-height:1.6">
-        <label style="display:inline-flex;align-items:center;gap:6px;color:var(--text)">
+      <div class="no-print" id="analisaFollowUp" hidden>
+        <label class="follow-up-control">
+          <span>Follow Up</span>
           <input id="analisaFollowUpToggle" type="checkbox" role="switch" aria-describedby="analisaFollowUpStatus" onchange="setAnalisaFollowUp(this.checked)">
-          Follow Up
+          <span class="follow-up-track" aria-hidden="true"></span>
         </label>
-        <span id="analisaFollowUpStatus" role="status"></span>
+        <details class="follow-up-info">
+          <summary aria-label="Informasi Follow Up">i</summary>
+          <div id="analisaFollowUpStatus" role="status"></div>
+        </details>
+        <span id="analisaFollowUpNotice" role="status"></span>
       </div>
       <div class="analisa-workspace">
         <aside class="analisa-context-col">
@@ -4921,7 +4939,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.09.2';
+const APP_VERSION = '2026.11.09.3';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -7228,6 +7246,9 @@ function renderAnalisaFollowUp() {
     else message = `Analisa otomatis terakhir ${fmtCBTime(state.result.loaded_at)}. Jadwal ${schedule}`;
   }
   document.getElementById('analisaFollowUpStatus').textContent = message;
+  document.getElementById('analisaFollowUpNotice').textContent =
+    state?.requestError || (state?.status === 'error' ? state.message : '') ||
+    (state?.status === 'running' ? 'Sedang menganalisis...' : '');
 }
 
 function acceptAnalisaFollowUp(symbol, state) {
