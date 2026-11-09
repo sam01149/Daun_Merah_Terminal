@@ -50,6 +50,9 @@ const DEFAULT_LIMITS = {
   // mungkin terkuras diam-diam oleh loop/abuse dalam sehari. Naikkan via env
   // AI_DAILY_LIMIT_DEEPSEEK kalau nanti dipromosikan primary.
   deepseek:        50,
+  // Up to 29 opt-in pairs at three slots plus one initial run per pair.
+  deepseek_follow_up: 120,
+  relink_follow_up: 120,
   // Two bank batches/day normally; bounded room for changed reports and transient
   // provider retries. Separate from user analysis; dashboard reads cost zero calls.
   deepseek_institutions: 6,

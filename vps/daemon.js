@@ -1386,6 +1386,27 @@ async function runDigestCycle() {
   await triggerWithRetry('/api/market-digest');
 }
 
+async function runAnalysisFollowUpCycle() {
+  const url = `${APP_BASE_URL}/api/admin?action=analysis_follow_up`;
+  const headers = { 'x-cron-secret': CRON_SECRET };
+  const list = await fetch(`${url}&mode=list`, { headers, signal: AbortSignal.timeout(10000) });
+  if (!list.ok) throw new Error(`Follow Up list HTTP ${list.status}`);
+  const { symbols } = await list.json();
+  for (let i = 0; i < symbols.length; i += 3) {
+    await Promise.allSettled(symbols.slice(i, i + 3).map(async symbol => {
+      try {
+        const result = await fetch(`${url}&mode=scheduled&symbol=${encodeURIComponent(symbol)}`, {
+          method: 'POST', headers, signal: AbortSignal.timeout(65000),
+        });
+        if (!result.ok) throw new Error(`HTTP ${result.status}`);
+        await result.body?.cancel();
+      } catch (error) {
+        console.warn('daemon: Follow Up gagal untuk', symbol, error.message);
+      }
+    }));
+  }
+}
+
 function startScheduler() {
   if (!cron) { console.warn('daemon: paket node-cron tidak terpasang, Q-6 scheduler di-skip'); return; }
   if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, Q-6 scheduler di-skip'); return; }
@@ -1394,9 +1415,12 @@ function startScheduler() {
   // data kalender ekonomi yang rilis tepat di jam buka sesi (mis. NY 12:30
   // UTC = 08:30 ET jam rilis NFP/CPI/dll) sempat kepropagasi ke sumber
   // sebelum digest fetch.
-  cron.schedule('2 0 * * *',   () => runDigestCycle().catch(() => {}));
-  cron.schedule('2 7 * * *',   () => runDigestCycle().catch(() => {}));
-  cron.schedule('32 12 * * *', () => runDigestCycle().catch(() => {}));
+  for (const slot of ['2 0 * * *', '2 7 * * *', '32 12 * * *']) {
+    cron.schedule(slot, () => {
+      runDigestCycle().catch(() => {});
+      runAnalysisFollowUpCycle().catch(error => console.warn('daemon: Follow Up gagal:', error.message));
+    }, { timezone: 'UTC' });
+  }
   // ohlcv_sync tiap jam, offset menit ke-5 supaya tidak tabrakan detik dengan
   // ohlcv-sync.yml (keduanya sengaja jalan paralel selama masa observasi Q-6).
   cron.schedule('5 * * * *', () => triggerWithRetry('/api/admin?action=ohlcv_sync').catch(() => {}));

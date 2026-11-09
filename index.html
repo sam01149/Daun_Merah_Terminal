@@ -3895,6 +3895,13 @@ body:not(.light-theme) .ringkasan-gen-btn {
     </div>
     <div id="analisaContent" style="display:none">
       <div class="analisa-header" id="analisaHeader"></div>
+      <div class="no-print" id="analisaFollowUp" hidden style="margin:0 0 12px;font-size:11px;color:var(--muted);line-height:1.6">
+        <label style="display:inline-flex;align-items:center;gap:6px;color:var(--text)">
+          <input id="analisaFollowUpToggle" type="checkbox" role="switch" aria-describedby="analisaFollowUpStatus" onchange="setAnalisaFollowUp(this.checked)">
+          Follow Up
+        </label>
+        <span id="analisaFollowUpStatus" role="status"></span>
+      </div>
       <div class="analisa-workspace">
         <aside class="analisa-context-col">
           <div id="analisaD1Card"></div>
@@ -4914,7 +4921,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.07.7';
+const APP_VERSION = '2026.11.09.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -6916,6 +6923,9 @@ function _renderAiMarkdownSafe(text) {
 // ── ANALISA ──────────────────────────────────────────────
 const analisaDataCache = {};
 const analisaAiCache   = {};
+const analisaFollowUpStates = {};
+const analisaFollowUpReads = {};
+const analisaFollowUpWriting = new Map();
 let analisaAutoRefreshTimer   = null;
 const ANALISA_REFRESH_INTERVAL = 5 * 60 * 1000;
 
@@ -7147,6 +7157,8 @@ async function loadAnalisa(symbol, label, chipEl) {
   contentEl.style.display = 'block';
   renderAnalisaDecisionPanel();
   renderAnalisaPositioning();
+  renderAnalisaFollowUp();
+  if (symbol !== 'BTC-USD') loadAnalisaFollowUp(symbol);
 
   // Render from cache instantly if available
   if (analisaDataCache[symbol]) {
@@ -7192,6 +7204,110 @@ async function loadAnalisa(symbol, label, chipEl) {
   // ini tidak jalan lagi karena hasil itu kini disimpan permanen (lihat
   // _analisaRestoreFromStorage, tidak lagi dibuang berdasar umur 8 jam).
   if (symbol === 'GC=F' && !analisaAiCache[symbol]) _autoLoadXauAnalysis(symbol);
+}
+
+function renderAnalisaFollowUp() {
+  const { symbol } = analisaActive;
+  const panel = document.getElementById('analisaFollowUp');
+  panel.hidden = !symbol || symbol === 'BTC-USD';
+  if (panel.hidden) return;
+  const state = analisaFollowUpStates[symbol];
+  const toggle = document.getElementById('analisaFollowUpToggle');
+  toggle.checked = analisaFollowUpWriting.get(symbol) ?? !!state?.enabled;
+  toggle.disabled = typeof state?.enabled !== 'boolean' || analisaFollowUpWriting.has(symbol);
+  const schedule = '07.02, 14.02, dan 19.32 WIB saat pasar buka.';
+  let message = state?.requestError;
+  if (!message) {
+    if (analisaFollowUpWriting.has(symbol)) message = 'Menyimpan pengaturan...';
+    else if (!state) message = 'Memuat pengaturan...';
+    else if (!state.enabled) message = `Aktifkan untuk langsung menganalisis pair ini dan mengulang pada ${schedule}`;
+    else if (state.market_closed) message = `Pasar tutup. Follow Up menunggu jadwal saat pasar buka. ${schedule}`;
+    else if (state.status === 'running') message = 'Sedang menganalisis pair ini...';
+    else if (state.status === 'queued') message = `Menunggu analisa pertama. Jadwal ${schedule}`;
+    else if (state.status === 'error') message = state.message;
+    else message = `Analisa otomatis terakhir ${fmtCBTime(state.result.loaded_at)}. Jadwal ${schedule}`;
+  }
+  document.getElementById('analisaFollowUpStatus').textContent = message;
+}
+
+function acceptAnalisaFollowUp(symbol, state) {
+  analisaFollowUpStates[symbol] = state;
+  const data = state.result;
+  const cachedAt = Date.parse(analisaAiCache[symbol]?.analyzedAt) || 0;
+  if (data && Date.parse(data.loaded_at) > cachedAt) {
+    analisaAiCache[symbol] = {
+      commentary: data.commentary, structured: data.structured, model: data.model,
+      hasMakro: !!data.hasMakro, hasFund: !!data.hasFund, makroAt: data.makro_generated_at,
+      analyzedAt: data.loaded_at, saved_at: Date.now(), marketClosed: !!state.market_closed, followUp: true,
+    };
+    _analisaSaveAi(symbol);
+    if (analisaActive.symbol === symbol) _restoreAiResult(symbol);
+  }
+  if (analisaActive.symbol === symbol) renderAnalisaFollowUp();
+}
+
+async function requestAnalisaFollowUp(symbol, body, mode = '') {
+  const res = await fetch(`/api/admin?action=analysis_follow_up&symbol=${encodeURIComponent(symbol)}&mode=${mode}`, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+    keepalive: mode === 'initial',
+    signal: AbortSignal.timeout(mode === 'initial' ? 65000 : 12000),
+  });
+  const state = await res.json();
+  if (!res.ok) throw new Error(state.error || 'Follow Up belum dapat dimuat.');
+  return state;
+}
+
+async function loadAnalisaFollowUp(symbol) {
+  if (analisaFollowUpWriting.has(symbol) || analisaFollowUpReads[symbol]) return;
+  const read = Symbol();
+  analisaFollowUpReads[symbol] = read;
+  try {
+    const state = await requestAnalisaFollowUp(symbol);
+    if (analisaFollowUpReads[symbol] === read) acceptAnalisaFollowUp(symbol, state);
+  } catch (error) {
+    if (analisaFollowUpReads[symbol] === read) showAnalisaFollowUpError(symbol, error);
+  } finally {
+    if (analisaFollowUpReads[symbol] === read) delete analisaFollowUpReads[symbol];
+  }
+}
+
+function showAnalisaFollowUpError(symbol, error) {
+  const requestError = error.name === 'TimeoutError' || error instanceof TypeError
+    ? 'Koneksi Follow Up gagal. Coba muat ulang.'
+    : error.message;
+  acceptAnalisaFollowUp(symbol, { ...analisaFollowUpStates[symbol], requestError });
+}
+
+async function setAnalisaFollowUp(enabled) {
+  const { symbol } = analisaActive;
+  if (!symbol || analisaFollowUpWriting.has(symbol)) return;
+  delete analisaFollowUpReads[symbol];
+  analisaFollowUpWriting.set(symbol, enabled);
+  renderAnalisaFollowUp();
+  let state;
+  try {
+    state = await requestAnalisaFollowUp(symbol, { enabled });
+    acceptAnalisaFollowUp(symbol, state);
+  } catch (error) {
+    showAnalisaFollowUpError(symbol, error);
+  } finally {
+    analisaFollowUpWriting.delete(symbol);
+    if (analisaActive.symbol === symbol) renderAnalisaFollowUp();
+  }
+  if (!enabled || state?.status !== 'queued' || state.market_closed) return;
+  acceptAnalisaFollowUp(symbol, { ...state, status: 'running' });
+  try {
+    const result = await requestAnalisaFollowUp(symbol, { activation: state.activation }, 'initial');
+    if (analisaFollowUpStates[symbol]?.activation === state.activation && !analisaFollowUpWriting.has(symbol)) {
+      acceptAnalisaFollowUp(symbol, result);
+    }
+  } catch (error) {
+    if (analisaFollowUpStates[symbol]?.activation === state.activation && !analisaFollowUpWriting.has(symbol)) {
+      showAnalisaFollowUpError(symbol, error);
+    }
+  }
 }
 
 async function _autoLoadXauAnalysis(symbol) {
@@ -7377,7 +7493,8 @@ function _restoreAiResult(symbol) {
   _updateAnalisaDisclaimer(cached.model);
   const banner = cached.marketClosed ? _analisaMarketClosedBanner(cached.analyzedAt || null) : '';
   const isStale = _analisaResultIsStale(cached);
-  resultEl.innerHTML = banner + _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null, isStale);
+  const followUp = cached.followUp ? '<div class="analisa-ai-meta">Hasil Follow Up</div>' : '';
+  resultEl.innerHTML = banner + followUp + _renderStructuredAi(cached.structured || null, cached.commentary, cached.model, !!cached.hasMakro, true, !!cached.hasFund, cached.makroAt || null, cached.analyzedAt || null, isStale);
   resultEl.style.display = 'block';
   renderAnalisaDecisionPanel();
   renderAnalisaPositioning();

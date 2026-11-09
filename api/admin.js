@@ -37,6 +37,7 @@ const fsoCore=require('./_fso_core');
 const institutionViews = require('./_institution_views');
 const { computePrimeExecution, resampleCandles } = require('./_prime_execution');
 const manualAnalysis = require('./_manual_analysis');
+const analysisFollowUp = require('./_analysis_follow_up');
 const { buildPairContext, computeCurrencyStrength } = require('./_pair_context');
 const { validateTightenSl, computePreventiveTightenSl, _evaluateManaged, _aggManagementStats, isCorroborated, isManagedPending } = require('./_position_review');
 const { isCorrelatedExposureBlocked, correlatedExposureBlock, isClosedEarly, isManagedResolved, isLiveExposure, isTimingConflictBlocked, isInvalidationTriggered, INVALIDATION_TRIGGER_TYPES, INVALIDATION_TRIGGER_DIRECTIONS, INVALIDATION_TRIGGER_TIMEFRAMES, CORRELATED_PAIRS, POLICY_VERSION, POLICY_EPOCHS, policyVersionForTs, AATAS_EPOCH, isGoldRegimeBlocked } = require('./_auto_entry_guard');
@@ -117,6 +118,7 @@ const PUBLIC_ACTION_LIMITS = {
   ohlcv_read:           30,
   ohlcv_chart:          30,
   ohlcv_analyze:         5,
+  analysis_follow_up:   30,
   ohlcv_critic:          3,
   ohlcv_dashboard:      30,
   smart_bias:           20,
@@ -157,6 +159,7 @@ module.exports = async function handler(req, res) {
   if (action === 'ohlcv_read')         return ohlcvReadHandler(req, res);
   if (action === 'ohlcv_chart')        return ohlcvChartHandler(req, res);
   if (action === 'ohlcv_analyze')      return ohlcvAnalyzeHandler(req, res);
+  if (action === 'analysis_follow_up') return analysisFollowUpHandler(req, res);
   if (action === 'ohlcv_critic')       return ohlcvCriticHandler(req, res);
   if (action === 'ohlcv_dashboard')    return ohlcvDashboardHandler(req, res);
   if (action === 'smart_bias')         return smartBiasHandler(req, res);
@@ -7247,7 +7250,68 @@ async function _loadManualAnalysisContext(data, nowMs = Date.now()) {
   };
 }
 
-async function ohlcvAnalyzeHandler(req, res) {
+async function analysisFollowUpHandler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+  const { mode, symbol } = req.query;
+  const cronSecret = process.env.CRON_SECRET;
+  const cron = !!cronSecret && safeEqual(req.headers['x-cron-secret'] || '', cronSecret);
+  const appKey = process.env.APP_KEY;
+  const client = !!appKey && safeEqual(req.headers['x-app-key'] || '', appKey);
+  const scheduled = mode === 'list' || mode === 'scheduled';
+  if (scheduled ? !cron : !client) return res.status(403).json({ error: 'Akses Follow Up belum tersedia.' });
+  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+    return res.status(503).json({ error: 'Penyimpanan Follow Up belum tersedia.' });
+  }
+
+  const store = analysisFollowUp.createStore(redisCmd);
+  const marketClosed = !marketHours.isFxMarketOpen();
+  try {
+    if (mode === 'list' && req.method === 'GET') {
+      const symbols = marketClosed || !analysisFollowUp.currentSlot() ? [] : await store.list();
+      return res.status(200).json({ symbols });
+    }
+    const label = analysisFollowUp.PAIR_LABELS.get(symbol);
+    if (!label) return res.status(400).json({ error: 'Pair Follow Up tidak didukung.' });
+    const reply = state => res.status(200).json(analysisFollowUp.publicState(state, marketClosed));
+    if (!mode && req.method === 'GET') return reply(await store.read(symbol));
+    if (!mode && req.method === 'POST' && typeof req.body?.enabled === 'boolean') {
+      return reply(await store.setEnabled(symbol, req.body.enabled));
+    }
+    if (req.method !== 'POST' || !['initial', 'scheduled'].includes(mode)) {
+      return res.status(400).json({ error: 'Permintaan Follow Up tidak valid.' });
+    }
+    const slot = scheduled ? analysisFollowUp.currentSlot() : '';
+    if (marketClosed || slot === null) return reply(await store.read(symbol));
+    const run = require('node:crypto').randomUUID();
+    if (!await store.claim(symbol, run, slot, String(req.body?.activation || ''))) return reply(await store.read(symbol));
+
+    let payload;
+    const capture = {
+      setHeader() {},
+      status() { return this; },
+      json(data) { payload = data; },
+    };
+    const stillEnabled = async () => (await store.read(symbol))?.run === run;
+    let outcome;
+    try {
+      await ohlcvAnalyzeHandler({ method: 'POST', query: {}, body: { symbol, label }, headers: {} }, capture, {
+        followUp: true, stillEnabled,
+      });
+      outcome = payload?.structured && !payload.ai_status && !payload.ai_skipped
+        ? { status: 'done', result: JSON.stringify(payload) }
+        : { status: 'error', message: payload?.error || 'Analisa belum tersedia. Cek ulang pada jadwal berikutnya.' };
+    } catch (error) {
+      console.warn('Follow Up generation failed:', symbol, error.message);
+      outcome = { status: 'error', message: 'Analisa gagal. Cek ulang pada jadwal berikutnya.' };
+    }
+    return reply(await store.finish(symbol, run, outcome) || await store.read(symbol));
+  } catch (error) {
+    console.warn('Follow Up storage failed:', error.message);
+    return res.status(503).json({ error: 'Follow Up belum dapat dimuat. Coba lagi.' });
+  }
+}
+
+async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } = {}) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -7417,6 +7481,9 @@ async function ohlcvAnalyzeHandler(req, res) {
     const textBlock = buildOhlcvText(data);
     const nowPrice = data.h1?.current;
     const manualContext = isAutoCall ? null : await _loadManualAnalysisContext(data);
+    if (followUp && manualContext.evidence.stale) {
+      return res.status(200).json({ ai_skipped: true, error: 'Data harga belum cukup segar. Follow Up akan mencoba lagi pada jadwal berikutnya.' });
+    }
 
     // Option expiries NY cut hari ini (fx_options_cache, ditulis /api/feeds?type=options,
     // TTL 4h) — level "magnet" intraday untuk pair ini, sebagai S/R tambahan konteks AI.
@@ -7573,9 +7640,8 @@ async function ohlcvAnalyzeHandler(req, res) {
         })
         : fundBlock;
     } catch (e) { /* opsional — jangan gagalkan analisa kalau cache fundamental kosong */ }
-    // Fallback HANYA untuk isAutoCall (cron auto-entry) — manual selalu sudah kirim
-    // cbDir sendiri (atau sengaja null), perilakunya tidak disentuh sama sekali.
-    if (!cbDir && isAutoCall) {
+    // Permintaan terjadwal tidak membawa arah CB dari browser.
+    if (!cbDir && (isAutoCall || followUp)) {
       cbDir = _computeCbDirServerSide({ label: data.label, isXau: data.is_xau, cbBiasObj: cbBiasParsed, xauThesis });
     }
     if (!isAutoCall) {
@@ -7974,11 +8040,11 @@ async function ohlcvAnalyzeHandler(req, res) {
     // terpisah total dari key produksi; 1 call = 1 key konsisten dari canCall sampai
     // onSuccess/onFailure (pakai konstanta ini, jangan tulis literal lagi).
     const isExperimental  = isAutoCall || testDeepseekOnly;
-    const CB_DEEPSEEK_KEY   = isExperimental ? 'ai:deepseek:experimental' : 'ai:deepseek';
+    const CB_DEEPSEEK_KEY   = followUp ? 'ai:deepseek:follow_up' : isExperimental ? 'ai:deepseek:experimental' : 'ai:deepseek';
     // Audit S218: counter KUOTA HARIAN (beda dari circuit breaker di atas) sempat lupa
     // ikut dipisah — auto-entry & manual rebutan pool sama walau breaker-nya sudah
     // terisolasi sejak V-3.
-    const AI_BUDGET_DEEPSEEK_KEY     = isExperimental ? 'deepseek_experimental' : 'deepseek';
+    const AI_BUDGET_DEEPSEEK_KEY = followUp ? 'deepseek_follow_up' : isExperimental ? 'deepseek_experimental' : 'deepseek';
 
     // Primary/satu-satunya (Plan O-6, 2026-07-18 promosi dari diagnostik ?test_deepseek=1;
     // 2026-08-12: SambaNova akun-1/akun-2 yang dulu jadi fallback berurutan di sini
@@ -7992,6 +8058,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // panggilan AATAS memakai satu implementasi circuit-breaker/budget yang sama.
     // Jalur `isAutoCall` TIDAK lewat sini — pipeline dua panggilannya tepat di bawah.
     if (!isAutoCall && !isDiagnosticOnly) {
+      if (stillEnabled && !await stillEnabled()) return res.status(200).json({ ai_skipped: true });
       const r = await _callDeepSeekAnalyze(messages, {
         maxTokens: 1500, timeoutMs: 25000,
         cbKey: CB_DEEPSEEK_KEY, budgetKey: AI_BUDGET_DEEPSEEK_KEY,
@@ -8578,7 +8645,7 @@ async function ohlcvAnalyzeHandler(req, res) {
     // developer-only, pengguna TIDAK PERNAH boleh melihat "Analisa sudah jadi"/auto-tick
     // checklist dari call daemon. Response HTTP ke daemon tetap payload penuh (di bawah),
     // hanya cache yang dibaca `mode=cached`/tab Analisa publik yang senyap.
-    if ((commentary || structured) && !isDiagnosticOnly && !isAutoCall) {
+    if ((commentary || structured) && !isDiagnosticOnly && !isAutoCall && !followUp) {
       // TTL 4 hari (bukan cuma beberapa jam): analisa terakhir sebelum market tutup Jumat
       // 21:00 UTC harus tetap hidup di Redis sampai market buka lagi Minggu malam/Senin
       // pagi WIB — gate market_closed di atas (baris ~4125) numpang key yang sama untuk
@@ -8667,7 +8734,7 @@ async function ohlcvAnalyzeHandler(req, res) {
         .catch(() => {});
     }
 
-    if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly) {
+    if (structured?.entry_zone && structured.sl && structured.tp && !isDiagnosticOnly && !followUp) {
       const setupLogKey = isAutoCall ? AUTO_SETUP_LOG_KEY : 'setup_log:v1';
       // PLAN U-3 lanjutan (2026-07-20, diskusi user): baca-ubah-tulis array ini TIDAK
       // atomik — kalau AUTO_ENTRY_PAIRS diperluas (>1 pair berbagi array yang sama) dan

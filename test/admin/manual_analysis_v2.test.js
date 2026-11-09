@@ -126,6 +126,36 @@ test('manual v2 handler: valid plan, invalid prices, unavailable proof, and read
     assert.match(good.commentary,/^KESIMPULAN SISTEM: RENCANA BERSYARAT BEARISH/);
     assert(reads.some(([cmd,k])=>cmd==='HGETALL'&&k==='fundamental:EUR'));assert(reads.some(([cmd,k])=>cmd==='HGETALL'&&k==='fundamental:USD'));
     const prompt=captured.messages[1].content;assert.match(prompt,/DATA RILIS EKONOMI/);assert.match(prompt,/ema200_d1/);assert.doesNotMatch(prompt,/4 paragraf pertama wajib|pengecualian hanya breakout/);
+    const followUp = require('../../api/_analysis_follow_up');
+    const originalStore = followUp.createStore;
+    process.env.APP_KEY = 'follow-up-fixture';
+    followUp.createStore = () => {
+      let activeRun;
+      return {
+        claim: async (_, run) => { activeRun = run; return true; },
+        read: async () => ({ run: activeRun }),
+        finish: async (_, run, outcome) => {
+          assert.equal(run, activeRun);
+          return { activation:'fixture', ...outcome };
+        },
+      };
+    };
+    try {
+      reads.length = 0;
+      const response = { setHeader(){}, status(n){this.code=n;return this}, json(body){this.body=body} };
+      await handler({
+        method:'POST', headers:{'x-app-key':'follow-up-fixture'}, body:{activation:'fixture'},
+        query:{action:'analysis_follow_up',mode:'initial',symbol:'EURUSD=X'},
+      }, response);
+      assert.equal(response.code, 200);
+      assert.equal(response.body.status, 'done');
+      assert.equal(response.body.result.structured.academy_contract_status, 'conditional');
+      assert(reads.some(([cmd, key]) => cmd === 'INCR' && key.startsWith('ai_budget:deepseek_follow_up:')));
+      assert(!reads.some(([cmd, key]) => cmd === 'SET' && (key.startsWith('ohlcv_analysis:') || key === 'setup_log:v1')));
+    } finally {
+      followUp.createStore = originalStore;
+      delete process.env.APP_KEY;
+    }
     answer={...base,bias:'short'};const alias=await run();assert.equal(alias.structured.bias,'bearish');assert.equal(alias.structured.bias_reported,'short');assert.equal(alias.structured.academy_contract_status,'conditional');
     answer={...base,entry_zone:'abc',sl:'def',tp:'ghi'};const bad=await run();assert.equal(bad.structured.academy_contract_status,'rejected');assert.equal(bad.structured.entry_zone,null);assert.doesNotMatch(bad.commentary,/Analisis model/);
     keys['ohlcv:EURUSD=X:1d']=JSON.stringify(input.candles1d.slice(-10));
