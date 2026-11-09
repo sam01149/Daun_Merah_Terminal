@@ -7256,7 +7256,7 @@ async function analysisFollowUpHandler(req, res) {
   const cronSecret = process.env.CRON_SECRET;
   const cron = !!cronSecret && safeEqual(req.headers['x-cron-secret'] || '', cronSecret);
   const appKey = process.env.APP_KEY;
-  const client = !!appKey && safeEqual(req.headers['x-app-key'] || '', appKey);
+  const client = !appKey || safeEqual(req.headers['x-app-key'] || '', appKey);
   const scheduled = mode === 'list' || mode === 'scheduled';
   if (scheduled ? !cron : !client) return res.status(403).json({ error: 'Akses Follow Up belum tersedia.' });
   if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
