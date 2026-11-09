@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-07 (Session 476 - Perbaikan Analisa manual Prime v2)
+> **Last updated:** 2026-11-09 (Session 478 - Verifikasi NO TRADE NZD/USD)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 478 (2026-11-09) — Verifikasi NO TRADE NZD/USD
+
+**Bukti produksi.** Pembacaan cache Analisa NZD/USD mencocokkan hasil 9 November 08:54:52 WIB pada tangkapan layar: `deepseek-v4-flash`, bias dan arah makro bearish, status `rejected`, alasan RR pada sisi entry paling konservatif kurang dari minimum 1:2. Entry, SL, TP, dan nilai RR semuanya kosong pada hasil yang disimpan. Angka RR aktual kandidat tidak bisa dipulihkan dari hasil ini. Pembacaan cache tidak menjalankan AI baru atau membuat setup.
+
+**Perilaku dan masalah tampilan.** Bias menggambarkan arah; pemeriksaan RR menentukan kelayakan level. NO TRADE memang menghilangkan level dan narasi bebas model agar kandidat yang ditolak tidak tampil sebagai saran entry. Namun renderer lama menganggap `KESIMPULAN SISTEM:` paragraf pertama dan melabelinya DAILY TREND & MACRO RANGE. Ringkasan juga masih menerima invalidasi H1 0.56260 dan horizon tiga hari dari kandidat, meski level entry telah dibuang. D1 Uptrend dan perubahan 30D negatif bisa muncul bersama: tren membandingkan rerata penutupan dua paruh jendela, sedangkan persentase membandingkan pembukaan pertama dengan penutupan terakhir. Cooldown yang tersisa merupakan bagian dari jeda 90 detik antargenerasi.
+
+**Verifikasi dan status.** Probe lokal dengan validator dan renderer asli mereproduksi penolakan RR di tepi konservatif, judul yang keliru, invalidasi tersisa, dan tidak adanya tombol Buat Rencana. Suite penuh 1.647/1.647 lulus. Runtime tidak diedit karena `index.html` dan `sw.js` masih diklaim S477; koreksi tampilan diparkir di progress lokal sampai klaim dilepas. Aturan RR dan keputusan transaksi tidak berubah.
 
 ## Changelog Session 476 (2026-11-07) — Perbaikan Analisa manual Prime v2
 
