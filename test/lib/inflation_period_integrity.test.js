@@ -32,3 +32,21 @@ test('annual, monthly and trimmed releases cannot overwrite each other in either
     assert.equal(JSON.parse(hash['CPI Trimmed Mean MoM']).actual,'0.5%');
   }
 });
+
+
+test('Inflation Rate MoM NSA cannot overwrite Seasonally Adjusted Inflation Rate MoM in either arrival order', async () => {
+  const sa = { currency: 'USD', event: 'Inflation Rate MoM', actual: '0.4%', previous: '0.3%', forecast: '0.3%', date: '2026-10-15' };
+  const nsa = { currency: 'USD', event: 'Inflation Rate MoM NSA', actual: '0.17%', previous: '0.59%', date: '2026-10-15' };
+
+  for (const batch of [[sa, nsa], [nsa, sa]]) {
+    const hash = {};
+    await autoUpdateFundamentalsFromCalendar(batch, async (cmd, key, ...args) => {
+      if (cmd === 'HMGET') return args.map(k => hash[k] || null);
+      if (cmd === 'HSET') for (let i = 0; i < args.length; i += 2) hash[args[i]] = args[i + 1];
+    });
+    const cpiMoM = JSON.parse(hash['CPI MoM']);
+    assert.equal(cpiMoM.actual, '0.4%');
+    assert.equal(cpiMoM.previous, '0.3%');
+    assert.equal(cpiMoM.forecast, '0.3%');
+  }
+});

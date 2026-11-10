@@ -11,12 +11,23 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-09 (PLAN AI - Analisa informatif untuk keputusan trader)
+> **Last updated:** 2026-11-11 (Penolakan Rilis Inflasi NSA pada Slot CPI MoM & Sanitasi Data)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 482 (2026-11-11) — Penolakan Rilis Inflasi NSA pada Slot CPI MoM & Sanitasi Data
+
+**Masalah.** User melaporkan kartu fundamental USD menampilkan `CPI MoM 0.17% ↓ 0.59%`, bertentangan dengan rilis headline resmi `Inflation Rate MoM 0.4% ^ 0.3%` di kalender. Ditelusuri: TradingView merilis dua event inflasi bulanan pada jam yang sama: `Inflation Rate MoM` (Seasonally Adjusted / SA, High impact, consensus 0.3%, actual 0.4%) dan `Inflation Rate MoM NSA` (Not Seasonally Adjusted / unadjusted, Medium impact, tanpa konsensus, actual 0.17%, previous 0.59%). Fungsi `_matchIndicatorKey` di `api/_fundamental_parser.js` sebelumnya mencocokkan kedua rilis ke key yang sama (`CPI MoM`) tanpa mengecek qualifier `NSA`. Akibatnya, rilis sekunder unadjusted menimpa slot `CPI MoM` resmi di Redis `fundamental:USD`, membalikkan sinyal dari beat/hotter inflation (0.4% ^ 0.3%) menjadi seolah-olah inflasi anjlok (0.17% ↓ 0.59%).
+
+**Solusi & Perubahan.**
+1. `api/_fundamental_parser.js` (`_matchIndicatorKey`): Ditambahkan guard eksplisit penolakan `NSA` / `unadjusted` / `not seasonally adjusted` untuk indikator MoM (khususnya inflasi). Jika rilis memiliki qualifier NSA dan berperiode MoM, fungsi mengembalikan `indicatorKey = false`. Rilis tersebut ditolak baik di jalur kalender (`extractFundamentalFromCalendarEvent` -> `null`) maupun headline (`parseFundamentalFromHeadline` -> `null` tanpa membuat key fallback sampah).
+2. `api/admin.js` (`fundamentalRefreshHandler` & `fundamentalGetHandler`): Ditambahkan sanitasi retroaktif spesifik untuk entri terkontaminasi `CPI MoM` USD (`actual === '0.17%' && previous === '0.59%'`). Entri yang salah langsung dihapus dari Redis (`HDEL fundamental:USD 'CPI MoM'`) dan respons memori, sehingga slot `CPI MoM` pulih dan diisi kembali oleh rilis SA resmi 0.4% saat sinkronisasi kalender berjalan.
+3. Test suite (`test/lib/fundamental_parser.test.js`, `test/lib/inflation_period_integrity.test.js`, `test/admin/manual_analysis_v2.test.js`): Ditambahkan pengujian penolakan headline & kalender NSA MoM, integritas rilis SA yang tetap lolos, serta ketahanan urutan kedatangan batch di `autoUpdateFundamentalsFromCalendar`.
+
+**Verifikasi.** 1.657/1.657 tes di `npm test` lulus (100% hijau).
 
 ## Changelog Session 481 (2026-11-09) — Koreksi data dan bahasa Analisa
 

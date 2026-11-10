@@ -132,6 +132,29 @@ test('headline Eurozone HICP eksplisit (bukan negara anggota) tetap diterima ke 
   assert.strictEqual(r.value, '2.4%');
 });
 
+// Bug 2026-11-11 (laporan user — kartu USD menampilkan CPI MoM 0.17% ↓ 0.59% dari rilis NSA):
+// Rilis unadjusted (NSA) untuk inflasi bulanan (MoM) DITOLAK agar tidak menimpa slot CPI MoM resmi (SA).
+test('headline inflasi bulanan MoM NSA DITOLAK (tidak masuk CPI MoM dan tidak bikin fallback key)', () => {
+  const r1 = parseFundamentalFromHeadline('US Inflation Rate MoM NSA Actual 0.17% (Forecast -, Previous 0.59%)');
+  assert.strictEqual(r1, null);
+  const r2 = parseFundamentalFromHeadline('US CPI MoM NSA Actual 0.17% Previous 0.59%');
+  assert.strictEqual(r2, null);
+  const r3 = parseFundamentalFromHeadline('US Core Inflation Rate MoM NSA Actual 0.2%');
+  assert.strictEqual(r3, null);
+});
+
+test('headline inflasi bulanan MoM Seasonally Adjusted (non-NSA) tetap diterima ke slot CPI MoM', () => {
+  const r = parseFundamentalFromHeadline('US Inflation Rate MoM Actual 0.4% Forecast 0.3% Previous 0.3%');
+  assert.deepStrictEqual(r, { currency: 'USD', key: 'CPI MoM', value: '0.4%', forecast: '0.3%', previous: '0.3%' });
+});
+
+test('event kalender TradingView: Inflation Rate MoM NSA DITOLAK, rilis SA Inflation Rate MoM DITERIMA', () => {
+  const nsa = extractFundamentalFromCalendarEvent({ currency: 'USD', event: 'Inflation Rate MoM NSA', actual: '0.17%', previous: '0.59%', date: '2026-10-15' });
+  assert.strictEqual(nsa, null);
+  const sa = extractFundamentalFromCalendarEvent({ currency: 'USD', event: 'Inflation Rate MoM', actual: '0.4%', previous: '0.3%', forecast: '0.3%', date: '2026-10-15' });
+  assert.deepStrictEqual(sa, { currency: 'USD', key: 'CPI MoM', value: '0.4%', previous: '0.3%', forecast: '0.3%', date: '2026-10-15' });
+});
+
 // Bug 2026-08-11 (laporan user): headline FJ "US ADP Wkly Employment Change" —
 // qualifier "Wkly" nempel di TENGAH judul (ADP [Wkly] Employment Change), beda
 // posisi dari versi calendar_v1 (lihat test extractFundamentalFromCalendarEvent

@@ -1730,6 +1730,32 @@ async function fundamentalRefreshHandler(req, res) {
       if (eurDelArgs.length > 2) await redisCmd(...eurDelArgs);
     } catch(e) { console.warn('sanitize EUR France-contamination failed:', e.message); }
 
+    // BUG DITEMUKAN & DIFIX (2026-11-11, laporan user): 'CPI MoM' USD sempat terisi
+    // nilai rilis unadjusted NSA (actual 0.17%/previous 0.59% — rilis sekunder TradingView
+    // "Inflation Rate MoM NSA", BUKAN headline resmi 0.4%/0.3%). Guard di _fundamental_parser.js
+    // sekarang menolak rilis NSA baru, tapi nilai lama yang sudah tertulis di Redis perlu
+    // dibersihkan agar slot 'CPI MoM' pulih kembali atau diisi ulang rilis SA resmi.
+    try {
+      const USD_NSA_CONTAMINATION = {
+        'CPI MoM': { actual: '0.17%', previous: '0.59%' },
+      };
+      const usdBadKeys = Object.keys(USD_NSA_CONTAMINATION);
+      const usdRaw = await redisCmd('HMGET', 'fundamental:USD', ...usdBadKeys);
+      const usdDelArgs = ['HDEL', 'fundamental:USD'];
+      for (let i = 0; i < usdBadKeys.length; i++) {
+        const raw = usdRaw?.[i];
+        if (!raw) continue;
+        try {
+          const entry = JSON.parse(raw);
+          const bad = USD_NSA_CONTAMINATION[usdBadKeys[i]];
+          if (entry.actual === bad.actual && entry.previous === bad.previous) {
+            usdDelArgs.push(usdBadKeys[i]);
+          }
+        } catch(_) {}
+      }
+      if (usdDelArgs.length > 2) await redisCmd(...usdDelArgs);
+    } catch(e) { console.warn('sanitize USD NSA-contamination failed:', e.message); }
+
     // Also refresh GDP Nowcast if data is stale (>6h) — piggyback on refresh call
     let gdpUpdated = false;
     try {
@@ -1891,6 +1917,10 @@ async function fundamentalGetHandler(req, res) {
           for (let i = 0; i < raw.length; i += 2) {
             try { data[raw[i]] = JSON.parse(raw[i + 1]); } catch(_) { data[raw[i]] = { actual: raw[i + 1] }; }
           }
+        }
+        if (cur === 'USD' && data['CPI MoM'] && data['CPI MoM'].actual === '0.17%' && data['CPI MoM'].previous === '0.59%') {
+          delete data['CPI MoM'];
+          redisCmd('HDEL', 'fundamental:USD', 'CPI MoM').catch(() => null);
         }
         return [cur, data];
       })),

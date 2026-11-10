@@ -169,7 +169,7 @@ test('manual v2 handler: valid plan, invalid prices, unavailable proof, and read
     }
     answer={...base,bias:'short'};const alias=await run();assert.equal(alias.structured.bias,'bearish');assert.equal(alias.structured.bias_reported,'short');assert.equal(alias.structured.academy_contract_status,'conditional');
     answer={...base,entry_zone:'abc',sl:'def',tp:'ghi'};const bad=await run();assert.equal(bad.structured.academy_contract_status,'informational');assert.equal(bad.structured.entry_zone,null);assert.match(bad.commentary,/Analisis model/);
-    keys['ohlcv:EURUSD=X:1d']=JSON.stringify(input.candles1d.slice(-10));
+    keys['ohlcv:EURUSD=X:1d']=JSON.stringify(JSON.parse(keys['ohlcv:EURUSD=X:1d']).slice(-10));
     keys['manual_prime_inputs:v2:EURUSD=X']=JSON.stringify({captured_at:Date.now(),input:{candles1h:JSON.parse(keys['ohlcv:EURUSD=X:1h']),candles4h:JSON.parse(keys['ohlcv:EURUSD=X:4h']),candles1d:JSON.parse(keys['ohlcv:EURUSD=X:1d'])}});
     answer={...base};const missing=await run();assert.equal(missing.structured.strategy_id,'momentum');assert.match(missing.structured.analysis_observations.join(' '),/EMA200/);assert.equal(missing.structured.entry_zone,base.entry_zone);
     const previous=calls;market.isFxMarketOpen=()=>false;const context=await run('context');assert.equal(calls,previous);assert.equal(context.analysis_policy_v,'prime-v3');assert.equal(context.market_closed,true);

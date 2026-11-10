@@ -328,6 +328,19 @@ function _matchIndicatorKey(t, currency) {
     else if (indicatorKey === 'GDP YoY') indicatorKey = 'GDP YoY Flash';
   }
 
+  // BUG DITEMUKAN & DIFIX (2026-11-11, laporan user — kartu USD nampilin CPI MoM 0.17% ↓ 0.59%
+  // yang merupakan data unadjusted NSA, menimpa headline resmi 0.4% ^ 0.3%):
+  // Rilis inflasi bulanan (MoM) berlabel NSA (Not Seasonally Adjusted, mis. TradingView
+  // "Inflation Rate MoM NSA" atau "US CPI MoM NSA") BUKAN benchmark acuan pasar maupun
+  // The Fed — pasar & bank sentral selalu menggunakan Seasonally Adjusted (SA) untuk
+  // mengukur momentum inflasi bulanan. Di kalender TradingView, rilis unadjusted ini
+  // (Medium impact, tanpa konsensus) keluar di jam yang sama dengan rilis SA ("Inflation
+  // Rate MoM", High impact). Rilis NSA ditolak eksplisit (indicatorKey = false) agar
+  // tidak menimpa slot 'CPI MoM' / 'Core CPI MoM' dan tidak menciptakan key fallback sampah.
+  if (indicatorKey && /MoM/i.test(indicatorKey) && /\bnsa\b|\bunadjusted\b|\bnot seasonally adjusted\b/i.test(t)) {
+    indicatorKey = false;
+  }
+
   // BUG DITEMUKAN & DIFIX (2026-08-15, laporan user — minta kartu "CPI EUR"
   // cuma pakai data Eurozone ASLI, bukan rilis 1 negara anggota): FUND_COUNTRY_ONLY
   // di atas menyamakan SEMUA negara anggota (Prancis/Italia/dst — bukan cuma
