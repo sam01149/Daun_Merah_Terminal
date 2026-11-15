@@ -24,6 +24,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-15] Ide AI gratis untuk pandangan institusi
+
+User mempertimbangkan AI gratis untuk membaca bias naik/turun institusi. Kondisi kode: ekstraksi ING dan ABN AMRO memakai DeepSeek Flash berbayar; aturan validasi kutipan, cakupan mata uang dan horizon tetap menentukan kelayakan suara. Kandidat awal adalah Gemini free tier yang sudah dipakai fitur lain, bukan provider yang kontraknya telah diputus. Google menyatakan kuota gratis bergantung model/proyek dan konten free tier dapat dipakai untuk peningkatan produk: [billing](https://ai.google.dev/gemini-api/docs/billing), [pricing](https://ai.google.dev/gemini-api/docs/pricing). Kuota tersisa akun dan izin pengiriman laporan bank belum diverifikasi untuk penggunaan ini. Usulan belum diputuskan: uji sampel laporan dengan jawaban acuan manusia, bandingkan akurasi arah, kutipan, horizon, abstain dan latensi dengan DeepSeek; cek batas bersama dan persyaratan sebelum integrasi. Model gratis tidak mengatasi kekosongan pandangan eksplisit, dan tidak boleh mengarang pendapat institusi.
+
 ### [2026-11-15] Audit Dashboard & Tabel Smart Bias: validasi retrieval indikator dan formulasi bias
 
 Audit menjawab pertanyaan user mengenai keakuratan pengambilan informasi tabel bias di dashboard trader serta kelayakan indikator dan formulasinya:
