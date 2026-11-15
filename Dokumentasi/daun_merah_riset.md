@@ -24,6 +24,17 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Riset Aktif
 
+### [2026-11-11] Laporan user: kontradiksi output analisa NZD/USD
+
+Sumber: laporan user dalam percakapan 11 November 2026; dicatat sebagai laporan yang belum diverifikasi terhadap output asli atau kode. User meminta hanya dicatat, tanpa perbaikan.
+
+- Output menampilkan bias bullish sementara alasan makro menyatakan Fed hawkish, data NZD melemah, dan arah makro bearish; dikhawatirkan tampak sebagai alasan membeli NZD/USD.
+- Contoh bullish: entry 0.55882–0.56154, SL 0.55278, TP 0.56498; dari batas atas entry risiko 87,6 pip dan reward 34,4 pip, RR sekitar 1:0,39 tetapi ditampilkan sebagai 1:0.392694063927. User menyebut standar minimal 1:2 dan menilai setup ini seharusnya NO TRADE.
+- Judul dan isi section dilaporkan tidak cocok: H4 Swing & S/R Structure hanya berisi label catatan analis tanpa isi; Intraday Momentum & Candle Patterns berisi makro; Daily Trend & Macro Range berisi ringkasan skenario; Analisis Tambahan muncul dua kali.
+- Narasi tactical fade bullish ditampilkan bersama koreksi Sistem Hakim yang menyatakan ada konflik makro-teknikal dan paragraf sebelumnya mungkin tidak lagi mencerminkan status final, sehingga status akhir membingungkan.
+
+Belum dilakukan audit, verifikasi fakta makro, atau perubahan aplikasi; klaim tentang aturan RR dan penyebab masalah juga belum diverifikasi.
+
 ### [2026-11-07] Menilai audit AI: kesesuaian prinsip tidak membuktikan akurasi ekonomi (S467)
 
 User memberikan laporan AI lain tentang Smart Bias. Dibandingkan dengan kode saat ini dan transkrip lokal Prime di .cache/prime-audit-20261010/transcripts/ (what-the-smart-bias-is, how-the-bias-is-weighted, the-table-and-the-summary, the-economic-cycle, using-the-bias, where-the-chart-fits). Prinsip inti/pendukung, pembatasan arah dan sifat deskriptif memang sejalan dengan adaptasi yang disepakati. Namun predikat 100% sesuai/lolos semua tidak dibuktikan oleh checklist atau unit test. Academy menjelaskan prioritas empat tier, interpretasi berdasarkan konteks/reaksi pasar dan narasi; tidak mengungkap formula lengkap yang sama dengan mesin kita. Kode sendiri menandai numeric_formula=local_adaptation_not_published_by_academy. Metode simple sign actual-vs-previous, GDP+unemployment, keselarasan inflasi/tone, dan aturan agregasi adalah pilihan implementasi lokal; ini tidak menjamin seluruh penilaian benar atau bebas noise.
