@@ -1349,12 +1349,15 @@ async function maybeTriggerSetupWatch(yahooSymbol, price) {
 let cron = null;
 try { cron = require('node-cron'); } catch (e) { /* ditangani di startScheduler */ }
 
+// Beri Vercel waktu mengembalikan respons setelah batas function 60 detik.
+const CRON_REQUEST_TIMEOUT_MS = 65_000;
+
 async function triggerEndpoint(path) {
   if (!CRON_SECRET) { console.warn(`daemon: CRON_SECRET kosong, skip trigger ${path}`); return false; }
   try {
     const r = await fetch(`${APP_BASE_URL}${path}`, {
       headers: { 'x-cron-secret': CRON_SECRET },
-      signal: AbortSignal.timeout(55000),
+      signal: AbortSignal.timeout(CRON_REQUEST_TIMEOUT_MS),
     });
     console.log(`daemon: trigger ${path} -> HTTP ${r.status}`);
     return r.ok;

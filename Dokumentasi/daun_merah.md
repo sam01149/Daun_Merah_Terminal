@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-11 (Penolakan Rilis Inflasi NSA pada Slot CPI MoM & Sanitasi Data)
+> **Last updated:** 2026-11-15 (Audit cron produksi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 483 (2026-11-15) — Audit cron produksi
+
+**Jadwal umum.** Railway aktif dan menulis heartbeat ke Redis pada 15 November 10:20 WIB. Riwayat GitHub Actions dengan event `schedule` untuk 9–15 November WIB mencatat 19/19 Market Digest, 24/24 OHLCV Sync, 26/26 watcher TP/SL, dan 6/6 backup setup sukses. Selang watcher yang tercatat 3 jam 13 menit sampai 10 jam 24 menit, walaupun YAML meminta tiap lima menit. Jaringan pengaman GitHub tidak bisa dipakai sebagai bukti evaluasi berjalan setiap lima menit. Institution Research Views gagal pada 11/15 run. Dua contoh log 13 dan 15 November WIB menunjukkan tahap ABN mengembalikan `abn_weekly_not_found`, sehingga kegagalan terjadi setelah cron sudah berjalan (run `43299295285` dan `43649385476`).
+
+**Perbaikan dan verifikasi.** Timeout klien scheduler Railway menjadi 65 detik untuk memberi ruang bagi batas server 60 detik. Simulasi memeriksa request auto-entry, hasil sukses HTTP 200 dan kegagalan HTTP 504. Salinan rilis yang hanya memuat perubahan sesi ini lulus 1.657/1.657 tes. Rincian hasil audit generator AATAS dicatat pada S483 di changelog `professional_llm_trader/` lokal.
 
 ## Changelog Session 482 (2026-11-11) — Penolakan Rilis Inflasi NSA pada Slot CPI MoM & Sanitasi Data
 
