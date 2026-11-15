@@ -18,6 +18,16 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
 
+## Changelog Session 485 (2026-11-15) — Verifikasi cron bank dan Railway
+
+Workflow Institution Research Views dijalankan manual setelah rilis S484 pada 15 November 10:55 WIB. Tahap ING dan ABN sama-sama sukses, run GitHub `43674471063`. Belum ada run terjadwal baru untuk membuktikan jadwal otomatis pascarilis. Sumber ABN yang ditemukan tidak memenuhi pemeriksaan awal konteks mingguan, sehingga keberhasilan sinkronisasi tidak menjamin kolom memiliki pandangan baru.
+
+Dashboard Railway akun user menunjukkan layanan online dan watcher memanggil endpoint TP/SL sekitar tiap lima menit pada sampel 08:45–10:25 WIB. Cadangan GitHub masih terlambat dan tidak memberi jaminan yang sama ketika Railway berhenti. Pemeriksaan ukuran cache candle, cakupan pair dan log historis auto-entry ada di `professional_llm_trader/changelog.md` S484.
+
+**Pemeriksaan lanjutan 11:56 WIB.** Endpoint `institution_views` menghasilkan 12 laporan tersimpan dan delapan currency `insufficient`. Dua klaim ING 9 November masih dalam pekan, namun bersyarat sehingga `buildInstitutionColumn` sengaja tidak memakainya untuk arah aktif. Sync manual 10:55 WIB sukses; run terjadwal pascarilis belum terlihat. Pasar tutup menurut kode dari Sabtu 04:00 hingga Senin 05:00 WIB; generator auto-entry dan uji konsistensi sudah berhenti dalam rentang itu. Daemon yang sama tetap mengurus watcher, berita, harga, heartbeat dan jadwal lain, sehingga mematikan generator saja tidak mematikan konsumsi RAM daemon.
+
+Penggunaan Railway pada dashboard periode 20 Oktober–20 November: $0,42 terpakai, estimasi akhir $0,50 dari jatah $1; komponen RAM $0,3357, CPU $0,0341, egress $0,0459. Estimasi dashboard bukan jaminan dan trial 0 hari tampil bersamaan dengan layanan online. Mematikan seluruh daemon selama 49 jam tutup pasar dapat secara kasar mengurangi sekitar 49/168 dari biaya daemon, dengan asumsi pemakaian seragam dan wake-up andal; angka teoritis $0,14/bulan pada proyeksi $0,50 belum dibuktikan, dan notifikasi/heartbeat/jadwal lain ikut berhenti. Auto-sleep Railway memerlukan periode tanpa traffic keluar dan perlu trigger eksternal untuk wake; heartbeat, polling dan stream saat ini justru menjaga aktivitas. Jangan aktifkan sleep tanpa desain dan uji wake yang mandiri. Dokumentasi resmi: https://docs.railway.com/deployments/serverless dan https://docs.railway.com/pricing/plans.
+
 ## Changelog Session 484 (2026-11-15) — Perbaikan Pandangan Bank dan tindak lanjut audit
 
 Indeks umum ABN tidak lagi menampilkan FX Weekly ketika daftar artikel lain lebih baru. Collector mencari paralel pada indeks umum dan indeks resmi penulis Georgette Boele, lalu tetap memeriksa host, identitas, tanggal, judul, isi dan umur artikel. Probe langsung dengan kode baru menemukan FX Weekly 4 November, 4.002 karakter, tanpa klaim weekly yang memenuhi pemeriksaan awal. Tes regresi menutup indeks utama tanpa tautan. Sinkronisasi tidak memaksa pandangan untuk mengisi kolom kosong. Klaim Smart Bias yang terlalu pasti di `daun_merah_riset.md` diperbaiki.
