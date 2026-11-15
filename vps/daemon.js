@@ -1360,6 +1360,22 @@ async function triggerEndpoint(path) {
       signal: AbortSignal.timeout(CRON_REQUEST_TIMEOUT_MS),
     });
     console.log(`daemon: trigger ${path} -> HTTP ${r.status}`);
+    if (path.includes('action=ohlcv_analyze') && path.includes('auto=1')) {
+      try {
+        const query = new URL(path, APP_BASE_URL).searchParams;
+        const body = await r.json();
+        const entry = {
+          ts: Date.now(), slot: query.get('academy_slot_id'), pair: query.get('label'),
+          http_status: r.status, cached: body.cached === true,
+          ai_skipped: body.ai_skipped === true, ai_status: body.ai_status?.state || null,
+          error: typeof body.error === 'string' ? body.error.slice(0, 300) : null,
+          reject_reason: body.structured?.aatas_reject_reason || null,
+          verdict: body.structured?.verdict || null,
+        };
+        await redisCmd('LPUSH', 'auto_cycle_response_log:v1', JSON.stringify(entry));
+        await redisCmd('LTRIM', 'auto_cycle_response_log:v1', '0', '499');
+      } catch (e) { console.warn('daemon: auto-entry response log gagal:', e.message); }
+    }
     return r.ok;
   } catch (e) { console.warn(`daemon: trigger ${path} gagal:`, e.message); return false; }
 }

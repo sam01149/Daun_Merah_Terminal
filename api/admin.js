@@ -886,6 +886,7 @@ const KEY_REGISTRY = [
   // sebelum ini adalah akses Redis mentah langsung (di luar API resmi aplikasi).
   // Murni tambahan visibilitas baca, TIDAK mengubah perilaku auto-entry apa pun.
   { key: 'auto_skip_log',                  owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 200): alasan auto-entry di-skip sebelum AI dipanggil (hard news/breaking news/kejutan ekonomi)' },
+  { key: 'auto_cycle_response_log:v1',     owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 500): status respons tiap pemanggilan auto-entry untuk audit slot' },
   { key: 'posreview_skip_log',             owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 50): alasan review posisi berbasis berita di-skip (berita belum terkonfirmasi/UNCONFIRMED)' },
   { key: 'surprise_log:v1',                owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 300): kejutan data ekonomi yang dievaluasi Gate "kejutan ekonomi" (Plan X, checkSurpriseSkip)' },
   { key: 'calendar_actual_latency_log:v1', owner: 'vps/daemon.js', ttl_expected: null, note: 'List (cap 100): sampel keterlambatan calendar_v1.actual vs waktu rilis asli (pollCalendarLatency, Plan U-3 sub-riset)' },
@@ -900,7 +901,7 @@ const KEY_REGISTRY = [
 // exists/ttl — dipisah dari auto_guard_stats:*/sistem_hakim_stats:* (integer INCR)
 // di getKeyInfo karena tipe Redis-nya beda (LIST vs STRING).
 const LIST_LOG_KEYS = new Set([
-  'auto_skip_log', 'posreview_skip_log', 'surprise_log:v1',
+  'auto_skip_log', 'auto_cycle_response_log:v1', 'posreview_skip_log', 'surprise_log:v1',
   'calendar_actual_latency_log:v1', 'consistency_log:v1',
   'position_review_log:v1', 'xau_history', 'aatas_reject_log:v1', 'aatas_academy_rank:v1',
 ]);
@@ -8453,8 +8454,16 @@ async function ohlcvAnalyzeHandler(req, res, { followUp = false, stillEnabled } 
             structureOpposing,
           });
           if (!rejectReason && structured.entry_zone && structured.sl && structured.tp) {
+            const autoInputs = data._entry_optimization_inputs || {};
+            const operationalInputs = mapYahooSymbolToDeriv(symbol)
+              ? await manualAnalysis.loadInputs(autoInputs, {
+                symbol, now: Date.now(), read: key => redisCmd('GET', key),
+                write: (key, value, ttl) => redisCmd('SET', key, value, 'EX', String(ttl)),
+                fetchCandles: fetchDerivCandles,
+              })
+              : autoInputs;
             const op = operationalEntry.buildContract(
-              { ...structured, label: data.label }, data._entry_optimization_inputs,
+              { ...structured, label: data.label }, operationalInputs,
               aatasCalendarEvents, Date.now(), operationalFacts);
             structured.operational_contract = op;
             structured.strategy_id = op.strategy;

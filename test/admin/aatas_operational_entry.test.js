@@ -73,6 +73,17 @@ test('data minim unknown dan legacy tetap diproses evaluator lama',()=>{
   const legacy={status:'pending',bias:'bullish',entry_zone:'100',sl:'95',tp:'110',ts:T-2*H,symbol:'EURUSD=X'};
   const copy=structuredClone(legacy);assert.equal(op.evaluate(legacy,[],T,cal),false);assert.deepEqual(legacy,copy);
 });
+test('jeda harian emas dikenali pada musim dingin dan musim panas, gap saat pasar buka tetap ditolak',()=>{
+ for(const missing of ['2026-11-10T22:00:00Z','2026-07-07T21:00:00Z']) {
+  const gap=Date.parse(missing);
+  const h1=Array.from({length:300},(_,i)=>bar(gap+(i-200)*H,100,101,99,100)).filter(c=>c.t!==gap/1000);
+  const now=gap+100*H;
+  assert.notEqual(op.classify({candles1h:h1},'bullish',now,'XAU/USD').reason,'intraday_candle_gap');
+  assert.equal(op.classify({candles1h:h1},'bullish',now,'EUR/USD').reason,'intraday_candle_gap');
+  h1.splice(210,1);
+  assert.equal(op.classify({candles1h:h1},'bullish',now,'XAU/USD').reason,'intraday_candle_gap');
+ }
+});
 
 test('classifier produksi membedakan trend kuat, range lebar dan transisi tanpa mengikuti label AI',()=>{
  const h1=Array.from({length:300},(_,i)=>bar(T-(300-i)*H,100,101,99,100));

@@ -33,13 +33,21 @@ function structure(rows,bias) {
   const bosDown=rows.at(-1).c<lows.at(-1).l,bosUp=rows.at(-1).c>highs.at(-1).h;
   return (bias==='bullish'&&down&&bosDown)||(bias==='bearish'&&up&&bosUp)?'opposing':'not_proven_opposing';
 }
-function classify(input = {}, bias, now) {
+function hasUnexpectedGap(previous, current, label) {
+  const gap = current.t - previous.t;
+  if (gap <= 3600 || gap >= 48 * 3600) return false;
+  if (label !== 'XAU/USD' || gap !== 7200) return true;
+  const missing = new Date((previous.t + 3600) * 1000);
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', hour: '2-digit', hourCycle: 'h23' }).format(missing));
+  return hour !== 17;
+}
+function classify(input = {}, bias, now, label) {
   const h1 = rows(input.candles1h, 3600, now), h4 = rows(input.candles4h, 14400, now), d1 = rows(input.candles1d, 86400, now);
   const coverage = { h1: h1.length, h4: h4.length, d1: d1.length };
   const unknown = reason => ({ environment: 'unknown', reason, coverage });
   if ([input.candles1h,input.candles4h,input.candles1d].some(hasConflictingDuplicates)) return unknown('duplicate_conflict');
   if (!h1.length || now-h1.at(-1).t*1000 > 3*3600000) return unknown('h1_stale');
-  if(h1.slice(-250).some((c,i,a)=>i>0 && c.t-a[i-1].t>3600 && c.t-a[i-1].t<48*3600)) return unknown('intraday_candle_gap');
+  if(h1.slice(-250).some((c,i,a)=>i>0 && hasUnexpectedGap(a[i-1],c,label))) return unknown('intraday_candle_gap');
   const h6 = sixHour(h1, now), a = atr(h6,14);
   if (!(a>0)) return unknown('atr6h_missing');
   const swingStructure=structure(h4,bias);
@@ -114,7 +122,7 @@ function sourceFacts(legs, hashes, now) {
   return legs.flatMap(cur=>out.filter(f=>f.currency===cur).sort((a,b)=>(a.age_days??Infinity)-(b.age_days??Infinity)).slice(0,10));
 }
 function buildContract(setup, input, events, now, facts=[]) {
-  const env=classify(input,setup.bias,now), bounds=zone(setup.entry_zone), check=factualCheck(setup,facts);
+  const env=classify(input,setup.bias,now,setup.label), bounds=zone(setup.entry_zone), check=factualCheck(setup,facts);
   let reason=check.issues[0] || (env.environment==='opposing'?'deterministic_structure_opposes_bias':null);
   let strategy=env.environment==='range'?'choppy':env.environment==='trend'?'momentum':'no_trade';
   if(!reason && strategy==='no_trade') reason=env.reason;
@@ -166,7 +174,7 @@ function evaluate(st,input,now,events=[]) {
   if(st.status==='pending') {
     for(let i=0;i<all.length;i++) {
       const bar=all[i]; if(bar.t*1000<start) continue;
-      if(i && bar.t-all[i-1].t>3600 && bar.t-all[i-1].t<48*3600) {
+      if(i && hasUnexpectedGap(all[i-1],bar,st.label)) {
         st.operation_wait_reason='intraday_candle_gap'; return true;
       }
       const end=(bar.t+3600)*1000;

@@ -3,6 +3,7 @@ const {sectionsFromHtml}=require('./_institution_sections');
 // ABN AMRO permits attributed private use. Enabled for this user's explicitly
 // confirmed personal dashboard; not a licence for commercial redistribution.
 const INDEX_URL='https://www.abnamro.com/research/en/overview/our-research';
+const EXPERT_INDEX_URL=INDEX_URL+'?expert=Georgette%20Boele';
 function safeUrl(value){try{const u=new URL(value,INDEX_URL);return u.origin==='https://www.abnamro.com'&&!u.username&&!u.password&&!u.search&&!u.hash
   &&/^\/research\/en\/our-research\/fx-weekly-[a-z0-9-]+$/.test(u.pathname)?u.href:null;}catch(_){return null;}}
 function discover(html){return [...new Set([...String(html).matchAll(/href="(\/research\/en\/our-research\/fx-weekly-[a-z0-9-]+)"/g)].map(m=>safeUrl(m[1])).filter(Boolean))];}
@@ -25,7 +26,9 @@ function parseArticle(html,url,plain,nowMs=Date.now()){
     sections:sectionsFromHtml(blocks.join('\n'),plain)};
 }
 async function fetchLatest(get,plain,nowMs=Date.now()){
-  const urls=discover(await get(INDEX_URL)).slice(0,3);
+  const indexes=await Promise.allSettled([get(INDEX_URL),get(EXPERT_INDEX_URL)]);
+  const urls=[...new Set(indexes.flatMap(result=>result.status==='fulfilled'?discover(result.value):[]))].slice(0,3);
+  if(indexes.every(result=>result.status==='rejected'))throw indexes[0].reason;
   if(!urls.length)throw Error('abn_weekly_not_found');
   const articles=[];
   for(const url of urls){try{articles.push(parseArticle(await get(url),url,plain,nowMs));}catch(error){if(!/abn_date_or_title_invalid/.test(error.message))throw error;}}

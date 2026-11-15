@@ -29,19 +29,19 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 Audit menjawab pertanyaan user mengenai keakuratan pengambilan informasi tabel bias di dashboard trader serta kelayakan indikator dan formulasinya:
 
 1. **Integritas Alur Pengambilan Informasi (Data Retrieval):**
-   - **Binding Data ke UI**: Widget `dashSmartBiasSection` (`renderDashSmartBias` di `index.html`) membaca endpoint `/api/admin?action=smart_bias` (cache `smart_bias:v9`). Setiap baris dipetakan secara atomik per currency tanpa risiko crossover/salah sambung antar mata uang.
+   - **Binding Data ke UI**: Widget `dashSmartBiasSection` (`renderDashSmartBias` di `index.html`) membaca endpoint `/api/admin?action=smart_bias` (cache `smart_bias:v9`). Pemeriksaan alur per currency belum membuktikan ketiadaan salah atribusi pada seluruh data produksi.
    - **Indikator yang Diambil**:
      - *Pertumbuhan (Growth)*: GDP YoY/QoQ (output) dan Tingkat Pengangguran/Klaim (labour) dari `macro_conditions` / TradingView.
      - *Inflasi (Inflation)*: Headline CPI YoY + Core CPI YoY (termasuk rilis resmi Stats NZ dan Swiss FSO).
      - *Bank Sentral (Central Bank)*: Siklus suku bunga aktif (`_cb_rates.js`) dan tone kebijakan moneter (`cb_bias`).
-     - *Pandangan Institusi (Banks)*: Riset mingguan ING & ABN AMRO. Saat ini mayoritas `insufficient` karena jarangnya artikel mingguan baru di akhir pekan, sehingga tidak mengotori tabel dengan spekulasi harian.
+     - *Pandangan Institusi (Banks)*: Riset mingguan ING & ABN AMRO. Status `insufficient` dapat berasal dari kekurangan klaim yang lolos filter atau kegagalan pengambilan, sehingga perlu memeriksa hasil sinkronisasi masing-masing sumber.
      - *Posisi Pasar (Positioning)*: Data CFTC Leveraged Funds & Asset Managers (`cot_cache_v2`).
-   - Tidak ada data fiktif atau pengisian paksa (*no hallucinated fallback*). Jika data kurang, sistem menampilkan status `insufficient` atau `mixed`.
+   - Kode menyediakan status `insufficient` dan `mixed` untuk kondisi tertentu. Pemeriksaan ini belum membuktikan seluruh data sumber dan interpretasi bebas kesalahan.
 
 2. **Kesesuaian Formulasi Bias Terhadap Trader Makro (Metodologi):**
    - **Hirarki 3 Inti vs 2 Sekunder**: Arah bias hanya ditentukan oleh interaksi 3 pilar inti (Pertumbuhan, Inflasi, Bank Sentral). Dua pilar sekunder (Institusi dan COT) hanya diizinkan mengonfirmasi atau mencatat konflik (`confirmations` / `conflicts`), tetapi secara kode dilarang membalikkan arah makro. Ini konsisten dengan prinsip Prime Academy untuk menghindari jebakan lagging dari posisi pasar.
    - **Konteks Inflasi-Kebijakan (`policy_context`)**: Inflasi tidak dinilai secara mekanik tunggal; jika inflasi panas namun bank sentral bersikap dovish (atau sebaliknya), sistem menandainya sebagai `mixed` karena dampaknya terhadap mata uang tidak lagi searah.
-   - **Disiplin Abstensi**: Dari 8 mata uang pada snapshot live 15 November 2026, hanya 2 yang memiliki arah tegas (USD bullish, GBP bullish), sedangkan 6 lainnya berstatus `mixed` (EUR, JPY, CHF, CAD, AUD, NZD) karena adanya tarik-menarik antara data rilis output vs tenaga kerja atau inflasi vs tone suku bunga. Ini membuktikan formulasi bias tidak memaksakan sinyal buatan kepada trader.
+   - **Snapshot**: Audit terdahulu melaporkan USD dan GBP bullish serta enam mata uang mixed pada 15 November 2026. Snapshot tersebut menunjukkan keluaran pada waktu pengambilan, belum memvalidasi akurasi semua sumber atau keputusan ekonomi.
 
 
 ### [2026-11-11] Laporan user: kontradiksi output analisa NZD/USD

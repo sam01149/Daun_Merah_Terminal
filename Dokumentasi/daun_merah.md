@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-15 (Audit cron produksi)
+> **Last updated:** 2026-11-15 (Perbaikan Pandangan Bank dan AATAS)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 484 (2026-11-15) — Perbaikan Pandangan Bank dan tindak lanjut audit
+
+Indeks umum ABN tidak lagi menampilkan FX Weekly ketika daftar artikel lain lebih baru. Collector mencari paralel pada indeks umum dan indeks resmi penulis Georgette Boele, lalu tetap memeriksa host, identitas, tanggal, judul, isi dan umur artikel. Probe langsung dengan kode baru menemukan FX Weekly 4 November, 4.002 karakter, tanpa klaim weekly yang memenuhi pemeriksaan awal. Tes regresi menutup indeks utama tanpa tautan. Sinkronisasi tidak memaksa pandangan untuk mengisi kolom kosong. Klaim Smart Bias yang terlalu pasti di `daun_merah_riset.md` diperbaiki.
+
+Perbaikan input auto-entry dan pencatatan respons cron dicatat lengkap di `professional_llm_trader/changelog.md` S484. Salinan perubahan narasi manual yang terhapus oleh checkout sesi lain ditemukan dalam transkrip percakapan, namun saat diuji sebelumnya menghapus peringatan koreksi yang diwajibkan tiga tes. Teks perubahan tersedia pada transkrip tersebut; tidak dipasang kembali sebagai perubahan aktif yang merusak perilaku. Tes suite lengkap 1.659/1.659 lulus pada working tree sebelum penambahan entri inventaris Redis.
 
 ## Changelog Session 483 (2026-11-15) — Audit cron produksi
 

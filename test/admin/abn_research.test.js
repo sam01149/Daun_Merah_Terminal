@@ -10,6 +10,13 @@ test('ABN discovery stays on the official weekly research path',()=>{
   const h='<a href="/research/en/our-research/fx-weekly-outlook">weekly</a><a href="https://evil.test/">fake</a>';
   assert.deepEqual(abn.discover(h),[url]);assert.equal(abn.safeUrl(url.replace('abnamro.com','abnamro.com.evil.test')),null);
 });
+test('ABN finds weekly research in the expert index when the general index has no weekly link',async()=>{
+  const plain=s=>s.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+  const get=async address=>address===url?html():address.includes('expert=')
+    ? '<a href="/research/en/our-research/fx-weekly-outlook">weekly</a>' : '<html>other research</html>';
+  const article=await abn.fetchLatest(get,plain,NOW);
+  assert.equal(article.url,url);
+});
 test('ABN article requires matching structured/rendered identity, exact slug, valid recent publication and bounded body',()=>{
   const plain=s=>s.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
   const a=abn.parseArticle(html(),url,plain,NOW);assert.equal(a.institution,'ABN AMRO');assert.equal(a.published_at,published.replace('Z','.000Z'));
