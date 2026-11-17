@@ -1039,6 +1039,23 @@ async function processPosReviewRecheckQueue() {
 // eksperimen auto-entry — dulu baca setup_log:v1 (ditulis U-5b sebelum revisi
 // visibilitas landing), sekarang setup_log_auto:v1 (setup manual pengguna TIDAK
 // PERNAH direview/diintervensi mesin).
+// SOT "posisi hidup" untuk trigger daemon — CERMIN api/_auto_entry_guard.isLiveExposure.
+// Duplikasi SADAR (vps/ di-deploy sebagai Docker terisolasi, pola sama isCorroborated/
+// isFxMarketOpen), dijaga drift-guard test/vps/auto_entry_live_exposure_drift.test.js.
+// Dipakai tryTriggerPosReview supaya posisi yang SUDAH selesai secara riil —
+// `close_early` dari AI position review (status sengaja tetap 'open' sebagai ghost U-5a)
+// atau SL/TP hasil intervensi yang sudah resolve — tidak ikut memakan jatah
+// POSREVIEW_DAILY_CAP dan cooldown per posisi sebelum server menolaknya.
+const MANAGED_RESOLVED_STATUSES = new Set(['sl', 'tp', 'ambiguous', 'closed_early']);
+function isLiveAutoSetup(s) {
+  if (!s || (s.status !== 'open' && s.status !== 'pending')) return false;
+  if (s.intervention && s.intervention.type === 'close_early') return false;
+  const managedResolved = !!(s.intervention && MANAGED_RESOLVED_STATUSES.has(s.managed_status));
+  const choppyResolved = s.entry_execution === 'aatas_rejection_h1_v1'
+    && MANAGED_RESOLVED_STATUSES.has(s.choppy_management?.status);
+  return !(managedResolved || choppyResolved);
+}
+
 async function tryTriggerPosReview(newsItem, legs, corroborated) {
   if (redisGuard.isDegraded()) return;
   if (!isFxMarketOpen()) return;
@@ -1050,7 +1067,12 @@ async function tryTriggerPosReview(newsItem, legs, corroborated) {
   try { log = raw ? JSON.parse(raw) : []; } catch (e) { return; }
   if (!Array.isArray(log)) return;
 
-  const candidates = log.filter(s => s && s.status === 'open' && legsFromLabel(s.label).some(l => legs.includes(l)));
+  // isLiveAutoSetup (2026-11-17, audit AATAS): dulu cuma `status === 'open'`, sehingga
+  // ghost `close_early` dan posisi yang SL hasil intervensinya sudah tersentuh tetap
+  // dianggap kandidat — server memang menolaknya (`already_managed`), tapi jatah cap
+  // harian + cooldown per posisi TELAH terpakai lebih dulu, sehingga posisi yang benar-
+  // benar hidup bisa kehabisan giliran review berita.
+  const candidates = log.filter(s => isLiveAutoSetup(s) && legsFromLabel(s.label).some(l => legs.includes(l)));
   if (!candidates.length) return;
 
   const cooldownSecs = parseInt(process.env.POSREVIEW_COOLDOWN_SECS || '21600', 10);
@@ -2181,6 +2203,8 @@ module.exports = {
   checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, runFridayTightenCycle, pollCalendarLatency, checkBreakingNewsSkip,
   // Plan X (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
   checkSurpriseSkip, fetchMergedSurpriseEvents,
+  // Audit AATAS 2026-11-17 — SOT "posisi hidup" (cermin isLiveExposure api/_auto_entry_guard.js):
+  isLiveAutoSetup,
   // U-5b (pure/testable):
   detectCurrencyLegs, isCorroborated, posReviewSignificantTokens, POSREVIEW_CURRENCY_KEYWORDS,
   shouldPersistNewsBufferItem, filterFreshBufferItems, POSREVIEW_NEWS_BUFFER_MS,

@@ -593,6 +593,15 @@ const POLICY_EPOCHS = [
   { v: 64, from: '2026-11-07T08:59:37Z', kind: 'policy', impact: 'entry', label: 'PLAN AI: kondisi trend/choppy deterministik, rejection H1 dan fill open berikutnya, sesi London/NY DST, validasi fakta serta reanalisa setelah event; kontrak baru terpisah dari legacy, statistik gabungan tidak direset' },
   { v: 65, from: '2026-11-07T10:11:31Z', kind: 'policy', impact: 'context', label: 'Prompt profesional Prime: tesis lima unsur, fakta vs interpretasi, opposing evidence, reaction unknown, konsistensi sesi dan review tesis; Call 1 tidak mengarang bukti priced-in tanpa data reaksi, statistik kumulatif tetap' },
   { v: 66, from: '2026-11-15T03:50:00Z', kind: 'fix', impact: 'entry', label: 'S484: riwayat Deriv panjang untuk penilaian operasional dan jeda harian XAU tidak dianggap gap candle' },
+  // v67 (audit kode AATAS 2026-11-17, S487): BUKAN perubahan aturan trading — daemon
+  // berhenti memicu review berita untuk posisi yang sudah selesai secara riil (ghost
+  // `close_early`, atau SL/TP hasil intervensi yang sudah resolve), sehingga jatah
+  // POSREVIEW_DAILY_CAP tidak lagi dihabiskan entri mati. Tetap diberi epoch karena
+  // efek sampingnya NYATA pada exit: posisi yang benar-benar hidup kini bisa menerima
+  // review yang dulu terpakai ghost, dan review itulah yang bisa memicu
+  // tighten_sl/close_early yang sebelumnya tidak pernah sampai. kind 'fix' — perilaku
+  // lama (ghost memakan kuota review, mengunci pair/posisi) tidak pernah diniatkan.
+  { v: 67, from: '2026-11-17T08:41:08Z', kind: 'fix', impact: 'exit', label: 'S487: trigger review berita daemon memakai definisi "posisi hidup" (isLiveAutoSetup, cermin isLiveExposure) — ghost close_early dan posisi managed-resolved tidak lagi memakan jatah review' },
 ];
 
 // AATAS_EPOCH (2026-08-22, keputusan user): batas populasi statistik dashboard
