@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-17 (Audit aplikasi: sweep emoji, drift-guard regex headline, validasi device_id)
+> **Last updated:** 2026-11-17 (Jurnal trading manual mandiri)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 488 (2026-11-17) — Jurnal trading manual mandiri
+
+**Hasil.** [Jurnal Trading](../standalone/jurnal-trading.html) adalah satu file HTML yang dibuka langsung di browser dengan desain Daun Merah. Tabel 25 kolom dan detail pra-entry, entry, posisi berjalan, serta exit dan evaluasi mengikuti unsur yang ditelaah dalam [riset jurnal Prime](daun_merah_riset.md#2026-11-17-jurnal-prime-pra-entry-sampai-evaluasi-trade-manual). Draf bisa disimpan dengan pair dan arah. Trade terbuka dan ditutup memakai catatan fill dan exit manual. Form detail menyediakan tesis, skor, skenario, risiko, catatan perubahan bertimestamp, tautan screenshot, MAE/MFE dan hasil tanpa intervensi berdasarkan bukti yang dimasukkan pengguna. Review membandingkan transaksi tertutup per setup, kepatuhan, kedekatan event, dan selisih antara hasil aktual dan estimasi jika keduanya tercatat.
+
+**Data dan isolasi.** Penyimpanan browser memakai key tersendiri, dengan ekspor CSV dan cadangan JSON yang bisa dipulihkan. Saldo tercatat mengikuti saldo awal, P/L bersih yang dimasukkan berdasarkan catatan broker, serta setoran/penarikan. Perhitungan hasil persen memakai equity yang dicatat saat entry. Saldo setelah close dibiarkan kosong jika P/L sebelumnya belum tercatat atau beberapa kejadian memiliki menit yang sama dan urutannya tidak diketahui. Nilai net trading dan estimasi tanpa intervensi disimpan terpisah. File berjalan offline, terpisah dari jurnal cloud, broker, AATAS, dan jalur Rencana/Sizing. `standalone/` dikecualikan dari deployment Vercel.
+
+**Verifikasi.** Chrome headless membuka file lokal dalam mode offline. Uji mencakup draf sampai exit, validasi level dan URL, perubahan stop, penarikan terpisah dari P/L, nilai nol, review, filter, ekspor CSV, muat ulang, pemulihan dan penolakan cadangan tidak valid. Tampilan diperiksa pada desktop 1.440 px dan ponsel 390 px. Suite proyek lulus 1.666/1.666.
 
 ## Changelog Session 487 (2026-11-17) — Audit aplikasi: sweep emoji, drift-guard regex headline, validasi device_id
 

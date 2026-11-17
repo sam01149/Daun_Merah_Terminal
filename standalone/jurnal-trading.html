@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#070a08">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Jurnal Trading | Daun Merah</title>
+<style>
+:root {
+  --bg:#070a08; --surface:#0e130f; --raised:#151d17; --border:#2a352c;
+  --text:#e8e4d9; --muted:#a1ad9a; --accent:#a83226; --red:#f68b80;
+  --green:#83d3ac; --amber:#eab476; --mono:'DM Mono',ui-monospace,Consolas,monospace;
+  --heading:Syne,system-ui,sans-serif;
+}
+* { box-sizing:border-box; }
+[hidden] { display:none !important; }
+body { margin:0; background:var(--bg); color:var(--text); font:13px/1.5 var(--mono); }
+h1,h2,h3,p { margin:0; }
+h1,h2,h3 { font-family:var(--heading); }
+h1 { font-size:clamp(25px,4vw,38px); line-height:1.2; }
+h2 { font-size:18px; }
+h3 { font-size:15px; }
+label { display:grid; gap:5px; min-width:0; }
+button,input,textarea,select { color:inherit; background:var(--bg); border:1px solid var(--border); border-radius:6px; font:inherit; padding:8px 10px; }
+button { cursor:pointer; background:var(--surface); min-height:36px; }
+button:hover { border-color:var(--muted); }
+button.primary { background:var(--accent); border-color:var(--accent); color:white; font-weight:bold; }
+button.primary:hover { background:#8c2b22; }
+button[aria-pressed=true] { background:var(--raised); border-color:var(--red); }
+:focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
+input,textarea,select { width:100%; min-width:0; }
+input[type=checkbox] { width:auto; }
+textarea { resize:vertical; min-height:62px; }
+a { color:var(--green); }
+.shell { max-width:1560px; margin:auto; padding-inline:clamp(14px,3vw,42px); }
+header { border-bottom:1px solid var(--border); background:#0b100c; }
+.top,.toolbar,.intro,.panel-head,.dialog-head,.foot,.tabs { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.top,.intro,.panel-head,.dialog-head,.foot { justify-content:space-between; }
+.top { min-height:62px; }
+.brand { font:800 18px var(--heading); letter-spacing:-.4px; }
+.brand span,.negative,.error { color:var(--red); }
+.muted,small { color:var(--muted); }
+.positive { color:var(--green); }
+main { padding-block:28px; }
+.intro { margin-bottom:20px; }
+.intro p { margin-top:6px; }
+.stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:20px; }
+.stat,.panel { background:var(--surface); border:1px solid var(--border); border-radius:8px; min-width:0; }
+.stat { padding:13px; }
+.stat strong { display:block; font-size:clamp(14px,2vw,23px); margin-top:4px; overflow-wrap:anywhere; }
+.panel-head,.toolbar.filters,.note { padding:11px 14px; }
+.panel-head,.toolbar.filters { border-bottom:1px solid var(--border); }
+.filters input { width:min(100%,250px); }
+.filters select { width:auto; max-width:100%; }
+.tabs { gap:6px; }
+.tabs button { font-size:12px; }
+.scroll { overflow:auto; max-height:58vh; }
+table { border-collapse:separate; border-spacing:0; width:100%; font-variant-numeric:tabular-nums; }
+th,td { padding:8px 10px; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }
+thead th { background:var(--raised); color:var(--muted); font-size:11px; position:sticky; top:0; z-index:1; }
+.trade-table :is(th,td):first-child { position:sticky; left:0; background:var(--surface); }
+.trade-table th:first-child { background:var(--raised); z-index:2; }
+.trade-table tbody tr:hover td { background:#192219; }
+.trade-table .truth { white-space:normal; min-width:230px; max-width:320px; overflow-wrap:anywhere; }
+.status { display:inline-block; border:1px solid var(--border); border-radius:4px; padding:1px 6px; }
+.status.open { color:var(--green); }
+.status.pending { color:var(--amber); }
+.empty { padding:28px 14px; text-align:center; color:var(--muted); }
+.notice { margin-bottom:12px; overflow-wrap:anywhere; }
+.notice:empty { display:none; }
+.review-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:14px; }
+.review-grid section { min-width:0; padding:12px; background:var(--bg); border-radius:6px; }
+.review-grid ul { margin:8px 0 0; padding-left:20px; }
+dialog { background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:0; width:min(880px,calc(100% - 24px)); max-height:calc(100dvh - 24px); }
+dialog::backdrop { background:#000b; }
+.dialog-head,.foot { padding:12px 15px; background:var(--surface); position:sticky; z-index:3; }
+.dialog-head { top:0; border-bottom:1px solid var(--border); }
+.foot { bottom:0; border-top:1px solid var(--border); }
+.foot .error { flex:1 1 200px; }
+.editor,.settings-body { padding:14px; }
+.editor .tabs { margin:12px 0; }
+.grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.wide { grid-column:1 / -1; }
+.stage { display:grid; gap:12px; }
+fieldset { min-width:0; margin:0; padding:10px; border:1px solid var(--border); border-radius:6px; }
+legend { padding-inline:6px; color:var(--green); }
+.checks { display:flex; flex-wrap:wrap; gap:8px 16px; }
+.checks label { display:flex; align-items:center; }
+.event { margin-bottom:10px; }
+.event .grid { margin-bottom:8px; }
+.settings-body section + section { margin-top:18px; }
+.settings-body .grid { margin-block:8px; }
+.cash-list { margin:10px 0 0; padding-left:24px; }
+.cash-list button { margin-left:8px; }
+.danger { color:var(--red); }
+@media (max-width:680px) {
+  .stats,.grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .review-grid { grid-template-columns:1fr; }
+  .intro { align-items:flex-start; }
+  .top { padding-block:8px; }
+  .foot .error:empty { display:none; }
+}
+@media (max-width:370px) { .editor .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header><div class="shell top">
+  <div class="brand">Daun <span>Merah</span></div>
+  <div class="toolbar">
+    <button id="account-button" type="button">Akun &amp; Cadangan</button>
+    <button id="csv-button" type="button">Ekspor CSV</button>
+  </div>
+</div></header>
+<main class="shell">
+  <div class="intro">
+    <div><h1>Jurnal Trading</h1><p class="muted">Trading manual · USD · Waktu WIB</p></div>
+    <button id="new-trade" class="primary" type="button">Tambah trade</button>
+  </div>
+  <p id="notice" class="notice" role="status" aria-live="polite"></p>
+  <div class="stats" id="stats"></div>
+  <section class="panel" aria-label="Riwayat dan review trading">
+    <div class="panel-head">
+      <div class="tabs" role="group" aria-label="Tampilan jurnal">
+        <button type="button" data-view="journal" aria-pressed="true">Log Transaksi</button>
+        <button type="button" data-view="review" aria-pressed="false">Review</button>
+      </div>
+      <span id="record-count" class="muted"></span>
+    </div>
+    <div id="journal-view">
+      <div class="toolbar filters">
+        <input id="search" type="search" placeholder="Cari pair" aria-label="Cari pair">
+        <select id="status-filter" aria-label="Filter status"><option value="">Semua status</option></select>
+        <select id="setup-filter" aria-label="Filter setup"><option value="">Semua setup</option></select>
+      </div>
+      <div class="scroll" tabindex="0" role="region" aria-label="Tabel transaksi, bisa digeser ke samping">
+        <table class="trade-table"><thead><tr id="table-head"></tr></thead><tbody id="trade-rows"></tbody></table>
+      </div>
+      <p id="empty" class="empty" hidden></p>
+      <p class="note muted">Geser tabel untuk melihat semua kolom. Buka Detail untuk mengisi atau memperbarui trade.</p>
+    </div>
+    <div id="review-view" hidden></div>
+  </section>
+</main>
+
+<dialog id="trade-dialog" aria-labelledby="trade-title">
+  <form id="trade-form" novalidate>
+    <div class="dialog-head"><h2 id="trade-title">Detail trade</h2><button type="button" data-close="trade-dialog">Tutup</button></div>
+    <div class="editor">
+      <div id="trade-basics" class="grid"></div>
+      <div id="stage-tabs" class="tabs" role="group" aria-label="Tahap trade"></div>
+      <div id="stage-content"></div>
+    </div>
+    <div class="foot">
+      <button id="delete-trade" type="button" class="danger" hidden>Hapus trade</button>
+      <span class="error" id="trade-error" role="alert"></span>
+      <button class="primary" type="submit">Simpan trade</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="account-dialog" aria-labelledby="account-title">
+  <div class="dialog-head"><h2 id="account-title">Akun &amp; Cadangan</h2><button type="button" data-close="account-dialog">Tutup</button></div>
+  <div class="settings-body">
+    <p id="account-message" class="notice" role="status"></p>
+    <section>
+      <h3>Saldo awal pencatatan</h3>
+      <form id="balance-form" class="grid">
+        <label>Saldo awal (USD)<input id="initial-balance" type="number" step="any" min="0"></label>
+        <button type="submit">Simpan saldo awal</button>
+      </form>
+      <p class="muted">Gunakan saldo sebelum trade pertama yang kamu catat. Setoran awal yang sudah masuk saldo ini cukup dicatat sekali.</p>
+    </section>
+    <section>
+      <h3>Setoran dan penarikan</h3>
+      <form id="cash-form">
+        <div class="grid">
+          <label>Jenis<select id="cash-type"><option value="deposit">Setoran</option><option value="withdrawal">Penarikan</option></select></label>
+          <label>Waktu (WIB)<input id="cash-time" type="datetime-local" required></label>
+          <label>Jumlah (USD)<input id="cash-amount" type="number" min="0.01" step="any" required></label>
+        </div>
+        <button type="submit">Catat arus dana</button>
+      </form>
+      <ul class="cash-list" id="cash-list"></ul>
+    </section>
+    <section>
+      <h3>Cadangan data</h3>
+      <p class="muted">Catatan tersimpan di browser ini. Ekspor cadangan JSON sebelum memindahkan file, mengganti browser, atau menghapus data browser.</p>
+      <div class="toolbar" style="margin-top:8px">
+        <button type="button" id="backup-button">Ekspor cadangan JSON</button>
+        <button type="button" id="import-button">Impor cadangan JSON</button>
+        <input type="file" id="import-file" accept=".json,application/json" hidden aria-label="File cadangan JSON">
+      </div>
+    </section>
+  </div>
+</dialog>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const key = 'daun-merah-standalone-journal-v1';
+const emptyData = () => ({ version: 1, balance: null, trades: [], cash: [] });
+const statuses = { draft:'Draf', pending:'Pending', open:'Terbuka', closed:'Ditutup', missed:'Terlewat', cancelled:'Dibatalkan' };
+const styles = { swing:'Swing', day:'Day trading', scalp:'Scalping', position:'Positional' };
+const moods = { aligned:'Searah', neutral:'Netral', against:'Melawan' };
+const yesNo = { yes:'Ya', no:'Tidak' };
+const checks = {
+  research:'Riset diperiksa', recap:'Recap sesi diperiksa', calendar:'Kalender diperiksa',
+  positioning:'Positioning diperiksa', alerts:'Alert dipasang'
+};
+const eventTypes = { news:'Berita / perubahan tesis', stop:'Ubah stop loss', target:'Ubah target', partial:'Tutup sebagian', early:'Tutup lebih awal', other:'Lainnya' };
+const basics = [
+  ['pair','Pair / simbol','text'], ['side','Arah',{ long:'Long / Buy', short:'Short / Sell' }], ['status','Status',statuses],
+  ['style','Gaya trading',styles], ['setup','Setup','text'], ['ideaTime','Waktu rencana (WIB)','datetime-local']
+];
+const stages = [
+  { name:'Pra-entry', groups:[
+    ['Tesis dan konteks', [
+      ['thesis','Tesis dan katalis','textarea'], ['fundamentals','Fundamental dan ekspektasi pasar','textarea'],
+      ['sentiment','Sentimen dan positioning','textarea'], ['invalidation','Apa yang membatalkan tesis?','textarea'],
+      ['baseScore','Skor mata uang kiri','number',-10,10], ['quoteScore','Skor mata uang kanan','number',-10,10],
+      ['conviction','Keyakinan (1–5)','number',1,5], ['clarity','Kejelasan (1–5)','number',1,5], ['mood','Mood pasar vs arah trade',moods],
+      ['nearEvent','Ada event besar dekat entry?',yesNo], ['riskEvents','Event risiko dan waktunya','textarea']
+    ]],
+    ['Skenario dan tindakan', [
+      ['scenario1','Jika … maka …','textarea'], ['scenario2','Jika … maka …','textarea'], ['scenario3','Jika … maka … (opsional)','textarea']
+    ]],
+    ['Rencana harga dan risiko', [
+      ['planEntry','Entry rencana','number',0], ['planStop','Stop loss awal','number',0], ['planTarget','Target awal','number',0],
+      ['equityAtEntry','Equity saat entry (USD)','number',0], ['riskPct','Risiko rencana (%)','number',0,100],
+      ['planReward','Target hasil (%)','number',0], ['atrPct','ATR saat entry (%)','number',0], ['atrWindow','Timeframe dan periode ATR','text'],
+      ['trigger','Trigger / sesi yang ditunggu','textarea']
+    ]]
+  ]},
+  { name:'Entry', groups:[['Pelaksanaan', [
+    ['entryTime','Waktu fill (WIB)','datetime-local'], ['entry','Harga fill','number',0], ['lots','Lot aktual','number',0],
+    ['entryStop','Stop loss saat fill','number',0], ['entryTarget','Target saat fill','number',0], ['riskUsd','Risiko aktual saat entry (USD)','number',0],
+    ['order','Jenis order',{ market:'Market', limit:'Limit', stop:'Stop', other:'Lainnya' }], ['ticket','Referensi / nomor trade','text'],
+    ['entryShot','Tautan HTTPS screenshot entry','url'], ['entryNote','Catatan pelaksanaan / penyimpangan dari rencana','textarea']
+  ]]] },
+  { name:'Posisi berjalan', groups:[] },
+  { name:'Exit & evaluasi', groups:[
+    ['Hasil aktual', [
+      ['exitTime','Waktu exit (WIB)','datetime-local'], ['exit','Harga exit','number',0], ['net','P/L bersih dari broker (USD)','number'],
+      ['pips','Pips aktual','number'], ['exitReason','Alasan exit',{ tp:'Target tercapai', sl:'Stop loss', manual:'Tutup manual', time:'Batas waktu', news:'Berita', other:'Lainnya' }],
+      ['exitShot','Tautan HTTPS screenshot exit','url'], ['actualR','Hasil (R), bila belum bisa dihitung','number']
+    ]],
+    ['Evaluasi', [
+      ['directionRight','Arah analisis benar?',yesNo], ['targetRight','Target tepat?',yesNo], ['followed','Mengikuti rencana?',yesNo],
+      ['directionBasis','Dasar dan jangka waktu evaluasi arah/target','text'],
+      ['maePips','MAE saat terbuka (pips)','number',0], ['maePct','MAE saat terbuka (% equity entry)','number',0],
+      ['mfePips','MFE saat terbuka (pips)','number',0], ['mfePct','MFE saat terbuka (% equity entry)','number',0],
+      ['postMfePips','Pergerakan searah terjauh setelah exit (pips)','number',0], ['postHorizon','Akhir pengamatan setelah exit (WIB)','datetime-local'],
+      ['untouched','Perkiraan hasil tanpa intervensi (USD)','number'], ['untouchedBasis','Dasar perkiraan: level asli, hasil, dan batas pengamatan','textarea'],
+      ['truth','Satu kalimat jujur tentang trade ini','text'], ['review','Apa yang akan diperbaiki pada trade berikutnya?','textarea']
+    ]]
+  ]}
+];
+const fields = [...basics, ...stages.flatMap(stage => stage.groups.flatMap(group => group[1]))];
+const eventFields = [
+  ['time','Waktu kejadian (WIB)','datetime-local'], ['type','Jenis kejadian',eventTypes], ['price','Harga / level (opsional)','number',0],
+  ['note','Apa yang berubah dan kenapa?','textarea']
+];
+const decimal = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 8 });
+const money = new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' });
+const dash = '—';
+const fmt = value => value == null ? dash : decimal.format(value);
+const usd = value => value == null ? dash : money.format(value);
+const pct = value => value == null ? dash : `${fmt(value)}%`;
+const ratio = (amount, base) => amount != null && base > 0 ? amount / base : null;
+const tradeTime = trade => trade.entryTime || trade.ideaTime || trade.createdAt;
+const dateFmt = value => value ? value.replace('T',' ') : dash;
+const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function nowWib() {
+  return new Date(Date.now() + 7 * 3600000).toISOString().slice(0,16);
+}
+function el(tag, content, attributes = {}) {
+  const node = document.createElement(tag);
+  if (content != null) node.textContent = content;
+  for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+  return node;
+}
+function button(label, action, attributes = {}) {
+  const node = el('button', label, { type:'button', ...attributes });
+  node.addEventListener('click', action);
+  return node;
+}
+function optionList(select, options) {
+  for (const [key, label] of Object.entries(options)) select.append(el('option',label,{ value:key }));
+}
+function validTime(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(value)) return false;
+  const time = new Date(`${value}Z`);
+  return Number.isFinite(time.getTime()) && time.toISOString().slice(0,16) === value;
+}
+function cleanFields(source, specs) {
+  const result = {};
+  for (const [name,label,type,min,max] of specs) {
+    const value = typeof source[name] === 'string' ? source[name].trim() : source[name];
+    if (value == null || value === '') continue;
+    if (typeof type === 'object') {
+      if (typeof value !== 'string' || !Object.hasOwn(type,value)) throw Error(`${label} tidak dikenal.`);
+      result[name] = value;
+    } else if (type === 'number') {
+      const n = typeof value === 'number' || typeof value === 'string' ? Number(value) : NaN;
+      if (!Number.isFinite(n) || Math.abs(n) > 1e12 || (min != null && n < min) || (max != null && n > max)) throw Error(`${label} di luar rentang.`);
+      if (['conviction','clarity'].includes(name) && !Number.isInteger(n)) throw Error(`${label} harus bilangan bulat.`);
+      result[name] = n;
+    } else {
+      if (typeof value !== 'string' || value.length > 4000) throw Error(`${label} tidak valid atau terlalu panjang.`);
+      if (type === 'datetime-local' && !validTime(value)) throw Error(`${label} tidak valid.`);
+      if (type === 'url') {
+        let link;
+        try { link = new URL(value); } catch { throw Error(`${label} tidak valid.`); }
+        if (link.protocol !== 'https:' || link.username || link.password) throw Error(`${label} harus berupa tautan HTTPS.`);
+      }
+      result[name] = value;
+    }
+  }
+  return result;
+}
+function checkLevels(trade, entry, stop, target, label) {
+  if (entry == null) return;
+  const sign = trade.side === 'long' ? 1 : -1;
+  if ((stop != null && sign * (entry - stop) <= 0) || (target != null && sign * (target - entry) <= 0)) {
+    throw Error(`Periksa sisi stop loss dan target ${label} terhadap arah trade.`);
+  }
+}
+function validateTrade(source) {
+  if (!source || typeof source !== 'object' || !validTime(source.createdAt) || !/^[a-z0-9-]{1,100}$/i.test(source.id) || typeof source.id !== 'string') throw Error('Identitas trade tidak valid.');
+  const trade = cleanFields(source,fields);
+  if (!trade.pair || !trade.side || !trade.status) throw Error('Isi pair, arah, dan status trade.');
+  if (trade.pair.length > 32) throw Error('Pair maksimal 32 karakter.');
+  trade.pair = trade.pair.toUpperCase();
+  for (const name of ['entry','exit','lots','planEntry','planStop','planTarget','entryStop','entryTarget','equityAtEntry','riskUsd']) {
+    if (trade[name] === 0) throw Error(`${fields.find(field => field[0] === name)[1]} harus lebih dari nol.`);
+  }
+  if (['open','closed'].includes(trade.status) && (!trade.entryTime || !trade.entry || !trade.lots)) throw Error('Isi waktu fill, harga fill, dan lot di tahap Entry.');
+  if (trade.status === 'closed' && (!trade.exitTime || (trade.exit == null && trade.net == null))) throw Error('Isi waktu exit dan minimal harga exit atau P/L bersih.');
+  if (trade.exitTime && trade.entryTime && trade.exitTime < trade.entryTime) throw Error('Waktu exit mendahului waktu fill.');
+  if (trade.postHorizon && trade.exitTime && trade.postHorizon <= trade.exitTime) throw Error('Akhir pengamatan harus setelah exit.');
+  if (trade.postMfePips != null && (!trade.exitTime || !trade.postHorizon)) throw Error('Isi waktu exit dan akhir pengamatan untuk pergerakan setelah exit.');
+  if (trade.untouched != null && !trade.untouchedBasis) throw Error('Isi dasar perkiraan hasil tanpa intervensi.');
+  checkLevels(trade,trade.planEntry,trade.planStop,trade.planTarget,'rencana');
+  checkLevels(trade,trade.entry,trade.entryStop,trade.entryTarget,'saat fill');
+  if (!Array.isArray(source.events) || source.events.length > 100) throw Error('Riwayat kejadian tidak valid.');
+  trade.events = source.events.map(event => {
+    if (!event || typeof event !== 'object') throw Error('Kejadian tidak valid.');
+    const clean = cleanFields(event,eventFields);
+    if (!clean.time || !clean.type || !clean.note) throw Error('Setiap kejadian perlu waktu, jenis, dan catatan.');
+    if (clean.price === 0) throw Error('Harga kejadian harus lebih dari nol.');
+    if ((trade.entryTime && clean.time < trade.entryTime) || (trade.exitTime && clean.time > trade.exitTime)) throw Error('Waktu kejadian harus berada antara fill dan exit.');
+    return clean;
+  }).sort((a,b) => a.time.localeCompare(b.time));
+  trade.checks = Object.fromEntries(Object.keys(checks).map(name => [name,source.checks?.[name] === true]));
+  return { id:source.id, createdAt:source.createdAt, ...trade };
+}
+function validateData(source) {
+  if (!source || source.version !== 1 || !Array.isArray(source.trades) || !Array.isArray(source.cash)) throw Error('Format cadangan jurnal tidak dikenali.');
+  if (source.balance !== null && (!Number.isFinite(source.balance) || source.balance < 0 || source.balance > 1e12)) throw Error('Saldo awal cadangan tidak valid.');
+  const cash = source.cash.map(record => {
+    if (!record || typeof record.id !== 'string' || !/^[a-z0-9-]{1,100}$/i.test(record.id) || !['deposit','withdrawal'].includes(record.type) || !validTime(record.time) || !Number.isFinite(record.amount) || record.amount < 0.01 || record.amount > 1e12) throw Error('Arus dana cadangan tidak valid.');
+    return { id:record.id, type:record.type, time:record.time, amount:record.amount };
+  });
+  const trades = source.trades.map(validateTrade);
+  for (const list of [trades,cash]) {
+    if (new Set(list.map(item => item.id)).size !== list.length) throw Error('Cadangan berisi ID duplikat.');
+  }
+  return { version:1, balance:source.balance, trades, cash };
+}
+let data = emptyData();
+let stored = null;
+let storageFailed = false;
+try {
+  stored = localStorage.getItem(key);
+  if (stored != null) data = validateData(JSON.parse(stored));
+} catch {
+  storageFailed = true;
+  $('notice').textContent = 'Data lokal tidak bisa dibaca. Simpan cadangan yang ada sebelum memperbaiki akses penyimpanan browser.';
+}
+function persist(next) {
+  if (storageFailed) throw Error('Penyimpanan lokal tidak tersedia atau gagal dibaca.');
+  if (localStorage.getItem(key) !== stored) throw Error('Data berubah di tab lain. Muat ulang halaman sebelum meneruskan.');
+  const encoded = JSON.stringify(next);
+  localStorage.setItem(key,encoded);
+  stored = encoded;
+  data = next;
+  render();
+}
+function makeField([name,label,type,min,max], value) {
+  const wrapper = el('label',label,{ class:type === 'textarea' ? 'wide' : '' });
+  let input;
+  if (typeof type === 'object') {
+    input = el('select',null,{ name });
+    input.append(el('option','—',{ value:'' }));
+    optionList(input,type);
+  } else if (type === 'textarea') {
+    input = el('textarea',null,{ name, maxlength:4000, rows:2 });
+  } else {
+    input = el('input',null,{ name, type });
+    if (type === 'number') {
+      input.step = ['conviction','clarity'].includes(name) ? '1' : 'any';
+      if (min != null) input.min = min;
+      if (max != null) input.max = max;
+    }
+    if (name === 'pair') { input.maxLength = 32; input.placeholder = 'Contoh: EURUSDm'; }
+    if (type === 'text' || type === 'url') input.maxLength = name === 'pair' ? 32 : 4000;
+  }
+  input.value = value ?? '';
+  wrapper.append(input);
+  if (type === 'url' && value) wrapper.append(el('a','Buka screenshot',{ href:value, target:'_blank', rel:'noopener noreferrer' }));
+  return wrapper;
+}
+let activeTrade;
+let activeStage = 0;
+let dirty = false;
+const form = $('trade-form');
+const editor = $('trade-dialog');
+function addEvent(event = {}) {
+  const list = $('event-list');
+  if (list.children.length >= 100) { $('trade-error').textContent = 'Maksimal 100 kejadian per trade.'; return; }
+  const card = el('fieldset',null,{ class:'event' });
+  card.append(el('legend','Kejadian'));
+  const grid = el('div',null,{ class:'grid' });
+  grid.append(...eventFields.map(spec => makeField(spec,event[spec[0]])));
+  card.append(grid,button('Hapus kejadian',() => { card.remove(); dirty = true; }));
+  list.append(card);
+  return card;
+}
+function selectStage(index) {
+  activeStage = index;
+  [...$('stage-tabs').children].forEach((node,i) => node.setAttribute('aria-pressed',i === index));
+  [...$('stage-content').children].forEach((node,i) => { node.hidden = i !== index; });
+}
+function openTrade(trade) {
+  activeTrade = trade || { id:newId(), createdAt:nowWib(), status:'draft', events:[], checks:{} };
+  $('trade-title').textContent = trade ? `Detail trade · ${trade.pair}` : 'Tambah trade';
+  $('trade-error').textContent = '';
+  $('delete-trade').hidden = !trade;
+  $('trade-basics').replaceChildren(...basics.map(spec => makeField(spec,activeTrade[spec[0]])));
+  $('stage-tabs').replaceChildren(...stages.map((stage,i) => button(stage.name,() => selectStage(i))));
+  $('stage-content').replaceChildren(...stages.map((stage,i) => {
+    const section = el('section',null,{ class:'stage', 'aria-label':stage.name });
+    if (i === 0) {
+      const list = el('fieldset');
+      const grid = el('div',null,{ class:'checks' });
+      for (const [key,label] of Object.entries(checks)) {
+        const checkbox = el('input',null,{ type:'checkbox',name:`check-${key}` });
+        checkbox.checked = !!activeTrade.checks[key];
+        const wrapper = el('label');
+        wrapper.append(checkbox,document.createTextNode(label));
+        grid.append(wrapper);
+      }
+      list.append(el('legend','Pengingat pra-entry'),grid);
+      section.append(list);
+    }
+    if (i === 2) {
+      section.append(el('p','Catat perubahan berita, level, atau ukuran posisi beserta alasannya.',{ class:'muted' }),el('div',null,{ id:'event-list' }),button('Tambah kejadian',() => {
+        const card = addEvent({ time:nowWib() });
+        if (card) { dirty = true; card.querySelector('select').focus(); }
+      }));
+    }
+    for (const [label,specs] of stage.groups) {
+      const group = el('fieldset');
+      const grid = el('div',null,{ class:'grid' });
+      grid.append(...specs.map(spec => makeField(spec,activeTrade[spec[0]])));
+      group.append(el('legend',label),grid);
+      section.append(group);
+    }
+    return section;
+  }));
+  activeTrade.events.forEach(addEvent);
+  const status = form.elements.namedItem('status');
+  status.addEventListener('change',() => {
+    if (status.value === 'closed') selectStage(3);
+    if (status.value === 'open') selectStage(1);
+  });
+  selectStage(activeTrade.status === 'closed' ? 3 : activeTrade.status === 'open' ? 2 : 0);
+  dirty = false;
+  editor.showModal();
+}
+function dismissEditor() {
+  if (!dirty || confirm('Tutup detail dan buang perubahan yang belum disimpan?')) editor.close();
+}
+form.addEventListener('input',() => { dirty = true; });
+editor.addEventListener('cancel',event => { event.preventDefault(); dismissEditor(); });
+form.addEventListener('submit',event => {
+  event.preventDefault();
+  const source = { id:activeTrade.id, createdAt:activeTrade.createdAt, checks:{}, events:[] };
+  for (const [name] of fields) {
+    const input = form.elements.namedItem(name);
+    if (input.validity.badInput) { $('trade-error').textContent = `Periksa nilai pada ${input.parentElement.firstChild.textContent}.`; return; }
+    source[name] = input.value;
+  }
+  for (const name of Object.keys(checks)) source.checks[name] = form.elements.namedItem(`check-${name}`).checked;
+  for (const card of $('event-list').children) {
+    const inputs = [...card.querySelectorAll('[name]')];
+    if (inputs.some(input => input.validity.badInput)) { $('trade-error').textContent = 'Periksa nilai pada riwayat kejadian.'; return; }
+    source.events.push(Object.fromEntries(inputs.map(input => [input.name,input.value])));
+  }
+  try {
+    const trade = validateTrade(source);
+    persist({ ...data, trades:[...data.trades.filter(item => item.id !== trade.id),trade] });
+    editor.close();
+    $('notice').textContent = `${trade.pair} disimpan.`;
+  } catch (error) { $('trade-error').textContent = error.message; }
+});
+$('delete-trade').addEventListener('click',() => {
+  if (!confirm(`Hapus catatan ${activeTrade.pair}?`)) return;
+  try {
+    persist({ ...data, trades:data.trades.filter(item => item.id !== activeTrade.id) });
+    editor.close();
+    $('notice').textContent = 'Catatan trade dihapus.';
+  } catch (error) { $('trade-error').textContent = error.message; }
+});
+
+const netPct = trade => trade.status === 'closed' ? ratio(trade.net,trade.equityAtEntry) : null;
+const resultR = trade => trade.status === 'closed' ? ratio(trade.net,trade.riskUsd) ?? trade.actualR : null;
+const dateQuarter = time => `${time.slice(0,10)} · Q${Math.ceil(Number(time.slice(5,7)) / 3)}`;
+const dual = (pips,percent) => pips == null && percent == null ? dash : `${fmt(pips)} / ${pct(percent)}`;
+const columns = [
+  ['Detail',null], ['Tanggal · Kuartal',trade => dateQuarter(tradeTime(trade))], ['Pair',trade => trade.pair],
+  ['Setup',trade => trade.setup], ['Gaya',trade => styles[trade.style]], ['Status',trade => statuses[trade.status]],
+  ['Arah',trade => trade.side === 'long' ? 'Long' : 'Short'], ['Arah benar?',trade => yesNo[trade.directionRight]],
+  ['Target tepat?',trade => yesNo[trade.targetRight]], ['Risiko rencana',trade => pct(trade.riskPct)],
+  ['Target rencana',trade => pct(trade.planReward)], ['Hasil aktual',trade => pct(netPct(trade) == null ? null : netPct(trade) * 100)],
+  ['ATR saat entry',trade => pct(trade.atrPct)], ['P/L bersih',trade => usd(trade.status === 'closed' ? trade.net : null)],
+  ['Saldo sesudah close',(trade,balances) => usd(balances.get(trade.id))], ['Hasil (R)',trade => fmt(resultR(trade))],
+  ['Pips',trade => fmt(trade.pips)], ['MAE (pips / %)',trade => dual(trade.maePips,trade.maePct)],
+  ['MFE (pips / %)',trade => dual(trade.mfePips,trade.mfePct)], ['Tanpa intervensi (estimasi)',trade => usd(trade.untouched)],
+  ['Yakin / Jelas',trade => trade.conviction == null && trade.clarity == null ? dash : `${fmt(trade.conviction)} / ${fmt(trade.clarity)}`],
+  ['Mood pasar',trade => moods[trade.mood]], ['Event dekat?',trade => yesNo[trade.nearEvent]], ['Ikuti rencana?',trade => yesNo[trade.followed]],
+  ['Catatan satu kalimat',trade => trade.truth]
+];
+$('table-head').replaceChildren(...columns.map(([label]) => el('th',label,{ scope:'col' })));
+optionList($('status-filter'),statuses);
+function cashValue(record) { return record.type === 'deposit' ? record.amount : -record.amount; }
+function ledger() {
+  const closed = data.trades.filter(trade => trade.status === 'closed');
+  const entries = [
+    ...closed.map(trade => ({ id:trade.id, type:'trade', time:trade.exitTime, amount:trade.net })),
+    ...data.cash.map(record => ({ ...record, amount:cashValue(record) }))
+  ].sort((a,b) => a.time.localeCompare(b.time) || a.type.localeCompare(b.type) || a.id.localeCompare(b.id));
+  const balances = new Map();
+  let balance = data.balance;
+  for (let i = 0; i < entries.length;) {
+    const minute = entries[i].time;
+    let end = i + 1;
+    while (end < entries.length && entries[end].time === minute) end++;
+    const batch = entries.slice(i,end);
+    if (balance != null) balance = batch.some(item => item.amount == null) ? null : balance + batch.reduce((sum,item) => sum + item.amount,0);
+    // Within one timestamp the ordering of fills and cash movements is unknown.
+    if (batch.length === 1 && batch[0].type === 'trade') balances.set(batch[0].id,balance);
+    i = end;
+  }
+  return { balance, balances, closed };
+}
+function tradeStats(trades) {
+  const known = trades.filter(trade => trade.net != null);
+  return {
+    count:known.length, missing:trades.length - known.length, wins:known.filter(trade => trade.net > 0).length,
+    net:known.length ? known.reduce((sum,trade) => sum + trade.net,0) : null
+  };
+}
+function renderTable(balances) {
+  const search = $('search').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const filter = $('status-filter').value;
+  const setup = $('setup-filter').value;
+  const trades = data.trades.filter(trade => (!search || trade.pair.replace(/[^A-Z0-9]/g,'').includes(search)) && (!filter || trade.status === filter) && (!setup || trade.setup === setup));
+  trades.sort((a,b) => tradeTime(b).localeCompare(tradeTime(a)) || b.createdAt.localeCompare(a.createdAt));
+  const fragment = document.createDocumentFragment();
+  for (const trade of trades) {
+    const row = el('tr');
+    const detail = el('td');
+    detail.append(button('Detail',() => openTrade(trade),{ 'aria-label':`Detail ${trade.pair}` }));
+    row.append(detail);
+    for (const [label,value] of columns.slice(1)) {
+      const cell = el('td',value(trade,balances) ?? dash);
+      if (label === 'Status') cell.replaceChildren(el('span',statuses[trade.status],{ class:`status ${trade.status}` }));
+      if (label === 'P/L bersih' && trade.status === 'closed' && trade.net) cell.className = trade.net > 0 ? 'positive' : 'negative';
+      if (label === 'Catatan satu kalimat') cell.className = 'truth';
+      row.append(cell);
+    }
+    fragment.append(row);
+  }
+  $('trade-rows').replaceChildren(fragment);
+  $('record-count').textContent = `${trades.length} dari ${data.trades.length} trade`;
+  $('empty').hidden = trades.length > 0;
+  $('empty').textContent = data.trades.length ? 'Tidak ada trade yang cocok dengan filter.' : 'Belum ada trade. Tambahkan rencana atau trade yang sudah kamu jalankan.';
+}
+function reviewList(title, items) {
+  const section = el('section');
+  section.append(el('h3',title));
+  const list = el('ul');
+  list.append(...items.map(item => el('li',item)));
+  section.append(list);
+  return section;
+}
+function renderReview(closed) {
+  const groups = new Map();
+  const classified = trade => trade.setup || styles[trade.style] || 'Belum diberi setup';
+  for (const trade of closed) {
+    const name = classified(trade);
+    if (!groups.has(name)) groups.set(name,[]);
+    groups.get(name).push(trade);
+  }
+  const comparable = closed.filter(trade => trade.net != null && trade.untouched != null);
+  const difference = comparable.reduce((sum,trade) => sum + (trade.net - trade.untouched),0);
+  const outcome = tradeStats(closed);
+  const decisions = [
+    ['Sesuai rencana', trade => trade.followed === 'yes'], ['Menyimpang dari rencana', trade => trade.followed === 'no'],
+    ['Dekat event besar', trade => trade.nearEvent === 'yes'], ['Jauh dari event besar', trade => trade.nearEvent === 'no']
+  ];
+  const summary = trades => {
+    const { count, missing, wins, net } = tradeStats(trades);
+    return `${count} dengan P/L · ${missing} belum ada P/L · ${wins} profit · ${usd(net)}`;
+  };
+  const grid = el('div',null,{ class:'review-grid' });
+  grid.append(
+    reviewList('Hasil per setup',[...groups].map(([name,trades]) => `${name} · ${summary(trades)}`).concat(groups.size ? [] : ['Belum ada trade ditutup.'])),
+    reviewList('Kepatuhan dan kalender',decisions.map(([name,predicate]) => `${name} · ${summary(closed.filter(predicate))}`)),
+    reviewList('Dampak intervensi',comparable.length ? [
+      `${comparable.length} trade memiliki hasil aktual dan estimasi tanpa intervensi.`,
+      `Selisih aktual dikurangi estimasi · ${usd(difference)}`
+    ] : ['Belum ada pasangan hasil aktual dan estimasi yang bisa dibandingkan.']),
+    reviewList('Catatan setelah trade',closed.filter(trade => trade.truth || trade.review).sort((a,b) => b.exitTime.localeCompare(a.exitTime)).slice(0,8)
+      .map(trade => `${trade.pair} · ${[trade.truth,trade.review].filter(Boolean).join(' · ')}`).concat(closed.some(trade => trade.truth || trade.review) ? [] : ['Belum ada evaluasi tertulis.']))
+  );
+  $('review-view').replaceChildren(el('p',`${closed.length} ditutup · ${outcome.missing} tanpa P/L · ${outcome.count} dihitung dalam statistik.`,{ class:'note muted' }),grid);
+}
+function render() {
+  const { balance, balances, closed } = ledger();
+  const stats = tradeStats(closed);
+  const cards = [
+    ['Saldo tercatat',usd(balance)], ['P/L bersih tercatat',usd(stats.net)],
+    ['Trade ditutup',closed.length], ['Win rate tercatat',stats.count ? pct(100 * stats.wins / stats.count) : dash]
+  ];
+  $('stats').replaceChildren(...cards.map(([label,value],i) => {
+    const card = el('div',null,{ class:'stat' });
+    card.append(el('small',label),el('strong',value));
+    if (i === 1 && stats.net) card.lastElementChild.className = stats.net > 0 ? 'positive' : 'negative';
+    return card;
+  }));
+  const select = $('setup-filter');
+  const old = select.value;
+  const setups = [...new Set(data.trades.map(trade => trade.setup).filter(Boolean))].sort();
+  select.replaceChildren(el('option','Semua setup',{ value:'' }),...setups.map(setup => el('option',setup,{ value:setup })));
+  if (setups.includes(old)) select.value = old;
+  renderTable(balances);
+  renderReview(closed);
+}
+for (const id of ['search','status-filter','setup-filter']) $(id).addEventListener('input',() => renderTable(ledger().balances));
+for (const tab of document.querySelectorAll('[data-view]')) {
+  tab.addEventListener('click',() => {
+    for (const node of document.querySelectorAll('[data-view]')) node.setAttribute('aria-pressed',node === tab);
+    $('journal-view').hidden = tab.dataset.view !== 'journal';
+    $('review-view').hidden = tab.dataset.view !== 'review';
+  });
+}
+$('new-trade').addEventListener('click',() => openTrade());
+for (const close of document.querySelectorAll('[data-close]')) {
+  close.addEventListener('click',() => close.dataset.close === 'trade-dialog' ? dismissEditor() : $(close.dataset.close).close());
+}
+function accountMessage(message, error = false) {
+  $('account-message').classList.toggle('error',error);
+  $('account-message').textContent = message;
+}
+function renderCash() {
+  $('cash-list').replaceChildren(...[...data.cash].sort((a,b) => b.time.localeCompare(a.time)).map(record => {
+    const row = el('li',`${dateFmt(record.time)} · ${record.type === 'deposit' ? 'Setoran' : 'Penarikan'} · ${usd(record.amount)}`);
+    row.append(button('Hapus',() => {
+      if (!confirm('Hapus catatan arus dana ini?')) return;
+      try {
+        persist({ ...data, cash:data.cash.filter(item => item.id !== record.id) });
+        renderCash();
+        accountMessage('Catatan arus dana dihapus.');
+      } catch (error) { accountMessage(error.message,true); }
+    }));
+    return row;
+  }));
+}
+$('account-button').addEventListener('click',() => {
+  $('initial-balance').value = data.balance ?? '';
+  $('cash-time').value = nowWib();
+  accountMessage('');
+  renderCash();
+  $('account-dialog').showModal();
+});
+$('balance-form').addEventListener('submit',event => {
+  event.preventDefault();
+  const input = $('initial-balance');
+  const balance = input.value === '' ? null : input.valueAsNumber;
+  try {
+    if (balance != null && (!Number.isFinite(balance) || balance < 0 || balance > 1e12)) throw Error('Saldo awal di luar rentang.');
+    persist({ ...data, balance });
+    accountMessage('Saldo awal disimpan.');
+  } catch (error) { accountMessage(error.message,true); }
+});
+$('cash-form').addEventListener('submit',event => {
+  event.preventDefault();
+  const amount = $('cash-amount').valueAsNumber;
+  const time = $('cash-time').value;
+  try {
+    if (!validTime(time) || !Number.isFinite(amount) || amount < 0.01 || amount > 1e12) throw Error('Periksa waktu dan jumlah arus dana.');
+    persist({ ...data, cash:[...data.cash,{ id:newId(), time, type:$('cash-type').value, amount }] });
+    $('cash-amount').value = '';
+    renderCash();
+    accountMessage('Arus dana dicatat.');
+  } catch (error) { accountMessage(error.message,true); }
+});
+function download(name, contents, type) {
+  const url = URL.createObjectURL(new Blob([contents],{ type }));
+  const link = el('a',null,{ download:name, href:url });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url),1000);
+}
+function csv(value) {
+  let text = String(value ?? '');
+  // Treat user-supplied formula-looking strings as plain text in spreadsheet apps.
+  if (typeof value === 'string' && /^\s*[=+\-@\t\r\n]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"','""')}"`;
+}
+$('csv-button').addEventListener('click',() => {
+  const { balances } = ledger();
+  const headers = ['ID','Dibuat (WIB)',...fields.map(field => field[1]),...Object.values(checks),'Riwayat kejadian (JSON)','Hasil aktual (%)','Hasil (R)','Saldo sesudah close (USD)'];
+  const rows = data.trades.map(trade => [trade.id,trade.createdAt,...fields.map(([name,,type]) => typeof type === 'object' ? type[trade[name]] : trade[name]),
+    ...Object.keys(checks).map(name => trade.checks[name] ? 'Ya' : ''),JSON.stringify(trade.events),netPct(trade) == null ? null : netPct(trade) * 100,resultR(trade),balances.get(trade.id)]);
+  download('jurnal-trading.csv','\uFEFF' + [headers,...rows].map(row => row.map(csv).join(',')).join('\r\n'),'text/csv;charset=utf-8');
+});
+$('backup-button').addEventListener('click',() => {
+  if (storageFailed && stored == null) { accountMessage('Data lokal belum bisa dibaca.',true); return; }
+  download(`jurnal-trading-${nowWib().slice(0,10)}.json`,storageFailed ? stored : JSON.stringify(data,null,2),'application/json');
+});
+$('import-button').addEventListener('click',() => $('import-file').click());
+$('import-file').addEventListener('change',async event => {
+  const input = event.target;
+  const file = input.files[0];
+  if (!file) return;
+  try {
+    if (file.size > 10000000) throw Error('File cadangan terlalu besar.');
+    const imported = validateData(JSON.parse(await file.text()));
+    if ((stored != null || data.trades.length || data.cash.length) && !confirm(`Ganti isi jurnal dengan cadangan ini (${imported.trades.length} trade dan ${imported.cash.length} arus dana)?`)) return;
+    const hadReadError = storageFailed;
+    storageFailed = false;
+    try { persist(imported); } catch (error) { storageFailed = hadReadError; throw error; }
+    $('initial-balance').value = data.balance ?? '';
+    renderCash();
+    accountMessage(`${data.trades.length} trade dan ${data.cash.length} arus dana dipulihkan.`);
+    $('notice').textContent = '';
+  } catch (error) { accountMessage(`Cadangan gagal dipulihkan. ${error.message}`,true); }
+  finally { input.value = ''; }
+});
+window.addEventListener('storage',event => {
+  if (event.key === key || event.key === null) $('notice').textContent = 'Data berubah di tab lain. Muat ulang halaman untuk melihat catatan terbaru.';
+});
+render();
+</script>
+</body>
+</html>
