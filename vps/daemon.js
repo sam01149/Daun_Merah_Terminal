@@ -1972,6 +1972,7 @@ async function runAutoEntryCycle(pairs = AUTO_ENTRY_PAIRS) {
 // atas). SET NX per event jadi penanda "sudah tercatat" supaya event yang
 // sama tidak dobel-log di poll berikutnya.
 async function pollCalendarLatency() {
+  if (process.env.AATAS_PAUSED !== '0') return; // observasi riset AATAS ikut dijeda
   try {
     const events = await fetchMergedCalendarEvents();
     const now = Date.now();
@@ -2173,7 +2174,9 @@ async function main() {
   // (event-driven, lihat komentar di atas maybeCheckPriceZone).
   // U-3 sub-riset 3a: poll murni observasi, tidak butuh CRON_SECRET (baca
   // Redis langsung, bukan HTTP) — jalan walau scheduler Q-6 di atas di-skip.
-  setInterval(() => pollCalendarLatency().catch(() => {}), CALENDAR_LATENCY_POLL_MS);
+  if (process.env.AATAS_PAUSED === '0') {
+    setInterval(() => pollCalendarLatency().catch(() => {}), CALENDAR_LATENCY_POLL_MS);
+  }
   startScheduler();
 }
 

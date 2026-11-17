@@ -177,3 +177,19 @@ test('isCandleStale: segar di bawah 3 jam, basi di atasnya', () => {
     assert.equal(mod.isCandleStale(stale, nowMs), true, 'candle umur >3 jam = pipeline mati, heal');
   }
 });
+
+test('pause AATAS menghentikan pembacaan kalender untuk riset latensi', async () => {
+  const oldPause = process.env.AATAS_PAUSED;
+  const originalFetch = global.fetch;
+  let calls = 0;
+  process.env.AATAS_PAUSED = '1';
+  global.fetch = async () => { calls++; throw new Error('Redis tidak boleh dipanggil'); };
+  try {
+    await daemon.pollCalendarLatency();
+    assert.equal(calls, 0);
+  } finally {
+    global.fetch = originalFetch;
+    if (oldPause === undefined) delete process.env.AATAS_PAUSED;
+    else process.env.AATAS_PAUSED = oldPause;
+  }
+});

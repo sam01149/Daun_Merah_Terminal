@@ -18,6 +18,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
 
+## Changelog Session 498 (2026-11-17) — Pemantauan pemakaian Redis 2
+
+User melaporkan bandwidth 75 MB/10 GB, command 49K/500K dan storage 18 MB/250 MB. Teks grafik yang dikirim tidak memuat angka bandwidth harian; tidak cukup data untuk distribusi atau proyeksi penggunaan normal. Kenaikan dari 68 MB mencakup aktivitas pengujian dan kemungkinan keterlambatan metrik. Ukuran cache RSS terukur 45.196 byte (angka 49 KB sebelumnya adalah sampel berbeda): satu GET per menit selama 30 hari setara sekitar 1,95 GB respons, asumsi ukuran dan frekuensi tetap, belum termasuk operasi lain; bukan pengukuran aktual. Pembacaan kalender terkait riset AATAS dijeda; detail di `professional_llm_trader/changelog.md` S498 (lokal).
+
 ## Changelog Session 497 (2026-11-17) — Pemakaian Redis 2 pascapemulihan
 
 Screenshot Usage yang diberikan user setelah cutover: bandwidth 68 MB/10 GB, command 49K/500K, storage 18 MB/250 MB. Sebelum migrasi user melaporkan 47 MB dan 41K command; selisih sekitar 21 MB dan 8K command mencakup penyalinan, pembandingan, verifikasi, uji cron dan aktivitas aplikasi, sehingga bukan ukuran laju normal. Angka saat ini jauh di bawah batas, namun belum cukup untuk memproyeksikan sebulan. AATAS tetap dijeda. Cache NEWS sekitar 49 KB dibaca tiap request; browser melakukan refresh tiap 60 detik. Asumsi satu pembacaan 49 KB/menit tanpa henti selama 30 hari menghasilkan sekitar 2,1 GB transfer respons Redis, belum termasuk penulisan atau trafik lain; ini perhitungan skenario, bukan angka tagihan atau bukti laju aktual. Pantau pemakaian Usage selama beberapa hari sebelum menyimpulkan aman sepanjang bulan. Pembatas request terdistribusi tetap fail-open selama Redis 2 menjadi utama, terpisah dari risiko bandwidth.
