@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-17 (Pemakaian Redis 2 pascapemulihan)
+> **Last updated:** 2026-11-17 (Audit lanjutan Redis 2: sisa jalur AATAS saat jeda)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 500 (2026-11-17) — Audit lanjutan Redis 2: efisiensi fitur dijeda
+
+**Temuan.** Dua workflow AATAS terkonfirmasi `disabled_manually` di GitHub (`gh workflow list --all`), dan gerbang pause `api/admin.js` berada sebelum akses Redis (diuji `aatas_pause.test.js`). Yang masih menulis saat jeda adalah daemon Railway: buffer berita review posisi, skip log, dan pemanasan `risk_regime`. Ditutup di `vps/daemon.js`; rincian di `professional_llm_trader/changelog.md` S500 (lokal). Suite 1.673/1.673 lulus; belum ada pengukuran pemakaian setelah deploy.
+
+**Belum diubah, butuh keputusan/pengukuran (bukan fitur dijeda):** (1) tulis candle stream daemon: GET+2 SET per candle tutup untuk 14 pair, array hingga 420 candle, sekitar 1.008 command/hari dan skenario ~20 MB/hari; pair non-dashboard mungkin dibutuhkan tab TEK sehingga perlu cek pemakaian sebelum dikurangi. (2) `ohlcv_sync` menyinkronkan 11 pair termasuk AUD/NZD, EUR/GBP, CHF/JPY yang dibuat untuk auto-entry; mengeluarkannya hemat sekitar 3/11 tulisan sinkronisasi, tetapi pair ini dapat dipakai tab TEK/kalkulator sehingga perlu verifikasi konsumen dulu dan harus diaktifkan lagi saat AATAS dibuka. (3) Cek zona harga Q-5: skenario maksimum 14 pair x 96 GET/hari (~1.344/hari) dari komentar kode, belum diukur. (4) Kandidat S499 tetap berlaku: `checkOpenPositionNewsMatch` (MGET/indeks open jurnal), backfill terjemahan incremental, backoff retry RSS. Semua angka adalah skenario dari kode, bukan pengukuran.
 
 ## Changelog Session 499 (2026-11-17) — Audit efisiensi kuota Redis 2
 

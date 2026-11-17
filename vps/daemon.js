@@ -974,6 +974,7 @@ function filterFreshBufferItems(rawList, nowMs) {
 // tidak "lupa" gara-gara restart. Fail-open: Redis kosong/gagal -> buffer mulai
 // kosong seperti perilaku lama (tidak ada regresi, cuma tidak dapat manfaat baru).
 async function loadNewsBufferFromRedis() {
+  if (process.env.AATAS_PAUSED !== '0') return; // buffer hanya dipakai AATAS, hemat LRANGE saat boot
   try {
     const raw = await redisCmd('LRANGE', POSREVIEW_NEWS_BUFFER_REDIS_KEY, '0', '-1');
     if (!Array.isArray(raw) || !raw.length) return;
@@ -1007,6 +1008,7 @@ const POSREVIEW_RECHECK_WINDOW_MS = 30 * 60 * 1000;
 let posReviewRecheckQueue = [];
 
 async function processPosReviewRecheckQueue() {
+  if (process.env.AATAS_PAUSED !== '0') return; // review posisi AATAS dijeda
   if (!posReviewRecheckQueue.length) return;
   const now = Date.now();
   const stillQueued = [];
@@ -1115,6 +1117,9 @@ async function triggerPositionReview(body) {
 // market/degraded -> korroborasi -> trigger langsung (market-moving/corroborated)
 // atau antre recheck (kategori lain yang belum terkonfirmasi, langkah 4).
 async function handlePosReviewCandidate(newsItem) {
+  // Buffer korroborasi, skip log, dan antrian recheck hanya melayani review posisi
+  // AATAS. Saat dijeda, jangan buat LPUSH/LTRIM per berita di Redis.
+  if (process.env.AATAS_PAUSED !== '0') return;
   const now = Date.now();
   // `_seenAt` = kapan daemon PERTAMA KALI melihat item ini (bukan pubDate asli) —
   // dasar retensi buffer/recheck-queue sekarang, lihat catatan panjang di
@@ -1492,7 +1497,10 @@ function startScheduler() {
   // regime null diam-diam — persis kasus trade AUDNZD:1785849311337 (n=1 sampel
   // sejak Track 1b live). Panaskan cache menit :10 (5 menit sebelum slot :15) di
   // union jam AUTO_ENTRY_HOURS_UTC + AUTO_ENTRY_HOURS_UTC_AUDNZD.
-  const regimeWarmHours = [...new Set([...AUTO_ENTRY_HOURS_UTC, ...AUTO_ENTRY_HOURS_UTC_AUDNZD])];
+  // Saat AATAS dijeda tidak ada slot auto-entry yang membaca cache ini, jadi tidak dipanaskan.
+  const regimeWarmHours = process.env.AATAS_PAUSED === '0'
+    ? [...new Set([...AUTO_ENTRY_HOURS_UTC, ...AUTO_ENTRY_HOURS_UTC_AUDNZD])]
+    : [];
   for (const hour of regimeWarmHours) {
     cron.schedule(`10 ${hour} * * *`, () => triggerEndpoint('/api/risk-regime').catch(() => {}));
   }
@@ -1513,12 +1521,12 @@ function startScheduler() {
   }
   if (Number.isFinite(AUTO_CONSISTENCY_HOUR_UTC)) {
     cron.schedule(`45 ${AUTO_CONSISTENCY_HOUR_UTC} * * *`, () => runConsistencyCheck().catch(e => console.warn('daemon: runConsistencyCheck gagal:', e.message)));
-    console.log(`daemon: U-3 uji konsistensi aktif — pair ${AUTO_ENTRY_PAIRS[0] || '(kosong)'} @ jam ${AUTO_CONSISTENCY_HOUR_UTC}:45 UTC`);
+    if (process.env.AATAS_PAUSED === '0') console.log(`daemon: U-3 uji konsistensi aktif — pair ${AUTO_ENTRY_PAIRS[0] || '(kosong)'} @ jam ${AUTO_CONSISTENCY_HOUR_UTC}:45 UTC`);
   }
   // U-3 lanjutan (2026-07-24): tighten preventif weekend gap — hari-of-week 5 = Jumat.
   if (Number.isFinite(FRIDAY_TIGHTEN_HOUR_UTC)) {
     cron.schedule(`0 ${FRIDAY_TIGHTEN_HOUR_UTC} * * 5`, () => runFridayTightenCycle().catch(e => console.warn('daemon: runFridayTightenCycle gagal:', e.message)));
-    console.log(`daemon: tighten preventif Jumat aktif @ jam ${FRIDAY_TIGHTEN_HOUR_UTC}:00 UTC (4 jam sebelum tutup)`);
+    if (process.env.AATAS_PAUSED === '0') console.log(`daemon: tighten preventif Jumat aktif @ jam ${FRIDAY_TIGHTEN_HOUR_UTC}:00 UTC (4 jam sebelum tutup)`);
   }
 }
 

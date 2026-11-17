@@ -178,6 +178,25 @@ test('isCandleStale: segar di bawah 3 jam, basi di atasnya', () => {
   }
 });
 
+test('pause AATAS menghentikan buffer berita dan antrian review posisi', async () => {
+  const oldPause = process.env.AATAS_PAUSED;
+  const originalFetch = global.fetch;
+  let calls = 0;
+  process.env.AATAS_PAUSED = '1';
+  global.fetch = async () => { calls++; throw new Error('Redis tidak boleh dipanggil'); };
+  try {
+    await daemon.handlePosReviewCandidate({ guid: 'g1', title: 'Fed raises rates, USD jumps', pubDate: new Date().toUTCString(), cat: 'market-moving' });
+    await daemon.processPosReviewRecheckQueue();
+    await daemon.loadNewsBufferFromRedis();
+    await new Promise(r => setImmediate(r));
+    assert.equal(calls, 0);
+  } finally {
+    global.fetch = originalFetch;
+    if (oldPause === undefined) delete process.env.AATAS_PAUSED;
+    else process.env.AATAS_PAUSED = oldPause;
+  }
+});
+
 test('pause AATAS menghentikan pembacaan kalender untuk riset latensi', async () => {
   const oldPause = process.env.AATAS_PAUSED;
   const originalFetch = global.fetch;
