@@ -9,22 +9,12 @@ function resolveRedisCredentials() {
   const url2 = process.env.UPSTASH_REDIS_REST_URL_2 || process.env.UPSTASH2_REDIS_REST_URL;
   const token2 = process.env.UPSTASH_REDIS_REST_TOKEN_2 || process.env.UPSTASH2_REDIS_REST_TOKEN;
 
-  const active = (process.env.REDIS_ACTIVE_ACCOUNT || '').trim();
-  if (active === '1') {
-    if (url1 && token1) return { url: url1, token: token1, account: 1 };
-    if (url2 && token2) return { url: url2, token: token2, account: 2 };
-  }
-  if (active === '2') {
-    if (url2 && token2) return { url: url2, token: token2, account: 2 };
-    if (url1 && token1) return { url: url1, token: token1, account: 1 };
-  }
+  // Saat pemulihan, akun 2 adalah sumber aktif. Jangan diam-diam kembali ke
+  // akun 1 jika kredensial akun 2 tidak lengkap: itu dapat memecah data.
+  const active = (process.env.REDIS_ACTIVE_ACCOUNT || '2').trim();
+  if (active === '1') return { url: url1 || null, token: token1 || null, account: 1 };
+  return { url: url2 || null, token: token2 || null, account: 2 };
 
-  // Default kembali ke akun 1 setelah rekonsiliasi 2026-11-01. Akun 2 tetap
-  // siap sebagai fallback dan dapat dipilih eksplisit dengan
-  // REDIS_ACTIVE_ACCOUNT=2 bila akun 1 kembali terkena limit.
-  if (url1 && token1) return { url: url1, token: token1, account: 1 };
-  if (url2 && token2) return { url: url2, token: token2, account: 2 };
-  return { url: url1 || url2 || null, token: token1 || token2 || null, account: url1 ? 1 : 2 };
 }
 
 function syncActiveRedisEnv() {
@@ -33,10 +23,9 @@ function syncActiveRedisEnv() {
     originalToken1 = process.env.UPSTASH_REDIS_REST_TOKEN;
   }
   const active = resolveRedisCredentials();
-  if (active && active.url && active.token) {
-    process.env.UPSTASH_REDIS_REST_URL = active.url;
-    process.env.UPSTASH_REDIS_REST_TOKEN = active.token;
-  }
+  // Kosongkan pasangan aktif bila tidak lengkap; jangan tinggalkan URL akun 1.
+  process.env.UPSTASH_REDIS_REST_URL = active.url && active.token ? active.url : '';
+  process.env.UPSTASH_REDIS_REST_TOKEN = active.url && active.token ? active.token : '';
   return active;
 }
 

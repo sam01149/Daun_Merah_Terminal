@@ -11,12 +11,18 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-17 (Pemulihan cache NEWS)
+> **Last updated:** 2026-11-17 (Pemulihan Redis aplikasi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 496 (2026-11-17) — Pemulihan Redis aplikasi ke akun 2
+
+**Pemulihan data.** Redis 1 disuspend karena 10/10 GB bandwidth. Atas permintaan user, ekspor RDB akun 1 dibuat di Upstash, diunduh dan diverifikasi dengan parser Upstash; 1.222 record dibaca tanpa tipe tak dikenal. Akun 2 dicadangkan sebelum perubahan. AATAS tetap dijeda dan data khusus AATAS dikecualikan dari pemindahan; data NEWS baru di akun 2 tidak ditimpa. Sebanyak 992 key non-AATAS yang belum ada ditambahkan dengan pemeriksaan atomik; 25 operasi penggabungan menambah 778 field/anggota atau perubahan record tanpa konflik, dan tidak menimpa nilai yang berubah sejak cadangan akun 2. Verifikasi: 991 key yang belum kedaluwarsa ada, satu melewati masa berlaku, serta 28 pemeriksaan sampel data penting lulus. Transfer satu arah ini bukan bukti kesetaraan penuh database dan tidak mencakup AATAS maupun data kedaluwarsa.
+
+**Peralihan.** Resolver API dan daemon disiapkan memilih akun 2 secara default; jika kredensial akun 2 tidak lengkap, akses Redis dihentikan alih-alih diam-diam memakai akun 1. Override eksplisit `REDIS_ACTIVE_ACCOUNT=1` tetap tersedia untuk pemulihan terencana. Pembatas request berbasis Redis pada `_ratelimit.js` fail-open ketika akun 2 aktif sebagai database utama, sesuai desain S441; perlindungan tersebut tidak berfungsi selama konfigurasi ini. AATAS dan dua workflow-nya tetap dijeda. Riwayat awal akun 2 yang berbeda telah dipertahankan/gabung; pemulihan perlu diuji live setelah deployment. Kapasitas 10 GB bukan jaminan: user mencatat 47 MB saat awal, transfer data sekitar 16 MB ditambah pembacaan verifikasi; pemakaian berjalan dan dashboard Usage wajib dipantau.
 
 ## Changelog Session 495 (2026-11-17) — Cache NEWS terisolasi saat Redis utama disuspend
 

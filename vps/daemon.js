@@ -26,20 +26,11 @@ function resolveRedis() {
   const url2 = process.env.UPSTASH_REDIS_REST_URL_2 || process.env.UPSTASH2_REDIS_REST_URL;
   const token2 = process.env.UPSTASH_REDIS_REST_TOKEN_2 || process.env.UPSTASH2_REDIS_REST_TOKEN;
 
-  const active = (process.env.REDIS_ACTIVE_ACCOUNT || '').trim();
-  if (active === '2') {
-    if (url2 && token2) return { url: url2, token: token2, account: 2 };
-    if (url1 && token1) return { url: url1, token: token1, account: 1 };
-  }
-  if (active === '1') {
-    if (url1 && token1) return { url: url1, token: token1, account: 1 };
-    if (url2 && token2) return { url: url2, token: token2, account: 2 };
-  }
-  // Default akun 1 setelah rekonsiliasi penuh 2026-11-01; akun 2 tetap bisa
-  // dipilih eksplisit sebagai jalur darurat dengan REDIS_ACTIVE_ACCOUNT=2.
-  if (url1 && token1) return { url: url1, token: token1, account: 1 };
-  if (url2 && token2) return { url: url2, token: token2, account: 2 };
-  return { url: url1, token: token1, account: 1 };
+  // Redis 2 aktif selama pemulihan. Tidak fallback diam-diam ke akun 1.
+  const active = (process.env.REDIS_ACTIVE_ACCOUNT || '2').trim();
+  if (active === '1') return { url: url1 || null, token: token1 || null, account: 1 };
+  return { url: url2 || null, token: token2 || null, account: 2 };
+
 }
 
 const activeRedis = resolveRedis();

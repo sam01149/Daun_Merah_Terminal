@@ -3,3 +3,6 @@
 
 // Uji perilaku normal AATAS secara eksplisit; produksi default berhenti.
 process.env.AATAS_PAUSED = '0';
+
+// Suite lama menguji konfigurasi akun 1; peralihan produksi diuji terpisah.
+process.env.REDIS_ACTIVE_ACCOUNT = '1';
