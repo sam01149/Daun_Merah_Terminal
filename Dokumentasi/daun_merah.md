@@ -18,7 +18,9 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
 
-## Changelog Session 486 (2026-11-17) — Translate NEWS pindah ke Groq gpt-oss
+## Changelog Session 486 (2026-11-17) — Translate NEWS: Groq gpt-oss primary, Gemini fallback
+
+**Revisi (permintaan user, hari yang sama): bukan sekadar ganti.** `api/_news_translate.js` kini punya rantai `PROVIDERS` = Groq (primary) lalu Gemini flash-lite (fallback), masing-masing dengan circuit (`ai:groq:newstranslate`, `ai:gemini:newstranslate`) dan bucket guard (`groq_newstranslate`, `gemini_newstranslate`, 800/hari) sendiri. Pindah ke provider berikutnya bila: kunci tidak ada, circuit OPEN, jatah habis, HTTP error/timeout, atau respons tak ter-parse. Provider yang masih punya cadangan hanya boleh memakai 60% sisa waktu agar fallback sempat jalan. Kegagalan item (`news_tr_fail`) hanya dicatat bila SEMUA provider gagal. Tes fallback baru: 5 skenario di `test/lib/news_translate.test.js`. Uraian di bawah (ganti total) adalah langkah pertama sesi ini.
 
 Permintaan user: terjemahan headline dipindah dari Gemini flash-lite ke Groq `openai/gpt-oss-120b` (cadangan `openai/gpt-oss-20b` saat 400/404/429). Perubahan: `api/_news_translate.js` (endpoint Groq, `GROQ_API_KEY`, `BATCH_SIZE` 20 menjadi 10, `max_tokens` 3000, `reasoning_effort: low`), `api/_ai_guard.js` (bucket `groq_newstranslate` 800/hari menggantikan `gemini_newstranslate`), `api/admin.js` (`KNOWN_CIRCUITS`: `ai:groq:newstranslate`). Batch dan `max_tokens` diperkecil karena free tier Groq gpt-oss hanya 8K token/menit, 1K request/hari, 200K token/hari. Cache terjemahan lama (`news_tr:*`, `news_tr_c:*`) tidak terpengaruh. Tes `news_translate*.test.js` disesuaikan; `npm test` 1659/1659 hijau.
 

@@ -91,6 +91,10 @@ const DEFAULT_LIMITS = {
   // (bukan headline — 1 panggilan = batch sampai 10 headline) memberi headroom.
   // Override via env AI_DAILY_LIMIT_GROQ_NEWSTRANSLATE.
   groq_newstranslate: 800,
+  // Fallback Translate NEWS (Gemini flash-lite). Bucket TERPISAH dari 'gemini' (16/hari,
+  // Fundamental/Jurnal). Hanya terpakai saat Groq gagal, jadi volumenya kecil.
+  // Override via env AI_DAILY_LIMIT_GEMINI_NEWSTRANSLATE.
+  gemini_newstranslate: 800,
 };
 
 function dailyLimit(provider) {

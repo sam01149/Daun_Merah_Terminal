@@ -131,11 +131,89 @@ function mockGeminiEchoWithBody(calledBatches) {
 
 test('translateNewItems: tanpa GROQ_API_KEY → no-op, tidak crash, tidak ada yang tersimpan', withEnv({}, async () => {
   delete process.env.GROQ_API_KEY;
+  delete process.env.GEMINI_API_KEY;
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
   const store = new Map();
   await assert.doesNotReject(translateNewItems([{ title: 'Some headline', guid: 'x1', description: '' }], makeRedisCmd(store)));
   assert.equal(store.size, 0);
+}));
+
+// Mock dua provider: groqStatus/geminiStatus menentukan perilaku; mencatat urutan panggilan.
+function mockChain({ groq = 'ok', gemini = 'ok' }, hits) {
+  return async (url, opts) => {
+    const u = String(url);
+    const which = u.includes('api.groq.com') ? 'groq' : u.includes('generativelanguage.googleapis.com') ? 'gemini' : null;
+    if (!which) return { ok: true, json: async () => ({ result: null }) };
+    hits.push(which);
+    const mode = which === 'groq' ? groq : gemini;
+    if (mode === 'http500') return { ok: false, status: 500 };
+    const prompt = JSON.parse(opts.body).messages[0].content;
+    const matches = [...prompt.matchAll(/\[(\d+)\]\nJUDUL: (.*)/g)];
+    const content = mode === 'garbage' ? 'maaf tidak bisa' : matches.map(mm => `[${mm[1]}]\nJUDUL_ID: ${which}:${mm[2]}`).join('\n');
+    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+  };
+}
+const CHAIN_ENV = { GROQ_API_KEY: 'k-groq', GEMINI_API_KEY: 'k-gem', UPSTASH_REDIS_REST_URL: 'https://mock-redis.test', UPSTASH_REDIS_REST_TOKEN: 'mock-token' };
+
+test('fallback: Groq sukses -> Gemini TIDAK dipanggil', withEnv(CHAIN_ENV, async () => {
+  const realFetch = global.fetch; const hits = [];
+  global.fetch = mockChain({}, hits);
+  try {
+    const store = new Map();
+    await translateNewItems([{ title: 'Alpha', guid: 'f1', description: '' }], makeRedisCmd(store));
+    assert.deepEqual(hits, ['groq']);
+    assert.equal(JSON.parse(store.get('news_tr:f1')).title_id, 'groq:Alpha');
+  } finally { global.fetch = realFetch; }
+}));
+
+test('fallback: Groq HTTP 500 -> Gemini dipakai dan hasil tersimpan, tanpa catat kegagalan item', withEnv(CHAIN_ENV, async () => {
+  const realFetch = global.fetch; const hits = [];
+  global.fetch = mockChain({ groq: 'http500' }, hits);
+  try {
+    const store = new Map();
+    const item = { title: 'Beta', guid: 'f2', description: '' };
+    await translateNewItems([item], makeRedisCmd(store));
+    assert.deepEqual(hits, ['groq', 'gemini']);
+    assert.equal(JSON.parse(store.get('news_tr:f2')).title_id, 'gemini:Beta');
+    assert.equal(store.has(`news_tr_fail:${contentKey(item)}`), false);
+  } finally { global.fetch = realFetch; }
+}));
+
+test('fallback: Groq balas tak ter-parse -> Gemini dipakai', withEnv(CHAIN_ENV, async () => {
+  const realFetch = global.fetch; const hits = [];
+  global.fetch = mockChain({ groq: 'garbage' }, hits);
+  try {
+    const store = new Map();
+    await translateNewItems([{ title: 'Gamma', guid: 'f3', description: '' }], makeRedisCmd(store));
+    assert.deepEqual(hits, ['groq', 'gemini']);
+    assert.equal(JSON.parse(store.get('news_tr:f3')).title_id, 'gemini:Gamma');
+  } finally { global.fetch = realFetch; }
+}));
+
+test('fallback: tanpa GROQ_API_KEY -> langsung Gemini', withEnv({ ...CHAIN_ENV, GROQ_API_KEY: '' }, async () => {
+  delete process.env.GROQ_API_KEY;
+  const realFetch = global.fetch; const hits = [];
+  global.fetch = mockChain({}, hits);
+  try {
+    const store = new Map();
+    await translateNewItems([{ title: 'Delta', guid: 'f4', description: '' }], makeRedisCmd(store));
+    assert.deepEqual(hits, ['gemini']);
+    assert.equal(store.has('news_tr:f4'), true);
+  } finally { global.fetch = realFetch; }
+}));
+
+test('fallback: kedua provider gagal -> kegagalan item dicatat sekali, tidak ada terjemahan', withEnv(CHAIN_ENV, async () => {
+  const realFetch = global.fetch; const hits = [];
+  global.fetch = mockChain({ groq: 'http500', gemini: 'http500' }, hits);
+  try {
+    const store = new Map();
+    const item = { title: 'Epsilon', guid: 'f5', description: '' };
+    await translateNewItems([item], makeRedisCmd(store));
+    assert.deepEqual(hits, ['groq', 'gemini']);
+    assert.equal(store.has('news_tr:f5'), false);
+    assert.equal(store.get(`news_tr_fail:${contentKey(item)}`), 1);
+  } finally { global.fetch = realFetch; }
 }));
 
 test('translateNewItems: array kosong/invalid → no-op', async () => {
