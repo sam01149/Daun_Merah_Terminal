@@ -20,6 +20,10 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 ## Changelog Session 501 (2026-11-17) — Estimasi mingguan Redis 2 dan opsi kompresi cache RSS
 
+**Uji kompresi lossless (probe kedua, 45.576 byte):** brotli lalu base64 menghasilkan 10.116 karakter; dekompres kembali identik byte-per-byte (SHA-256 sama), 101 judul sama urutan dan isi. Belum diterapkan ke kode.
+
+**Perilaku tab tersembunyi (kode):** `startAutoRefresh` tidak dihentikan saat `visibilityState` hidden dan berjalan di semua tampilan aplikasi; polling tersembunyi tidak memicu notifikasi OS atau badge judul (notifikasi datang dari SW periodicsync dan web push daemon), hanya memperbarui daftar. Saat tab kembali visible dan AUTO aktif, handler `visibilitychange` langsung memanggil `fetchFeed()`. Menutup tab/aplikasi tidak menjalankan JS halaman sama sekali.
+
 **Terukur:** satu GET RSS produksi 46.280 byte, 100 item; gzip 10.646, gzip+base64 14.195 (-69%), brotli+base64 10.110 (-78%). Satu request probe menambah pemakaian kecil.
 
 **Temuan dari kode (`api/feeds.js` rssHandler, `index.html` startAutoRefresh):** klien auto-refresh 60 detik, lebih lama dari TTL cache 50 detik, sehingga hampir setiap poll lewat jalur refill: GET cache 46 KB hanya untuk membaca `fetchedAt`, lock, fetch upstream, SET cache 46 KB, DEL lock, ditambah circuit breaker dan riwayat/terjemahan berkala. Perkiraan satu klien aktif terus: sekitar 10 command dan 100 KB per poll, sekitar 100K command dan 1 GB per minggu. Ini koreksi atas S497/S499 yang hanya menghitung satu GET per poll (1,95 GB/bulan). `setInterval` tidak dihentikan saat tab tersembunyi. Angka command per poll adalah perkiraan dari alur kode, belum diukur.
