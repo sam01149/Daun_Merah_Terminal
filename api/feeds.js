@@ -1901,6 +1901,9 @@ module.exports.newsHistoryHandler = newsHistoryHandler;
 module.exports.storeNewsHistory = storeNewsHistory;
 module.exports.parseRSSItems = parseRSSItems;
 module.exports.stripBlockedHeadlines = stripBlockedHeadlines;
+// Diekspor untuk drift-guard test (audit 2026-11-17 §3.2): regex ini diduplikasi
+// manual di api/admin.js (parser yang fetch XML FinancialJuice langsung).
+module.exports.BLOCKED_HEADLINE_RE = BLOCKED_HEADLINE_RE;
 module.exports.newsTranslateHandler = newsTranslateHandler;
 module.exports.newsTranslateBackfillHandler = newsTranslateBackfillHandler;
 module.exports._pctileRank = _pctileRank;

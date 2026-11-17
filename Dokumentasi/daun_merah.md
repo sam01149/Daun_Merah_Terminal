@@ -11,12 +11,28 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-15 (Perbaikan Pandangan Bank dan AATAS)
+> **Last updated:** 2026-11-17 (Audit aplikasi: sweep emoji, drift-guard regex headline, validasi device_id)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 487 (2026-11-17) — Audit aplikasi: sweep emoji, drift-guard regex headline, validasi device_id
+
+**Lingkup.** Audit per `audit_daun_merah.md` §1–2 (lima kategori A–E) untuk aplikasi umum; auto-entry/AATAS tidak diaudit sesi ini (punya SOP sendiri di `professional_llm_trader/audit_workflow.md`). Baseline `npm test` 1664/1664 hijau sebelum perubahan.
+
+**1. Emoji piktografik di UI (ATURAN §4.1) — DIBERSIHKAN.** Item parkir S243 ternyata masih menyisakan 12 titik nyata di `index.html`: empty-state CB research (`📄`), ikon countdown kalender (`⏱`), tombol filter dampak (`🔴 High`/`🟡 Medium`), judul onboarding (`🍁`), heading modal kategori push (`🔔`), enam label kategori push (`🔴 📋 🏦 💱 ⚡ 🌐`), dan chip pekan kustom kalender (`📅`). Penggantian mengikuti keputusan desain yang sudah dipakai proyek: SVG stroke `currentColor` untuk dua ikon fungsional (dokumen, jam), dot berwarna CSS (glyph `●`) untuk filter dampak — pola sama dengan badge `● HIGH`/`● MED` yang sudah ada — dan teks polos untuk label yang maknanya sudah dibawa kata. Verifikasi scan ulang rentang emoji = 0 kecocokan. Dingbat `✓/✕/✗` dan panah `↑↓→▲▼` tidak disentuh: sudah diterima sebagai simbol non-emoji sejak S256/S277, dan `✓` dipakai `_PDF_SYMBOL_MAP`.
+
+**2. Drift-guard `BLOCKED_HEADLINE_RE` (audit §3.2 checklist C) — DITAMBAH.** Regex ini diduplikasi manual di `api/feeds.js` dan `api/admin.js` (dua parser admin yang fetch XML FinancialJuice langsung, bypass `feeds.js`), dan audit §3.2 sudah mencatat tidak ada test yang menjaganya. `api/feeds.js` sekarang mengekspor `BLOCKED_HEADLINE_RE`; test baru `test/lib/blocked_headline_drift.test.js` membandingkan `source` dan `flags` kedua salinan, jadi menambah pola di satu titik tanpa titik lain kini gagal di `npm test`.
+
+**3. Validasi `device_id` jalur admin (audit §3.6 checklist B) — DISAMAKAN.** `journalImportHandler` (`api/admin.js?action=journal_import`) menulis key `journal:{device_id}:{id}` memakai `device_id` mentah dari body, tanpa aturan charset/panjang `DEVICE_ID_RE` yang dipakai `api/journal.js`, `api/sizing-history.js`, dan `api/subscribe.js`. Endpoint memang hanya untuk CRON_SECRET, jadi bukan celah terbuka, tapi validasinya kini identik supaya karakter `:` atau spasi tidak bisa merusak struktur key.
+
+**4. Komentar guard AI yang menyesatkan — DIPERBAIKI.** `api/_ai_guard.js` menyatakan bucket `gemini_newstranslate` "dihapus 2026-11-17" padahal blok yang sama mendefinisikannya sebagai jalur fallback 800/hari. Tidak ada perubahan perilaku; hanya supaya pembaca berikutnya tidak menghapus bucket yang masih dipakai `api/_news_translate.js`.
+
+**Temuan yang DIPARKIR** (tidak bisa difix tanpa data atau keputusan): (a) `real-yields.js` — ekspektasi inflasi CAD (`as_of` 2026-07-15, 125 hari) dan AUD (2026-08-11, 98 hari) lewat janji refresh 90 hari; EUR hardcode 2026-07-24 (116 hari) hanya dipakai bila fetch ECB SPF live gagal. Flag `stale` sudah menyala benar sehingga UI jujur, tapi angkanya wajib diganti dari rilis resmi (BoC MPR Okt 2026, RBA SoMP Nov 2026, ECB SPF Q4 2026) — tidak difabrikasi. (b) MFE/MAE jurnal memakai `entry.created_at` (waktu order dibuat); untuk entri `fill_state:'pending'` yang tereksekusi belakangan window bisa memuat pergerakan harga sebelum fill, sehingga MFE terlalu besar / MAE terlalu dalam. Keduanya dicatat di `daun_merah_progress.md`.
+
+**Verifikasi.** `npm test` 1665/1665 hijau (1.664 baseline + 1 drift-guard baru). `node --check` lulus untuk `api/feeds.js`, `api/admin.js`, `api/_ai_guard.js`. `APP_VERSION` `index.html` dan `sw.js` naik lockstep ke `2026.11.17.1`. Perubahan UI tidak diperiksa di browser sesi ini (tidak diminta); yang diverifikasi hanya ketiadaan emoji, sintaks, dan suite tes.
 
 ## Changelog Session 486 (2026-11-17) — Translate NEWS: Groq gpt-oss primary, Gemini fallback
 

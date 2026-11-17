@@ -3810,7 +3810,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
   </div>
   <div id="risetList" class="riset-list">
     <div class="state-box">
-      <div class="icon" style="font-size:24px">📄</div>
+      <div class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg></div>
       <p style="font-size:12px" class="loading-pulse">Memuat CB research...</p>
     </div>
   </div>
@@ -3957,7 +3957,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
   <!-- COUNTDOWN TIMER -->
   <div class="cal-countdown-wrap" id="calCountdownWrap" style="display:none">
     <div class="cal-countdown" id="calCountdownCard">
-      <div class="cal-countdown-icon">⏱</div>
+      <div class="cal-countdown-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
       <div class="cal-countdown-body">
         <div class="cal-countdown-label">Event High-Impact Berikutnya</div>
         <div class="cal-countdown-name" id="calCountdownName">—</div>
@@ -3970,8 +3970,8 @@ body:not(.light-theme) .ringkasan-gen-btn {
     <div class="cal-toolbar-row">
       <div class="cal-filter-group">
         <button class="cal-filter-btn active-all" id="calFilterAll" onclick="setCalFilter('all')">Semua</button>
-        <button class="cal-filter-btn" id="calFilterHigh" onclick="setCalFilter('high')">🔴 High</button>
-        <button class="cal-filter-btn" id="calFilterMed" onclick="setCalFilter('medium')">🟡 Medium</button>
+        <button class="cal-filter-btn" id="calFilterHigh" onclick="setCalFilter('high')"><span style="color:#ff4757" aria-hidden="true">&#9679;</span> High</button>
+        <button class="cal-filter-btn" id="calFilterMed" onclick="setCalFilter('medium')"><span style="color:var(--yellow)" aria-hidden="true">&#9679;</span> Medium</button>
       </div>
       <span class="cal-count-badge" id="calCountBadge">—</span>
     </div>
@@ -4760,7 +4760,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <!-- ONBOARDING FIRST-RUN -->
 <div class="onboard-overlay" id="onboardOverlay" role="dialog" aria-modal="true" aria-labelledby="onboardTitle">
   <div class="onboard-card">
-    <div class="onboard-title" id="onboardTitle">Selamat datang di Daun Merah 🍁</div>
+    <div class="onboard-title" id="onboardTitle">Selamat datang di Daun Merah</div>
     <div class="onboard-sub">Decision-support untuk trader forex macro discretionary. Tiga langkah untuk mulai:</div>
     <div class="onboard-step">
       <div class="onboard-step-num">1</div>
@@ -4853,7 +4853,7 @@ body:not(.light-theme) .ringkasan-gen-btn {
 <div id="pushCatModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 20px;width:min(340px,92vw);max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent)">🔔 Pilih Kategori Push</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent)">Pilih Kategori Push</div>
       <button onclick="closePushCatModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
     </div>
     <div style="font-size:10px;color:var(--muted);line-height:1.5;margin-bottom:14px">Pilih kategori berita yang ingin dikirim ke HP kamu. Market Moving selalu dikirim.</div>
@@ -4939,7 +4939,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.09.6';
+const APP_VERSION = '2026.11.17.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -5411,7 +5411,7 @@ document.addEventListener('click', (e) => {
   if (!wrap.contains(e.target)) closeHeaderMenu();
 });
 
-// A2.5: tombol 🔔 jadi toggle — klik saat aktif mematikan notif bersih (unsubscribe +
+// A2.5: tombol notifikasi jadi toggle — klik saat aktif mematikan notif bersih (unsubscribe +
 // hapus dari push_subs), bukan cuma minta izin ulang.
 async function toggleNotif() {
   const isActive = Notification.permission === 'granted' && notifEnabled;
@@ -5443,12 +5443,12 @@ async function disableNotif() {
 
 // A2.3 Fase 2: Push category preferences stored in localStorage
 const PUSH_CAT_OPTIONS = [
-  { id: 'market-moving', label: 'Market Moving 🔴', desc: 'Berita besar yang langsung gerakkan pasar', locked: true },
-  { id: 'econ-data',     label: 'Data Ekonomi 📋',  desc: 'CPI, NFP, GDP, PMI — rilis resmi' },
-  { id: 'macro',         label: 'Bank Sentral 🏦',   desc: 'Keputusan rate, guidance CB, hawkish/dovish' },
-  { id: 'forex',         label: 'FX & Emas 💱',      desc: 'Pair FX, gold (XAU), silver' },
-  { id: 'energy',        label: 'Energi ⚡',         desc: 'Minyak (WTI/Brent), OPEC, gas' },
-  { id: 'geopolitical',  label: 'Geopolitik 🌐',     desc: 'Konflik, sanksi, perdagangan, tarif' },
+  { id: 'market-moving', label: 'Market Moving', desc: 'Berita besar yang langsung gerakkan pasar', locked: true },
+  { id: 'econ-data',     label: 'Data Ekonomi', desc: 'CPI, NFP, GDP, PMI — rilis resmi' },
+  { id: 'macro',         label: 'Bank Sentral', desc: 'Keputusan rate, guidance CB, hawkish/dovish' },
+  { id: 'forex',         label: 'FX & Emas',    desc: 'Pair FX, gold (XAU), silver' },
+  { id: 'energy',        label: 'Energi',       desc: 'Minyak (WTI/Brent), OPEC, gas' },
+  { id: 'geopolitical',  label: 'Geopolitik',   desc: 'Konflik, sanksi, perdagangan, tarif' },
 ];
 function getPushCats() {
   try {
@@ -8572,7 +8572,7 @@ function updateCalCustomChip() {
     const dt = new Date(calCustomWeekLabel + 'T00:00:00Z');
     const label = dt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
     chip.style.display = '';
-    chip.textContent = `📅 Pekan ${label} ✕`;
+    chip.textContent = `Pekan ${label} ✕`;
   } else {
     chip.style.display = 'none';
   }

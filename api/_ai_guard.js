@@ -84,7 +84,9 @@ const DEFAULT_LIMITS = {
   // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02, redesign BATCH,
   // lihat api/_news_translate.js). Riwayat provider (SambaNova x2, Gemini, Mistral,
   // Big Pickle) ada di komentar api/_news_translate.js dan daun_merah_vendor.md.
-  // Bucket `gemini_newstranslate` lama dihapus 2026-11-17 saat pindah ke Groq.
+  // Bucket `gemini_newstranslate` TIDAK dihapus 2026-11-17 walau provider primary pindah ke
+  // Groq — sekarang khusus jalur FALLBACK (lihat blok di bawah), supaya kuotanya tidak
+  // tercampur bucket 'gemini' (16/hari) milik Fundamental/Jurnal.
   //
   // Translate NEWS pindah ke Groq gpt-oss-120b (2026-11-17, lihat §PIVOT KE GROQ di
   // api/_news_translate.js). Limit free tier Groq 1.000 RPD per model; 800 PANGGILAN/hari

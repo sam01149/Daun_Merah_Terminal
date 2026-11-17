@@ -2275,7 +2275,12 @@ async function journalImportHandler(req, res) {
   try { parsed = JSON.parse(body); } catch(e) { return res.status(400).json({ error: 'Invalid JSON' }); }
 
   const { device_id, entries } = parsed;
-  if (!device_id || !Array.isArray(entries) || entries.length === 0)
+  // device_id dipakai langsung sebagai bagian key Redis (journal:{device_id}:{id}) —
+  // jalur ini dulu TIDAK memvalidasi charset/panjang seperti api/journal.js
+  // (DEVICE_ID_RE), sehingga karakter ':' atau spasi bisa merusak struktur key.
+  // Endpoint ini memang admin-only (CRON_SECRET), tapi validasinya disamakan
+  // supaya konsisten dengan titik lain yang menulis key journal.
+  if (!device_id || !/^[A-Za-z0-9_-]{1,64}$/.test(device_id) || !Array.isArray(entries) || entries.length === 0)
     return res.status(400).json({ error: 'device_id and entries[] required' });
 
   const indexKey = `journal_index:${device_id}`;
