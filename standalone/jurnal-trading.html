@@ -217,6 +217,7 @@ const basics = [
 const stages = [
   { name:'Pra-entry', groups:[
     ['Tesis dan konteks', [
+      ['entryFeeling','Apa yang kamu rasakan saat ingin mengambil trade ini?','textarea'],
       ['thesis','Tesis dan katalis','textarea'], ['fundamentals','Fundamental dan ekspektasi pasar','textarea'],
       ['sentiment','Sentimen dan positioning','textarea'], ['invalidation','Apa yang membatalkan tesis?','textarea'],
       ['baseScore','Skor mata uang kiri','number',-10,10], ['quoteScore','Skor mata uang kanan','number',-10,10],
@@ -397,6 +398,7 @@ function makeField([name,label,type,min,max], value) {
     optionList(input,type);
   } else if (type === 'textarea') {
     input = el('textarea',null,{ name, maxlength:4000, rows:2 });
+    if (name === 'entryFeeling') input.placeholder = 'Contoh: Tenang karena rencana jelas, atau takut ketinggalan karena harga sudah bergerak.';
   } else {
     input = el('input',null,{ name, type });
     if (type === 'number') {
@@ -530,7 +532,8 @@ const columns = [
   ['Pips',trade => fmt(trade.pips)], ['MAE (pips / %)',trade => dual(trade.maePips,trade.maePct)],
   ['MFE (pips / %)',trade => dual(trade.mfePips,trade.mfePct)], ['Tanpa intervensi (estimasi)',trade => usd(trade.untouched)],
   ['Yakin / Jelas',trade => trade.conviction == null && trade.clarity == null ? dash : `${fmt(trade.conviction)} / ${fmt(trade.clarity)}`],
-  ['Mood pasar',trade => moods[trade.mood]], ['Event dekat?',trade => yesNo[trade.nearEvent]], ['Ikuti rencana?',trade => yesNo[trade.followed]],
+  ['Mood pasar',trade => moods[trade.mood]], ['Perasaan sebelum entry',trade => trade.entryFeeling],
+  ['Event dekat?',trade => yesNo[trade.nearEvent]], ['Ikuti rencana?',trade => yesNo[trade.followed]],
   ['Catatan satu kalimat',trade => trade.truth]
 ];
 $('table-head').replaceChildren(...columns.map(([label]) => el('th',label,{ scope:'col' })));
@@ -579,7 +582,7 @@ function renderTable(balances) {
       const cell = el('td',value(trade,balances) ?? dash);
       if (label === 'Status') cell.replaceChildren(el('span',statuses[trade.status],{ class:`status ${trade.status}` }));
       if (label === 'P/L bersih' && trade.status === 'closed' && trade.net) cell.className = trade.net > 0 ? 'positive' : 'negative';
-      if (label === 'Catatan satu kalimat') cell.className = 'truth';
+      if (label === 'Catatan satu kalimat' || label === 'Perasaan sebelum entry') cell.className = 'truth';
       row.append(cell);
     }
     fragment.append(row);
