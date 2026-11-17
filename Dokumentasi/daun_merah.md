@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-17 (Pemulihan Redis aplikasi)
+> **Last updated:** 2026-11-17 (Pemakaian Redis 2 pascapemulihan)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 497 (2026-11-17) — Pemakaian Redis 2 pascapemulihan
+
+Screenshot Usage yang diberikan user setelah cutover: bandwidth 68 MB/10 GB, command 49K/500K, storage 18 MB/250 MB. Sebelum migrasi user melaporkan 47 MB dan 41K command; selisih sekitar 21 MB dan 8K command mencakup penyalinan, pembandingan, verifikasi, uji cron dan aktivitas aplikasi, sehingga bukan ukuran laju normal. Angka saat ini jauh di bawah batas, namun belum cukup untuk memproyeksikan sebulan. AATAS tetap dijeda. Cache NEWS sekitar 49 KB dibaca tiap request; browser melakukan refresh tiap 60 detik. Asumsi satu pembacaan 49 KB/menit tanpa henti selama 30 hari menghasilkan sekitar 2,1 GB transfer respons Redis, belum termasuk penulisan atau trafik lain; ini perhitungan skenario, bukan angka tagihan atau bukti laju aktual. Pantau pemakaian Usage selama beberapa hari sebelum menyimpulkan aman sepanjang bulan. Pembatas request terdistribusi tetap fail-open selama Redis 2 menjadi utama, terpisah dari risiko bandwidth.
 
 ## Changelog Session 496 (2026-11-17) — Pemulihan Redis aplikasi ke akun 2
 
