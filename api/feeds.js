@@ -66,6 +66,8 @@ async function redisCmd(...args) {
 // No module-level in-memory cache — cold-start safe, Redis is the only cache layer
 const RSS_CACHE_TTL_MS = 50 * 1000;
 const RSS_CACHE_KEY    = 'rss_cache';
+const RSS_COOLDOWN_KEY = 'rss_fetch_cooldown_v1';
+const RSS_CACHE_STORAGE_SECS = 6 * 3600;
 const RSS_URL          = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 const RSS_USER_AGENTS  = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -92,6 +94,22 @@ function stripBlockedHeadlines(xml) {
   });
 }
 
+// Isolasi cache NEWS di akun kedua: tidak memindahkan jurnal, AATAS, atau
+// data aplikasi lain. Kegagalan cache menghentikan fetch agar sumber tidak
+// dibanjiri ketika lock/circuit Redis utama sedang tidak tersedia.
+async function rssRedisCmd(...args) {
+  const url = process.env.UPSTASH_REDIS_REST_URL_2 || process.env.UPSTASH2_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN_2 || process.env.UPSTASH2_REDIS_REST_TOKEN;
+  if (!url || !token) throw new Error('NEWS_CACHE_UNAVAILABLE');
+  const r = await fetch(url, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args), signal: AbortSignal.timeout(3000),
+  });
+  const body = await r.json();
+  if (!r.ok || body.error) throw new Error('NEWS_CACHE_UNAVAILABLE');
+  return body.result;
+}
+
 async function rssHandler(req, res) {
   res.setHeader('Content-Type', 'application/xml; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -99,7 +117,7 @@ async function rssHandler(req, res) {
   const now = Date.now();
 
   try {
-    const cached = await redisCmd('GET', RSS_CACHE_KEY);
+    const cached = await rssRedisCmd('GET', RSS_CACHE_KEY);
     if (cached) {
       const obj = JSON.parse(cached);
       if (now - obj.fetchedAt < RSS_CACHE_TTL_MS) {
@@ -109,7 +127,8 @@ async function rssHandler(req, res) {
       }
     }
   } catch(e) {
-    console.warn('RSS Redis GET failed:', e.message);
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(503).json({ error: 'Cache NEWS sementara tidak tersedia' });
   }
 
   // Cache expired — avoid a "thundering herd": if several browser windows/users
@@ -118,13 +137,30 @@ async function rssHandler(req, res) {
   // instead of firing concurrent upstream requests, which can look like a
   // scrape burst to FinancialJuice's own anti-bot defenses and get blocked.
   const lockKey = 'rss_fetch_lock';
-  const gotLock = await redisCmd('SET', lockKey, '1', 'NX', 'EX', 25);
+  let gotLock;
+  try {
+    if (await rssRedisCmd('GET', RSS_COOLDOWN_KEY)) {
+      const stale = await rssRedisCmd('GET', RSS_CACHE_KEY);
+      if (stale) {
+        const obj = JSON.parse(stale);
+        res.setHeader('X-Cache-Source', 'STALE');
+        res.setHeader('X-News-Source', obj.source || 'financialjuice');
+        return res.status(200).send(obj.xml);
+      }
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(503).json({ error: 'Sumber NEWS sedang membatasi akses', retry_after_seconds: 300 });
+    }
+    gotLock = await rssRedisCmd('SET', lockKey, '1', 'NX', 'EX', 25);
+  } catch(e) {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(503).json({ error: 'Cache NEWS sementara tidak tersedia' });
+  }
 
   if (!gotLock) {
     for (let i = 0; i < 4; i++) {
       await new Promise(r => setTimeout(r, 350));
       try {
-        const fresh = await redisCmd('GET', RSS_CACHE_KEY);
+        const fresh = await rssRedisCmd('GET', RSS_CACHE_KEY);
         if (fresh) {
           const obj = JSON.parse(fresh);
           if (Date.now() - obj.fetchedAt < RSS_CACHE_TTL_MS) {
@@ -138,7 +174,7 @@ async function rssHandler(req, res) {
     // Lock holder still hasn't published fresh data — serve whatever's cached
     // (even if stale) rather than also double-fetching upstream.
     try {
-      const stale = await redisCmd('GET', RSS_CACHE_KEY);
+      const stale = await rssRedisCmd('GET', RSS_CACHE_KEY);
       if (stale) {
         const obj = JSON.parse(stale);
         res.setHeader('X-Cache-Source', 'STALE_WAIT');
@@ -146,8 +182,9 @@ async function rssHandler(req, res) {
         return res.status(200).send(obj.xml);
       }
     } catch(e) {}
-    // Nothing cached at all (cold start race) — fall through and fetch
-    // ourselves as last resort, lock or not.
+    // Pemilik lock masih bekerja. Jangan menggandakan request ke sumber.
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(503).json({ error: 'NEWS sedang diperbarui' });
   }
 
   const ua = RSS_USER_AGENTS[Math.floor(Math.random() * RSS_USER_AGENTS.length)];
@@ -180,9 +217,12 @@ async function rssHandler(req, res) {
   // berita yang berbeda lalu berubah lagi.
   if (!xml) {
     console.warn('FinancialJuice RSS failed:', fetchError, '— serving stale cache instead of switching source');
-    if (gotLock) redisCmd('DEL', lockKey).catch(() => {}); // release early so next cycle isn't stuck waiting out the TTL
+    let cooled = false;
+    try { cooled = (await rssRedisCmd('SET', RSS_COOLDOWN_KEY, '1', 'EX', fetchError === 'HTTP_429' ? 300 : 60)) === 'OK'; } catch (_) {}
+    // If the cooldown write fails, let the lock expire instead of releasing it early.
+    if (gotLock && cooled) await rssRedisCmd('DEL', lockKey).catch(() => {});
     try {
-      const stale = await redisCmd('GET', RSS_CACHE_KEY);
+      const stale = await rssRedisCmd('GET', RSS_CACHE_KEY);
       if (stale) {
         const obj = JSON.parse(stale);
         res.setHeader('X-Cache-Source', 'STALE');
@@ -194,15 +234,16 @@ async function rssHandler(req, res) {
     return res.status(502).json({ error: 'Upstream fetch failed', detail: fetchError });
   }
 
-  if (gotLock) redisCmd('DEL', lockKey).catch(() => {}); // release as soon as fresh data is about to be cached
-
   const payload = JSON.stringify({ xml, fetchedAt: now, source: 'financialjuice' });
-  try { await redisCmd('SET', RSS_CACHE_KEY, payload, 'EX', 60); } catch(e3) {
+  try { await rssRedisCmd('SET', RSS_CACHE_KEY, payload, 'EX', RSS_CACHE_STORAGE_SECS); } catch(e3) {
     console.warn('RSS Redis SET failed:', e3.message);
   }
 
-  // Fire-and-forget: persist items to 36h rolling history for market-digest
-  storeNewsHistory(xml, now).catch(() => {});
+  if (gotLock) await rssRedisCmd('DEL', lockKey).catch(() => {});
+
+  // Jangan memanggil AI atau membuat state terpisah saat Redis utama disuspend.
+  const primaryReady = (await redisCmd('PING')) === 'PONG';
+  if (primaryReady) storeNewsHistory(xml, now).catch(() => {});
 
   // Translate item baru ke Bahasa Indonesia (S272, 2026-08-02) — DI-AWAIT, BUKAN
   // fire-and-forget murni. Percobaan awal pakai fire-and-forget (seperti
@@ -221,7 +262,7 @@ async function rssHandler(req, res) {
   // langsung trip circuit breaker begitu deploy). 9000 kasih headroom sehat tanpa
   // mendekati batas 16000 gabungan/20000 maxDuration/22000 timeout client.
   const translateBudgetMs = Math.max(0, Math.min(9000, 16000 - (Date.now() - now)));
-  if (translateBudgetMs > 500) {
+  if (primaryReady && translateBudgetMs > 500) {
     try { await translateNewItems(parseRSSItems(xml), redisCmd, translateBudgetMs); } catch(e4) {
       console.warn('translateNewItems failed:', e4.message);
     }

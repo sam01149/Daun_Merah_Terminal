@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-17 (Pemeriksaan Redis dan fitur produksi)
+> **Last updated:** 2026-11-17 (Pemulihan cache NEWS)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 495 (2026-11-17) — Cache NEWS terisolasi saat Redis utama disuspend
+
+Redis utama kena batas bandwidth, menyebabkan cache dan lock RSS tidak berfungsi; pada saat bersamaan FinancialJuice mengembalikan 429. Akun kedua diperiksa user: 47 MB/10 GB dan 41K/500K command. Cache, lock dan cooldown RSS dipindah spesifik ke akun kedua tanpa mengubah database utama fitur lain. Data cache bertahan hingga enam jam untuk fallback, tetap fresh hanya 50 detik. Satu fetch upstream per lock; pada 429 tunggu lima menit sebelum mencoba lagi, error lain satu menit, dan jika cache/lock tidak tersedia permintaan dihentikan agar tidak membanjiri sumber. Saat Redis utama tidak menjawab PING, penulisan riwayat dan terjemahan AI dilewati agar tidak membuat state terpecah atau memanggil AI berulang tanpa cache. Sumber tetap FinancialJuice; fitur Ringkasan dan data aplikasi lain belum pulih oleh perubahan ini. Uji unit menguji cache segar, gagal cache, 429/cooldown, dan respons baru ketika Redis utama gagal; hasil live dicatat setelah deploy.
 
 ## Changelog Session 494 (2026-11-17) — Pemeriksaan Redis, Ringkasan, dan kalender
 
