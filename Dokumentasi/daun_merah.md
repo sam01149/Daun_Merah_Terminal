@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-17 (Penjelasan kolom setup jurnal mandiri)
+> **Last updated:** 2026-11-17 (Diagnosis gangguan Redis produksi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 492 (2026-11-17) — Diagnosis gangguan Redis produksi
+
+Vercel menampilkan deployment `59137ca` Ready, tetapi dashboard aplikasi memuat berita berusia lebih dari 500 jam dan tabel bias kosong. Log 20:17–20:19 WIB menunjukkan timeout Redis, timeout `/api/feeds`, serta HTTP 429 dari FinancialJuice. Probe read-only langsung ke Redis memakai kredensial lokal: akun 1 HTTP 403 `This database has reached current Fixed plan limits`, akun 2 HTTP 200 `PONG`. Dashboard Upstash mengonfirmasi suspend karena bandwidth 10/10 GB; command 304K/500K dan storage 19/250 MB. Bandwidth harian terakhir yang tampak 559–701 MB sebelum hari berjalan; proyeksi 1–4 GB/bulan sebelumnya terbukti terlalu rendah. Probe kalender produksi pukul 20:24 WIB mengembalikan HTTP 200 dengan 104 event dari TradingView, termasuk lima event USD pukul 20:30; nilai actual saat probe belum terbit. Ini belum membuktikan pembaruan saat rilis. Penghentian AATAS atas instruksi user didokumentasikan di `professional_llm_trader/changelog.md` (lokal); belum ada cutover Redis: Redis 2 terakhir direkonsiliasi 1 November sehingga data penting dapat tertinggal; pemulihan dan rekonsiliasi dicatat di progress lokal.
 
 ## Changelog Session 491 (2026-11-17) — Penjelasan kolom setup jurnal mandiri
 

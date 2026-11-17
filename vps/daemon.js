@@ -1057,6 +1057,7 @@ function isLiveAutoSetup(s) {
 }
 
 async function tryTriggerPosReview(newsItem, legs, corroborated) {
+  if (process.env.AATAS_PAUSED !== '0') return; // dihentikan selama investigasi bandwidth
   if (redisGuard.isDegraded()) return;
   if (!isFxMarketOpen()) return;
   if (!CRON_SECRET) return;
@@ -1343,6 +1344,7 @@ function priceCrossesLevel(bias, price, sl, tp) {
 }
 
 async function maybeTriggerSetupWatch(yahooSymbol, price) {
+  if (process.env.AATAS_PAUSED !== '0') return; // dihentikan selama investigasi bandwidth
   if (price == null) return;
   const watchlist = await getOpenSetupsWatchlist();
   const relevant = watchlist.filter(s => s.symbol === yahooSymbol);
@@ -1478,8 +1480,8 @@ function startScheduler() {
   // dedup KHUSUS antara dua sumber cron 5-menit ini. Trigger event-driven
   // di atas (maybeTriggerSetupWatch) SENGAJA TIDAK dikasih tag ini — itu
   // jalur cepat Q-7, tidak boleh ikut ke-skip oleh dedup.
-  cron.schedule('*/5 * * * *', () => triggerEndpoint('/api/admin?action=setup_stats&scope=auto&source=cron5').catch(() => {}));
-  console.log('daemon: Q-7 watcher TP/SL aktif (event-driven per tick + baseline tiap 5 menit)');
+  if (process.env.AATAS_PAUSED === '0') cron.schedule('*/5 * * * *', () => triggerEndpoint('/api/admin?action=setup_stats&scope=auto&source=cron5').catch(() => {}));
+  console.log(process.env.AATAS_PAUSED === '0' ? 'daemon: Q-7 watcher TP/SL aktif' : 'daemon: AATAS dan watcher TP/SL dijeda');
 
   // U-3 (2026-07-20, Plan U): auto-entry virtual — menit ke-15 supaya tidak
   // tabrakan waktu dengan slot digest (00:00/07:00/12:30) yang bisa menelan
@@ -1487,7 +1489,7 @@ function startScheduler() {
   for (const hour of AUTO_ENTRY_HOURS_UTC) {
     cron.schedule(`15 ${hour} * * *`, () => runAutoEntryCycle().catch(e => console.warn('daemon: runAutoEntryCycle gagal:', e.message)));
   }
-  if (AUTO_ENTRY_HOURS_UTC.length) {
+  if (process.env.AATAS_PAUSED === '0' && AUTO_ENTRY_HOURS_UTC.length) {
     console.log(`daemon: U-3 auto-entry aktif — pair ${AUTO_ENTRY_PAIRS.join(',')} @ jam ${AUTO_ENTRY_HOURS_UTC.join(',')} UTC`);
   }
   // Track 1b lanjutan (2026-08-05, root cause audit field regime null): cache
@@ -1514,7 +1516,7 @@ function startScheduler() {
     for (const hour of AUTO_ENTRY_HOURS_UTC_AUDNZD) {
       cron.schedule(`15 ${hour} * * *`, () => runAutoEntryCycle([AUTO_ENTRY_AUDNZD_PAIR]).catch(e => console.warn('daemon: runAutoEntryCycle (jam khusus AUD/NZD) gagal:', e.message)));
     }
-    if (AUTO_ENTRY_HOURS_UTC_AUDNZD.length) {
+    if (process.env.AATAS_PAUSED === '0' && AUTO_ENTRY_HOURS_UTC_AUDNZD.length) {
       console.log(`daemon: jam khusus AUD/NZD aktif (sesi Sydney-Tokyo) @ jam ${AUTO_ENTRY_HOURS_UTC_AUDNZD.join(',')} UTC`);
     }
   }
@@ -1946,6 +1948,7 @@ function buildAcademyCycleMeta(pairs, nowMs = Date.now()) {
 }
 
 async function runAutoEntryCycle(pairs = AUTO_ENTRY_PAIRS) {
+  if (process.env.AATAS_PAUSED !== '0') return; // dihentikan selama investigasi bandwidth
   if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, U-3 auto-entry di-skip'); return; }
   if (!isFxMarketOpen()) return;
   // Satu cohort ID untuk seluruh pair di siklus yang sama. Academy memakainya untuk
@@ -2031,6 +2034,7 @@ const CONSISTENCY_CALL_GAP_MS = 5000; // jeda antar 3x panggilan berturut
 // guard sudah tidak pernah menyala di jalur auto sejak AATAS. Jadi kombinasi
 // `auto=1&test_deepseek=1` = prompt auto-entry sungguhan, nol tulisan.
 async function runConsistencyCheck() {
+  if (process.env.AATAS_PAUSED !== '0') return; // dihentikan selama investigasi bandwidth
   if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, U-3 uji konsistensi di-skip'); return; }
   if (!isFxMarketOpen()) return;
   const pair = AUTO_ENTRY_PAIRS[0];
@@ -2063,6 +2067,7 @@ async function runConsistencyCheck() {
 // 21:00 UTC, market pasti masih buka; guard tetap ada di server-side friday_tighten
 // kalau suatu saat jamnya digeser mepet).
 async function runFridayTightenCycle() {
+  if (process.env.AATAS_PAUSED !== '0') return; // dihentikan selama investigasi bandwidth
   if (!CRON_SECRET) { console.warn('daemon: CRON_SECRET kosong, tighten preventif Jumat di-skip'); return; }
   const json = await fetchJsonWithTimeout('/api/admin?action=friday_tighten');
   if (json) console.log(`daemon: tighten preventif Jumat — checked=${json.checked} tightened=${json.tightened}`);

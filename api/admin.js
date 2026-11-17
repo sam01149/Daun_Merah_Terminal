@@ -138,6 +138,16 @@ module.exports = async function handler(req, res) {
     (process.env.CRON_SECRET && (
       safeEqual(req.headers['x-cron-secret']  || '', process.env.CRON_SECRET) ||
       safeEqual(req.headers['x-admin-secret'] || '', process.env.CRON_SECRET)));
+  // Pause AATAS selama investigasi bandwidth; jalur publik/manual tetap aktif.
+  // Hanya request terautentikasi yang mendapat status pause agar scope developer
+  // tidak bocor. Dibuka kembali hanya setelah perbaikan dan verifikasi kuota.
+  const aatasPaused = process.env.AATAS_PAUSED !== '0';
+  const autoAnalyze = action === 'ohlcv_analyze' && (req.query.auto === '1' || req.body?.auto === 1 || req.body?.auto === true);
+  const autoAction = (action === 'setup_stats' && req.query.scope === 'auto') || autoAnalyze ||
+    ['position_review', 'friday_tighten', 'setup_log_archive'].includes(action);
+  if (aatasPaused && isCron && autoAction) {
+    return res.status(503).json({ error: 'AATAS sementara dihentikan untuk investigasi bandwidth', paused: true });
+  }
   if (!isCron && PUBLIC_ACTION_LIMITS[action]) {
     if (await rateLimit(req, res, { limit: PUBLIC_ACTION_LIMITS[action], windowSecs: 60, endpoint: `admin_${action}` })) return;
   }
