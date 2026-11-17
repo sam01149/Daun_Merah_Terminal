@@ -37,5 +37,22 @@ test('NEWS menyimpan RSS baru di akun kedua saat utama disuspend', async () => {
   if(String(url).includes('financialjuice.com/feed.ashx')){upstream++;return {ok:true,text:async()=>'<rss><channel><item><title>Test headline</title></item></channel></rss>'};}
   throw Error('unexpected '+url);
  };
- try{let a=response();await handler(req,a);assert.equal(a.code,200);assert.equal(upstream,1);assert.match(a.body,/Test headline/);assert.equal(JSON.parse(db.get('rss_cache')).source,'financialjuice');let b=response();await handler(req,b);assert.equal(b.code,200);assert.equal(upstream,1);}finally{global.fetch=original;}
+ try{let a=response();await handler(req,a);assert.equal(a.code,200);assert.equal(upstream,1);assert.match(a.body,/Test headline/);const stored=JSON.parse(db.get('rss_cache'));assert.equal(stored.source,'financialjuice');assert.equal(stored.xml,undefined);assert.equal(typeof stored.br,'string');let b=response();await handler(req,b);assert.equal(b.code,200);assert.equal(upstream,1);}finally{global.fetch=original;}
+});
+test('cache NEWS terkompresi dibaca identik dan karakter Unicode tidak berubah', async () => {
+ const zlib=require('zlib'),original=global.fetch;
+ const xml='<rss><channel><item><title>Solomon: Think \'very highly\u2019 of CEO $GS \u00e9\u00fc \u4e2d\u6587</title></item></channel></rss>';
+ const stored=JSON.stringify({v:2,br:zlib.brotliCompressSync(Buffer.from(xml,'utf8')).toString('base64'),fetchedAt:Date.now(),source:'financialjuice'});
+ global.fetch=async (url)=>{if(url==='https://secondary.invalid')return json(stored);throw Error('unexpected');};
+ try{const a=response();await handler(req,a);assert.equal(a.code,200);assert.equal(a.body,xml);}finally{global.fetch=original;}
+});
+test('cache NEWS rusak diisi ulang dari sumber, bukan menahan NEWS', async () => {
+ const original=global.fetch,db=new Map([['rss_cache',JSON.stringify({v:2,br:'bukan-brotli',fetchedAt:Date.now(),source:'financialjuice'})]]);let upstream=0;
+ global.fetch=async (url,opts={})=>{
+  if(url==='https://secondary.invalid'){const [cmd,key,value,...rest]=JSON.parse(opts.body);if(cmd==='GET')return json(db.get(key)??null);if(cmd==='DEL'){db.delete(key);return json(1);}if(cmd==='SET'){if(rest.includes('NX')&&db.has(key))return json(null);db.set(key,value);return json('OK');}}
+  if(url==='https://primary.invalid')return {ok:false,json:async()=>({error:'blocked'})};
+  if(String(url).includes('financialjuice.com/feed.ashx')){upstream++;return {ok:true,text:async()=>'<rss><channel><item><title>Pulih</title></item></channel></rss>'};}
+  throw Error('unexpected '+url);
+ };
+ try{const a=response();await handler(req,a);assert.equal(a.code,200);assert.equal(upstream,1);assert.match(a.body,/Pulih/);}finally{global.fetch=original;}
 });

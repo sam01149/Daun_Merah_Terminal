@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-17 (Estimasi mingguan Redis 2 dan opsi kompresi cache RSS)
+> **Last updated:** 2026-11-17 (Kompresi cache RSS di Redis)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 502 (2026-11-17) — Kompresi cache RSS di Redis
+
+Atas persetujuan user. `api/feeds.js` kini menyimpan key `rss_cache` sebagai `{v:2, br, fetchedAt, source}` dengan XML dikompres brotli+base64 (sekitar 10 KB dari sekitar 46 KB pada sampel S501). Pembacaan memakai `decodeRssCache`: format lama `{xml,...}` tetap terbaca selama transisi, dan cache rusak/tidak terbaca dianggap kosong sehingga diisi ulang dari sumber, bukan menahan NEWS sampai TTL enam jam. Isi lossless (terbukti byte-identik di S501); respons ke browser tidak berubah. Konsumen lain (`sw.js`, `market-digest.js`, workflow) membaca lewat endpoint HTTP, bukan langsung dari Redis. Tiga uji baru/diperluas di `test/lib/news_cache_outage.test.js` (format tersimpan, round-trip Unicode, cache rusak); suite 1.675/1.675 lulus. Jeda polling tab tersembunyi belum dikerjakan.
 
 ## Changelog Session 501 (2026-11-17) — Estimasi mingguan Redis 2 dan opsi kompresi cache RSS
 

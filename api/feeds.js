@@ -20,6 +20,7 @@ const cbk = require('./_circuit_breaker');
 const { requireAppKey, safeEqual } = require('./_app_key');
 const { translateNewItems, getTranslations } = require('./_news_translate');
 const { detectCat } = require('../newscat');
+const zlib = require('zlib');
 
 module.exports = async function handler(req, res) {
   const type = req.query.type;
@@ -97,6 +98,26 @@ function stripBlockedHeadlines(xml) {
 // Isolasi cache NEWS di akun kedua: tidak memindahkan jurnal, AATAS, atau
 // data aplikasi lain. Kegagalan cache menghentikan fetch agar sumber tidak
 // dibanjiri ketika lock/circuit Redis utama sedang tidak tersedia.
+// Cache RSS disimpan terkompresi (brotli + base64) untuk menghemat bandwidth Redis (~78%).
+// Format lama ({xml,...} polos) tetap terbaca supaya transisi deploy aman.
+function encodeRssCache(xml, fetchedAt, source) {
+  const br = zlib.brotliCompressSync(Buffer.from(xml, 'utf8')).toString('base64');
+  return JSON.stringify({ v: 2, br, fetchedAt, source });
+}
+
+function decodeRssCache(raw) {
+  // Cache rusak/tidak terbaca dianggap kosong supaya diisi ulang, bukan menahan NEWS sampai TTL habis.
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj.br === 'string') {
+      obj.xml = zlib.brotliDecompressSync(Buffer.from(obj.br, 'base64')).toString('utf8');
+    }
+    return obj && typeof obj.xml === 'string' ? obj : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function rssRedisCmd(...args) {
   const url = process.env.UPSTASH_REDIS_REST_URL_2 || process.env.UPSTASH2_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN_2 || process.env.UPSTASH2_REDIS_REST_TOKEN;
@@ -118,8 +139,8 @@ async function rssHandler(req, res) {
 
   try {
     const cached = await rssRedisCmd('GET', RSS_CACHE_KEY);
-    if (cached) {
-      const obj = JSON.parse(cached);
+    const obj = cached ? decodeRssCache(cached) : null;
+    if (obj) {
       if (now - obj.fetchedAt < RSS_CACHE_TTL_MS) {
         res.setHeader('X-Cache-Source', 'REDIS');
         res.setHeader('X-News-Source', obj.source || 'financialjuice');
@@ -141,8 +162,8 @@ async function rssHandler(req, res) {
   try {
     if (await rssRedisCmd('GET', RSS_COOLDOWN_KEY)) {
       const stale = await rssRedisCmd('GET', RSS_CACHE_KEY);
-      if (stale) {
-        const obj = JSON.parse(stale);
+      const obj = stale ? decodeRssCache(stale) : null;
+      if (obj) {
         res.setHeader('X-Cache-Source', 'STALE');
         res.setHeader('X-News-Source', obj.source || 'financialjuice');
         return res.status(200).send(obj.xml);
@@ -161,8 +182,8 @@ async function rssHandler(req, res) {
       await new Promise(r => setTimeout(r, 350));
       try {
         const fresh = await rssRedisCmd('GET', RSS_CACHE_KEY);
-        if (fresh) {
-          const obj = JSON.parse(fresh);
+        const obj = fresh ? decodeRssCache(fresh) : null;
+        if (obj) {
           if (Date.now() - obj.fetchedAt < RSS_CACHE_TTL_MS) {
             res.setHeader('X-Cache-Source', 'REDIS_WAIT');
             res.setHeader('X-News-Source', obj.source || 'financialjuice');
@@ -175,8 +196,8 @@ async function rssHandler(req, res) {
     // (even if stale) rather than also double-fetching upstream.
     try {
       const stale = await rssRedisCmd('GET', RSS_CACHE_KEY);
-      if (stale) {
-        const obj = JSON.parse(stale);
+      const obj = stale ? decodeRssCache(stale) : null;
+      if (obj) {
         res.setHeader('X-Cache-Source', 'STALE_WAIT');
         res.setHeader('X-News-Source', obj.source || 'financialjuice');
         return res.status(200).send(obj.xml);
@@ -223,8 +244,8 @@ async function rssHandler(req, res) {
     if (gotLock && cooled) await rssRedisCmd('DEL', lockKey).catch(() => {});
     try {
       const stale = await rssRedisCmd('GET', RSS_CACHE_KEY);
-      if (stale) {
-        const obj = JSON.parse(stale);
+      const obj = stale ? decodeRssCache(stale) : null;
+      if (obj) {
         res.setHeader('X-Cache-Source', 'STALE');
         res.setHeader('X-News-Source', obj.source || 'financialjuice');
         return res.status(200).send(obj.xml);
@@ -234,7 +255,7 @@ async function rssHandler(req, res) {
     return res.status(502).json({ error: 'Upstream fetch failed', detail: fetchError });
   }
 
-  const payload = JSON.stringify({ xml, fetchedAt: now, source: 'financialjuice' });
+  const payload = encodeRssCache(xml, now, 'financialjuice');
   try { await rssRedisCmd('SET', RSS_CACHE_KEY, payload, 'EX', RSS_CACHE_STORAGE_SECS); } catch(e3) {
     console.warn('RSS Redis SET failed:', e3.message);
   }
