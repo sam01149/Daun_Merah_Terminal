@@ -11,12 +11,20 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-17 (Audit lanjutan Redis 2: sisa jalur AATAS saat jeda)
+> **Last updated:** 2026-11-17 (Estimasi mingguan Redis 2 dan opsi kompresi cache RSS)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 501 (2026-11-17) — Estimasi mingguan Redis 2 dan opsi kompresi cache RSS
+
+**Terukur:** satu GET RSS produksi 46.280 byte, 100 item; gzip 10.646, gzip+base64 14.195 (-69%), brotli+base64 10.110 (-78%). Satu request probe menambah pemakaian kecil.
+
+**Temuan dari kode (`api/feeds.js` rssHandler, `index.html` startAutoRefresh):** klien auto-refresh 60 detik, lebih lama dari TTL cache 50 detik, sehingga hampir setiap poll lewat jalur refill: GET cache 46 KB hanya untuk membaca `fetchedAt`, lock, fetch upstream, SET cache 46 KB, DEL lock, ditambah circuit breaker dan riwayat/terjemahan berkala. Perkiraan satu klien aktif terus: sekitar 10 command dan 100 KB per poll, sekitar 100K command dan 1 GB per minggu. Ini koreksi atas S497/S499 yang hanya menghitung satu GET per poll (1,95 GB/bulan). `setInterval` tidak dihentikan saat tab tersembunyi. Angka command per poll adalah perkiraan dari alur kode, belum diukur.
+
+**Estimasi 7 hari (skenario, bukan pengukuran):** beban tetap tanpa klien sekitar 55K command dan 0,3 GB (heartbeat 10K, pollNews 12K, sinkron OHLCV 13K, zona harga 7-9K, candle stream 5K, lain-lain). Satu klien 8 jam/hari: sekitar 90K dan 0,65 GB; satu klien 24 jam: sekitar 155K dan 1,3 GB; tiga klien 24 jam: sekitar 355K dan 3,3 GB. Anggaran mingguan setara limit bulanan: 117K command dan 2,3 GB. Command habis lebih dulu daripada bandwidth pada semua skenario. Cron GitHub terealisasi jauh lebih jarang dari YAML (S336), sehingga warm-and-watch tidak dihitung penuh.
 
 ## Changelog Session 500 (2026-11-17) — Audit lanjutan Redis 2: efisiensi fitur dijeda
 
