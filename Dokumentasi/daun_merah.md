@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-17 (Diagnosis gangguan Redis produksi)
+> **Last updated:** 2026-11-17 (Pemeriksaan Redis dan fitur produksi)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 494 (2026-11-17) — Pemeriksaan Redis, Ringkasan, dan kalender
+
+Probe read-only sekitar 20:35 WIB: Redis 1 HTTP 403 batas paket; Redis 2 HTTP 200 PONG. Tidak ada peralihan yang dilakukan pada sesi sebelumnya. Resolver kode default memilih Redis 1 ketika kedua kredensial tersedia; `REDIS_ACTIVE_ACCOUNT=2` perlu dipilih secara eksplisit, tetapi nilai env produksi belum diperiksa ulang dalam sesi ini. Redis 2 awalnya memisahkan counter rate-limit, bukan database khusus AATAS; seluruh state AATAS dan cache/jurnal umum memakai database utama yang dipilih. `market-digest?mode=cached` HTTP 200 tetapi `article:null`; kalender HTTP 200, 104 event, `stale:false`, waktu data 20:36 WIB. `/api/feeds?type=rss` HTTP 502 dengan detail `HTTP_429` dari upstream; headline baru tidak terbukti tersedia. Ini bukan bukti seluruh fitur normal atau bukti bahwa release sudah terisi. Dua workflow AATAS watcher dan arsip dinonaktifkan; workflow lain masih aktif, tetapi run terbaru yang terlihat sebelum insiden tidak membuktikan cron sesudah suspend berfungsi.
 
 ## Changelog Session 492 (2026-11-17) — Diagnosis gangguan Redis produksi
 
