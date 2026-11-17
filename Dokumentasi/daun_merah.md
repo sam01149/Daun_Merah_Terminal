@@ -18,6 +18,12 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
 
+## Changelog Session 486 (2026-11-17) — Translate NEWS pindah ke Groq gpt-oss
+
+Permintaan user: terjemahan headline dipindah dari Gemini flash-lite ke Groq `openai/gpt-oss-120b` (cadangan `openai/gpt-oss-20b` saat 400/404/429). Perubahan: `api/_news_translate.js` (endpoint Groq, `GROQ_API_KEY`, `BATCH_SIZE` 20 menjadi 10, `max_tokens` 3000, `reasoning_effort: low`), `api/_ai_guard.js` (bucket `groq_newstranslate` 800/hari menggantikan `gemini_newstranslate`), `api/admin.js` (`KNOWN_CIRCUITS`: `ai:groq:newstranslate`). Batch dan `max_tokens` diperkecil karena free tier Groq gpt-oss hanya 8K token/menit, 1K request/hari, 200K token/hari. Cache terjemahan lama (`news_tr:*`, `news_tr_c:*`) tidak terpengaruh. Tes `news_translate*.test.js` disesuaikan; `npm test` 1659/1659 hijau.
+
+**Syarat sebelum push:** `GROQ_API_KEY` WAJIB sudah dipasang di Vercel Production (kunci lama dihapus saat Groq diputus 2026-07-25). Tanpa kunci, `translateNewItems` berhenti diam-diam dan headline baru tetap Inggris. Verifikasi live lokal (kunci dari `.env.local`, variabelnya bernama `GROQ_FREE_AI`, bukan `GROQ_API_KEY`): 4 headline satu batch diterjemahkan 1,1 detik, 4/4 ter-parse dan akurat. Di Vercel variabel WAJIB bernama `GROQ_API_KEY` (isi sama dengan `GROQ_FREE_AI`). Pantau `ai_budget.groq_newstranslate` dan `?action=circuit-status` setelah deploy.
+
 ## Changelog Session 485 (2026-11-15) — Verifikasi cron bank dan Railway
 
 Workflow Institution Research Views dijalankan manual setelah rilis S484 pada 15 November 10:55 WIB. Tahap ING dan ABN sama-sama sukses, run GitHub `43674471063`. Belum ada run terjadwal baru untuk membuktikan jadwal otomatis pascarilis. Sumber ABN yang ditemukan tidak memenuhi pemeriksaan awal konteks mingguan, sehingga keberhasilan sinkronisasi tidak menjamin kolom memiliki pandangan baru.

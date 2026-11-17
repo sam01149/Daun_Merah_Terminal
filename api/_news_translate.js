@@ -93,18 +93,21 @@ const cb = require('./_circuit_breaker');
 const { allowAiCall } = require('./_ai_guard');
 const { detectCat } = require('../newscat');
 
-// Circuit breaker key TERPISAH dari circuit Gemini lain (digest/journal/fundamental,
-// lihat market-digest.js/admin.js) — konvensi sama seperti isolasi provider lain di
-// file ini sejak awal (S272), supaya kegagalan translate tidak ikut men-trip fitur
-// Gemini lain dan sebaliknya.
-const CB_GEMINI_TR  = 'ai:gemini:newstranslate';
-const GEMINI_URL    = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-// Jangan pakai alias `-latest`: alias ini pernah hilang tanpa periode transisi dan
-// menghentikan seluruh penerjemahan NEWS. Nama versi stabil membuat perubahan model
-// eksplisit di kode/review. Cadangan hanya dipakai bila Google menolak NAMA model
-// (400/404) atau kuota model khusus (429). Timeout tidak dicoba ulang agar
-// satu provider lambat tidak menyeret seluruh endpoint NEWS.
-const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+// **PIVOT KE GROQ (2026-11-17, permintaan user):** headline sering tidak bisa
+// diterjemahkan dengan Gemini flash-lite (dugaan user: kualitas/ketersediaan model).
+// Tugas ini murni terjemahan, jadi pindah ke Groq `openai/gpt-oss-120b` (model besar,
+// akurasi terjemahan lebih terjaga) dengan cadangan `openai/gpt-oss-20b` (pool rate
+// limit Groq TERPISAH per model) saat primary ditolak 400/404/429. Env: GROQ_API_KEY
+// (WAJIB diset di Vercel — key lama dihapus saat Groq diputus 2026-07-25).
+// Limit free tier Groq gpt-oss: 30 RPM, 1.000 RPD, 8.000 TPM, 200K TPD — TPM kecil itu
+// alasan BATCH_SIZE 10 + max_tokens 3000 (input + max_tokens harus muat di bawah 8K).
+// Circuit breaker key TERPISAH dari circuit AI lain — konvensi isolasi provider file ini.
+const CB_TR         = 'ai:groq:newstranslate';
+const GROQ_URL      = 'https://api.groq.com/openai/v1/chat/completions';
+// Cadangan hanya dipakai bila Groq menolak NAMA model (400/404) atau limit model
+// khusus (429). Timeout tidak dicoba ulang agar satu provider lambat tidak menyeret
+// seluruh endpoint NEWS.
+const TRANSLATE_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
 const MODEL_UNAVAILABLE_STATUSES = new Set([400, 404, 429]);
 
 const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_history
@@ -113,7 +116,7 @@ const TR_KEY_TTL = 36 * 3600; // detik — samakan retensi 36 jam dengan news_hi
 // urut/lewat nomor di respons yang panjang. 20 titik keseimbangan: prompt & respons
 // masih ringkas + gampang di-parse per blok, tapi tetap >10x lebih hemat panggilan
 // API dibanding desain lama (1 headline/panggilan).
-const BATCH_SIZE = 20;
+const BATCH_SIZE = 10;
 // Mistral diverifikasi live (2026-08-02): batch 10 headline konsisten ~5,5-5,7 detik.
 // Gemini flash-lite (2026-09-06, provider baru — lihat §PIVOT KE GEMINI di atas)
 // malah lebih cepat lagi: batch 20 headline penuh cuma 2,6 detik live. 15 detik tetap
@@ -252,29 +255,29 @@ async function recordFailures(items, redisCmd) {
 }
 
 async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
-  if (!await allowAiCall('gemini_newstranslate')) return null; // pagar kuota — nyusul siklus berikutnya
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY) return null;
+  if (!await allowAiCall('groq_newstranslate')) return null; // pagar kuota — nyusul siklus berikutnya
+  const GROQ_KEY = process.env.GROQ_API_KEY;
+  if (!GROQ_KEY) return null;
   try {
     // Satu deadline untuk seluruh rantai model. Model yang sudah pensiun menolak
     // segera, tetapi fallback tidak boleh memperoleh jatah timeout baru sendiri.
     const signal = AbortSignal.timeout(timeoutMs);
     let r = null;
-    for (let i = 0; i < GEMINI_MODELS.length; i++) {
-      const model = GEMINI_MODELS[i];
-      const candidate = await fetch(GEMINI_URL, {
+    for (let i = 0; i < TRANSLATE_MODELS.length; i++) {
+      const model = TRANSLATE_MODELS[i];
+      const candidate = await fetch(GROQ_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GEMINI_KEY}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
         body: JSON.stringify({
           model,
           messages: [{ role: 'user', content: buildBatchPrompt(items) }],
-          max_tokens: 6000,
+          // Groq menghitung input + max_tokens terhadap limit 8K TPM — jangan dinaikkan
+          // tanpa menurunkan BATCH_SIZE. gpt-oss selalu bernalar; 'low' menekan reasoning
+          // trace supaya tidak menghabiskan budget token sebelum jawaban.
+          max_tokens: 3000,
           temperature: 0.2,
-          // Gemini 3.x SELALU "thinking" dan tidak bisa dimatikan total (lihat §PIVOT KE
-          // GEMINI di atas) — 'low' terbukti live cukup menekan reasoning trace supaya
-          // tidak menghabiskan token budget sebelum sampai jawaban (pola sama seperti
-          // market-digest.js/admin.js Call 1/2/Fundamental).
           reasoning_effort: 'low',
+          include_reasoning: false,
         }),
         // signal pakai timeoutMs dari CALLER (sisa budget siklus ini), BUKAN konstanta
         // tetap — lihat catatan di translateNewItems soal kenapa ini penting (mencegah
@@ -283,13 +286,13 @@ async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
         signal,
       });
       if (candidate.ok) { r = candidate; break; }
-      if (MODEL_UNAVAILABLE_STATUSES.has(candidate.status) && i + 1 < GEMINI_MODELS.length) {
+      if (MODEL_UNAVAILABLE_STATUSES.has(candidate.status) && i + 1 < TRANSLATE_MODELS.length) {
         console.warn(`news_translate model ${model} unavailable (HTTP ${candidate.status}); mencoba cadangan`);
         continue;
       }
       throw new Error(`HTTP ${candidate.status}`);
     }
-    if (!r) throw new Error('No Gemini translation model available');
+    if (!r) throw new Error('No translation model available');
     const data = await r.json();
     const raw = data?.choices?.[0]?.message?.content?.trim() || '';
     const parsed = parseBatchResponse(raw, items.length);
@@ -316,7 +319,7 @@ async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
       if (sibs) for (const g of sibs) ops.push(redisCmd('SET', `news_tr:${g}`, val, 'EX', TR_KEY_TTL));
       return Promise.all(ops);
     }));
-    await cb.onSuccess(CB_GEMINI_TR);
+    await cb.onSuccess(CB_TR);
     // Respons parsial bukan outage provider: hasil yang valid tetap disimpan,
     // circuit tetap sehat, lalu hanya item yang terlewat diberi satu retry kecil
     // oleh translateNewItems(). Sebelumnya respons seperti ini dianggap sukses
@@ -327,7 +330,7 @@ async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
     }
     return missing;
   } catch(e) {
-    await cb.onFailure(CB_GEMINI_TR);
+    await cb.onFailure(CB_TR);
     console.warn('news_translate batch failed:', items.map(it => it.guid).join(','), e.message);
     // Catat kegagalan per-KONTEN, bukan per-guid (poison-item guard, lihat
     // MAX_FAIL_ATTEMPTS & catatan contentKey di atas). redisCmd bersifat fail-open,
@@ -348,8 +351,8 @@ async function translateBatch(items, redisCmd, timeoutMs, siblingsByGuid) {
  */
 async function translateNewItems(items, redisCmd, budgetMs = DEFAULT_BUDGET_MS) {
   if (!Array.isArray(items) || items.length === 0) return;
-  if (!process.env.GEMINI_API_KEY) return;
-  if (!await cb.canCall(CB_GEMINI_TR)) return; // circuit open — coba lagi siklus berikutnya
+  if (!process.env.GROQ_API_KEY) return;
+  if (!await cb.canCall(CB_TR)) return; // circuit open — coba lagi siklus berikutnya
 
   // ECON DATA dikecualikan (permintaan user 2026-08-02): angka/rilis kalender
   // rawan salah interpretasi kalau diterjemahkan LLM — biarkan bahasa Inggris asli.

@@ -109,14 +109,14 @@ test('newsHistoryHandler: item arsip yang belum diterjemahkan ikut ditembak ke G
   const realFetch = global.fetch;
   let geminiCalls = 0;
   global.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
+    if (String(url).includes('api.groq.com')) {
       geminiCalls++;
       return { ok: true, json: async () => ({ choices: [{ message: { content: '[1]\nJUDUL_ID: Terjemahan arsip' } }] }) };
     }
     return redis.fetch(url, opts);
   };
-  const prevKey = process.env.GEMINI_API_KEY;
-  process.env.GEMINI_API_KEY = 'fake-key';
+  const prevKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'fake-key';
   try {
     const now = new Date('2026-08-02T09:00:00Z').getTime();
     const xml = `<rss><channel><item><title>Old archived headline about trade talks</title><guid>hist-1</guid><pubDate>${new Date(now).toUTCString()}</pubDate><link>https://example.com/hist-1</link></item></channel></rss>`;
@@ -130,7 +130,7 @@ test('newsHistoryHandler: item arsip yang belum diterjemahkan ikut ditembak ke G
     assert.equal(redis.kv.has('news_tr:hist-1'), true, 'hasil translate arsip harus tersimpan sama seperti live feed');
   } finally {
     global.fetch = realFetch;
-    if (prevKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = prevKey;
+    if (prevKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = prevKey;
   }
 }));
 
@@ -138,11 +138,11 @@ test('newsHistoryHandler: item arsip yang SUDAH punya terjemahan tidak ditembak 
   const realFetch = global.fetch;
   let geminiCalls = 0;
   global.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) { geminiCalls++; return { ok: true, json: async () => ({ choices: [{ message: { content: '[1]\nJUDUL_ID: X' } }] }) }; }
+    if (String(url).includes('api.groq.com')) { geminiCalls++; return { ok: true, json: async () => ({ choices: [{ message: { content: '[1]\nJUDUL_ID: X' } }] }) }; }
     return redis.fetch(url, opts);
   };
-  const prevKey = process.env.GEMINI_API_KEY;
-  process.env.GEMINI_API_KEY = 'fake-key';
+  const prevKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'fake-key';
   try {
     const now = new Date('2026-08-02T09:00:00Z').getTime();
     const xml = `<rss><channel><item><title>Already translated archived headline</title><guid>hist-2</guid><pubDate>${new Date(now).toUTCString()}</pubDate><link>https://example.com/hist-2</link></item></channel></rss>`;
@@ -154,7 +154,7 @@ test('newsHistoryHandler: item arsip yang SUDAH punya terjemahan tidak ditembak 
     assert.equal(geminiCalls, 0);
   } finally {
     global.fetch = realFetch;
-    if (prevKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = prevKey;
+    if (prevKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = prevKey;
   }
 }));
 
@@ -181,7 +181,7 @@ test('newsTranslateBackfillHandler: x-cron-secret benar → sapu SEMUA item arsi
   const realFetch = global.fetch;
   const translatedGuids = [];
   global.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
+    if (String(url).includes('api.groq.com')) {
       const body = JSON.parse(opts.body);
       const matches = [...body.messages[0].content.matchAll(/\[(\d+)\]\nJUDUL: (.*)/g)];
       translatedGuids.push(...matches.map(mm => mm[2]));
@@ -190,9 +190,9 @@ test('newsTranslateBackfillHandler: x-cron-secret benar → sapu SEMUA item arsi
     }
     return redis.fetch(url, opts);
   };
-  const prevKey = process.env.GEMINI_API_KEY;
+  const prevKey = process.env.GROQ_API_KEY;
   const prevSecret = process.env.CRON_SECRET;
-  process.env.GEMINI_API_KEY = 'fake-key';
+  process.env.GROQ_API_KEY = 'fake-key';
   process.env.CRON_SECRET = 'real-secret';
   try {
     const now = new Date('2026-08-02T09:00:00Z').getTime();
@@ -210,7 +210,7 @@ test('newsTranslateBackfillHandler: x-cron-secret benar → sapu SEMUA item arsi
     for (const g of ['bf-0', 'bf-1', 'bf-3', 'bf-4']) assert.equal(redis.kv.has(`news_tr:${g}`), true, `${g} seharusnya sudah diterjemahkan`);
   } finally {
     global.fetch = realFetch;
-    if (prevKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = prevKey;
+    if (prevKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = prevKey;
     if (prevSecret === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = prevSecret;
   }
 }));

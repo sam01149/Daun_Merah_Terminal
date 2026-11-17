@@ -81,25 +81,16 @@ const DEFAULT_LIMITS = {
   // sebanding biayanya dengan ~20 call v1 — pagar rupiahnya tidak benar-benar naik 2x.
   deepseek_experimental:        35,
 
-  // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02, redesign BATCH
-  // — 1 panggilan sampai 20 headline, lihat api/_news_translate.js). Riwayat lengkap
-  // provider (SambaNova x2, Gemini flash 20RPD, Mistral, Big Pickle — semua gagal
-  // beda alasan) ada di komentar §PIVOT KE GEMINI di api/_news_translate.js dan
-  // daun_merah_vendor.md — SEMUA counter provider lama di atas TIDAK dipakai lagi
-  // oleh fitur ini.
+  // Translate headline NEWS ke Bahasa Indonesia (S272, 2026-08-02, redesign BATCH,
+  // lihat api/_news_translate.js). Riwayat provider (SambaNova x2, Gemini, Mistral,
+  // Big Pickle) ada di komentar api/_news_translate.js dan daun_merah_vendor.md.
+  // Bucket `gemini_newstranslate` lama dihapus 2026-11-17 saat pindah ke Groq.
   //
-  // Translate NEWS memakai `gemini-3.5-flash-lite` dengan cadangan
-  // `gemini-3.1-flash-lite` saat nama primary dihentikan (400/404). Bucket TERPISAH
-  // dari 'gemini' (16/hari, dipakai Analisa Fundamental+AI Coach Jurnal via model
-  // `gemini-flash-latest` — BEDA model, jadi seharusnya BEDA pool kuota di sisi
-  // Google) supaya volume translate tidak numpang/rebutan kuota kecil (16/hari) itu.
-  // 800/hari dipilih konservatif: kuota resmi model `-lite` generasi sebelumnya
-  // pernah terdokumentasi 1.000 RPD (daun_merah_riset.md), TAPI belum terverifikasi
-  // live di skala produksi penuh untuk alias `-latest` saat ini (baru 3 panggilan
-  // tes) — 800 kasih headroom di bawah 1.000 kalau angka itu masih akurat, sambil
-  // tetap generous untuk volume translate harian wajar. Turunkan via env
-  // AI_DAILY_LIMIT_GEMINI_NEWSTRANSLATE kalau ternyata sering ketahuan mepet.
-  gemini_newstranslate: 800,
+  // Translate NEWS pindah ke Groq gpt-oss-120b (2026-11-17, lihat §PIVOT KE GROQ di
+  // api/_news_translate.js). Limit free tier Groq 1.000 RPD per model; 800 PANGGILAN/hari
+  // (bukan headline — 1 panggilan = batch sampai 10 headline) memberi headroom.
+  // Override via env AI_DAILY_LIMIT_GROQ_NEWSTRANSLATE.
+  groq_newstranslate: 800,
 };
 
 function dailyLimit(provider) {

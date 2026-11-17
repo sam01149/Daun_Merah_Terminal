@@ -6,7 +6,7 @@
 // flash-lite sejak 2026-09-06, S351-352, lihat §PIVOT KE GEMINI di sana).
 // Cakupan: parsing respons AI (format single-item & batch), pengecualian
 // kategori econ-data, skip item yang sudah pernah diterjemahkan, anti-starvation
-// batch kedua = tertua, dan fail-open tanpa GEMINI_API_KEY/Redis.
+// batch kedua = tertua, dan fail-open tanpa GROQ_API_KEY/Redis.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -115,7 +115,7 @@ function withEnv(vars, fn) {
 // item mana yang benar-benar ditembak & tersimpan, tanpa perlu terjemahan asli.
 function mockGeminiEchoWithBody(calledBatches) {
   return async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
+    if (String(url).includes('api.groq.com')) {
       const body = JSON.parse(opts.body);
       const prompt = body.messages[0].content;
       const matches = [...prompt.matchAll(/\[(\d+)\]\nJUDUL: (.*)/g)];
@@ -129,8 +129,8 @@ function mockGeminiEchoWithBody(calledBatches) {
   };
 }
 
-test('translateNewItems: tanpa GEMINI_API_KEY → no-op, tidak crash, tidak ada yang tersimpan', withEnv({}, async () => {
-  delete process.env.GEMINI_API_KEY;
+test('translateNewItems: tanpa GROQ_API_KEY → no-op, tidak crash, tidak ada yang tersimpan', withEnv({}, async () => {
+  delete process.env.GROQ_API_KEY;
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
   const store = new Map();
@@ -145,7 +145,7 @@ test('translateNewItems: array kosong/invalid → no-op', async () => {
 });
 
 test('translateNewItems: kategori econ-data DIKECUALIKAN dari translate (permintaan user S272)', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
@@ -168,7 +168,7 @@ test('translateNewItems: kategori econ-data DIKECUALIKAN dari translate (permint
 }));
 
 test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak manggil Gemini lagi', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
@@ -183,8 +183,8 @@ test('translateNewItems: item yang sudah ada news_tr:<guid> di-skip, tidak mangg
   } finally { global.fetch = realFetch; }
 }));
 
-test('translateNewItems: todo <= BATCH_SIZE (20) -> SATU panggilan API untuk semua item', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+test('translateNewItems: todo <= BATCH_SIZE (10) -> SATU panggilan API untuk semua item', withEnv({
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
@@ -193,23 +193,23 @@ test('translateNewItems: todo <= BATCH_SIZE (20) -> SATU panggilan API untuk sem
   global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
-    const items = Array.from({ length: 12 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
+    const items = Array.from({ length: 8 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
     await translateNewItems(items, makeRedisCmd(store));
-    assert.equal(calledBatches.length, 1, '12 headline (di bawah BATCH_SIZE 20) harus jadi 1 panggilan API, bukan 12');
-    assert.equal(calledBatches[0].length, 12);
-    for (let i = 0; i < 12; i++) assert.equal(store.has(`news_tr:g${i}`), true, `g${i} seharusnya sudah diterjemahkan`);
+    assert.equal(calledBatches.length, 1, '8 headline (di bawah BATCH_SIZE 10) harus jadi 1 panggilan API, bukan 8');
+    assert.equal(calledBatches[0].length, 8);
+    for (let i = 0; i < 8; i++) assert.equal(store.has(`news_tr:g${i}`), true, `g${i} seharusnya sudah diterjemahkan`);
   } finally { global.fetch = realFetch; }
 }));
 
 test('translateNewItems: model stabil utama dipakai dan 404 model dipulihkan lewat cadangan tanpa melewati deadline bersama', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const models = [];
   global.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
+    if (String(url).includes('api.groq.com')) {
       models.push(JSON.parse(opts.body).model);
       if (models.length === 1) return { ok: false, status: 404 };
       return { ok: true, json: async () => ({ choices: [{ message: { content: '[1]\nJUDUL_ID: Terjemahan cadangan' } }] }) };
@@ -220,14 +220,14 @@ test('translateNewItems: model stabil utama dipakai dan 404 model dipulihkan lew
     const store = new Map();
     const item = { title: 'Stable model fallback', guid: 'model-fallback-1', description: '' };
     await translateNewItems([item], makeRedisCmd(store), 10000);
-    assert.deepEqual(models, ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']);
+    assert.deepEqual(models, ['openai/gpt-oss-120b', 'openai/gpt-oss-20b']);
     assert.equal(JSON.parse(store.get('news_tr:model-fallback-1')).title_id, 'Terjemahan cadangan');
     assert.equal(models.some(model => model.includes('-latest')), false, 'alias model bergerak tidak boleh dipakai');
   } finally { global.fetch = realFetch; }
 }));
 
 test('translateNewItems: todo > BATCH_SIZE -> dipecah jadi beberapa panggilan, batch kedua ambil dari ujung tertua (anti-starvation)', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
@@ -236,26 +236,26 @@ test('translateNewItems: todo > BATCH_SIZE -> dipecah jadi beberapa panggilan, b
   global.fetch = mockGeminiEchoWithBody(calledBatches);
   try {
     const store = new Map();
-    // urutan feed asli: index 0 = headline TERBARU ... index 44 = TERTUA (45 item, > 2x BATCH_SIZE 20)
+    // urutan feed asli: index 0 = headline TERBARU ... index 44 = TERTUA (45 item, > 2x BATCH_SIZE 10)
     const items = Array.from({ length: 45 }, (_, i) => ({ title: `t${i}`, guid: `g${i}`, description: '' }));
     await translateNewItems(items, makeRedisCmd(store), 60000); // budget besar supaya semua batch kebagian giliran
-    assert.equal(calledBatches.length, 3, '45 item / 20 per batch = 3 panggilan');
-    assert.deepEqual(calledBatches[0], Array.from({ length: 20 }, (_, i) => `t${i}`), 'batch pertama = 20 headline terbaru');
+    assert.equal(calledBatches.length, 5, '45 item / 10 per batch = 5 panggilan');
+    assert.deepEqual(calledBatches[0], Array.from({ length: 10 }, (_, i) => `t${i}`), 'batch pertama = 10 headline terbaru');
     assert.deepEqual(calledBatches[1], Array.from({ length: 5 }, (_, i) => `t${40 + i}`), 'batch KEDUA = ujung tertua (anti-starvation), bukan batch tengah');
-    assert.deepEqual(calledBatches[2], Array.from({ length: 20 }, (_, i) => `t${20 + i}`), 'batch ketiga = sisa tengah');
+    assert.deepEqual(calledBatches[2], Array.from({ length: 10 }, (_, i) => `t${10 + i}`), 'batch ketiga = sisa tengah');
     for (let i = 0; i < 45; i++) assert.equal(store.has(`news_tr:g${i}`), true, `g${i} seharusnya sudah diterjemahkan`);
   } finally { global.fetch = realFetch; }
 }));
 
 test('translateNewItems: budget habis -> panggilan berikutnya benar-benar DIBATALKAN (AbortSignal), tidak orphaned di background', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const calledBatches = [];
   global.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
+    if (String(url).includes('api.groq.com')) {
       // Simulasikan network 100ms per panggilan, TAPI hormati AbortSignal seperti fetch
       // asli — supaya test ini benar-benar menguji bahwa translateBatch's timeoutMs
       // (sisa budget) MEMBATALKAN panggilan yang kelewat lambat, bukan cuma diabaikan.
@@ -280,7 +280,7 @@ test('translateNewItems: budget habis -> panggilan berikutnya benar-benar DIBATA
     // cuma ~50ms (< 100ms delay simulasi) -> AbortSignal batch kedua fire duluan.
     await translateNewItems(items, makeRedisCmd(store), 150);
     assert.equal(calledBatches.length, 1, 'batch kedua dibatalkan AbortSignal sebelum sempat selesai, tidak ikut tersimpan');
-    for (let i = 20; i < 45; i++) assert.equal(store.has(`news_tr:g${i}`), false, `g${i} belum diterjemahkan gelombang ini`);
+    for (let i = 10; i < 45; i++) assert.equal(store.has(`news_tr:g${i}`), false, `g${i} belum diterjemahkan gelombang ini`);
   } finally { global.fetch = realFetch; }
 }));
 
@@ -296,7 +296,7 @@ test('buildBatchPrompt: deskripsi outlier (>1200 char) dipotong, deskripsi norma
 });
 
 test('translateNewItems: item yang gagal >MAX_FAIL_ATTEMPTS(5) kali dilewati permanen, tidak terus memblokir antrean', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
@@ -320,13 +320,13 @@ test('translateNewItems: item yang gagal >MAX_FAIL_ATTEMPTS(5) kali dilewati per
 }));
 
 test('translateNewItems: kegagalan batch menaikkan counter news_tr_fail per konten (bukan guid — repost FinancialJuice ganti guid tiap kali)', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   global.fetch = async (url) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) throw new Error('simulasi gagal');
+    if (String(url).includes('api.groq.com')) throw new Error('simulasi gagal');
     return { ok: true, json: async () => ({ result: null }) };
   };
   try {
@@ -338,14 +338,14 @@ test('translateNewItems: kegagalan batch menaikkan counter news_tr_fail per kont
 }));
 
 test('translateNewItems: respons batch parsial langsung retry hanya nomor yang terlewat, tanpa mengulang yang sudah jadi', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   const calledBatches = [];
   global.fetch = async (url, opts) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) {
+    if (String(url).includes('api.groq.com')) {
       const prompt = JSON.parse(opts.body).messages[0].content;
       const titles = [...prompt.matchAll(/\[(\d+)\]\nJUDUL: (.*)/g)];
       calledBatches.push(titles.map(m => m[2]));
@@ -373,7 +373,7 @@ test('translateNewItems: respons batch parsial langsung retry hanya nomor yang t
 }));
 
 test('translateNewItems: keberhasilan berikutnya mereset counter gagal agar gangguan sementara tidak menjadi poison permanen', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
@@ -390,14 +390,14 @@ test('translateNewItems: keberhasilan berikutnya mereset counter gagal agar gang
 }));
 
 test('translateNewItems: repost FinancialJuice (guid baru, judul+pubDate identik) SUDAH pernah diterjemahkan → disalin dari cache konten, TANPA panggil AI', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {
   const realFetch = global.fetch;
   let geminiCallCount = 0;
   global.fetch = async (url) => {
-    if (String(url).includes('generativelanguage.googleapis.com')) geminiCallCount++;
+    if (String(url).includes('api.groq.com')) geminiCallCount++;
     return { ok: true, json: async () => ({ result: null }) };
   };
   try {
@@ -412,7 +412,7 @@ test('translateNewItems: repost FinancialJuice (guid baru, judul+pubDate identik
 }));
 
 test('translateNewItems: repost dalam SATU payload RSS yang sama (2 guid, konten identik, keduanya baru) → cukup 1x panggilan AI, hasil disalin ke guid saudara', withEnv({
-  GEMINI_API_KEY: 'fake-key',
+  GROQ_API_KEY: 'fake-key',
   UPSTASH_REDIS_REST_URL: 'https://mock-redis.test',
   UPSTASH_REDIS_REST_TOKEN: 'mock-token',
 }, async () => {

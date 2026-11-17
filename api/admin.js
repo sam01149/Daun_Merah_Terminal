@@ -2329,7 +2329,8 @@ const KNOWN_CIRCUITS = ['ai:deepseek', 'fred', 'ff', 'fj', 'cftc', 'redis', 'fxs
   // 'ai:mistral:newstranslate' -> 'ai:gemini:newstranslate' (2026-09-06, S351-352):
   // provider translate pindah ke Gemini flash-lite, lihat api/_news_translate.js
   // §PIVOT KE GEMINI + daun_merah_vendor.md untuk alasan lengkap.
-  'ai:gemini:newstranslate',
+  // 'ai:gemini:newstranslate' -> 'ai:groq:newstranslate' (2026-11-17): pindah ke Groq gpt-oss.
+  'ai:groq:newstranslate',
   // 2026-08-25 (Session 328): 'ai:gemini' dipecah 3 karena dulu dipakai bersama lintas
   // fitur (lihat CB_GEMINI di market-digest.js) — burst kegagalan di satu fitur men-trip
   // circuit fitur lain yang tidak pernah gagal sendiri.
