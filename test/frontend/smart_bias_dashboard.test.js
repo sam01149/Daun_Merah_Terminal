@@ -33,7 +33,9 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.match(html, /growth:[^}]*bullish:'Membaik'[^}]*bearish:'Melemah'/);
   assert.match(html, /inflation:[^}]*bullish:'Memanas'[^}]*bearish:'Mendingin'/);
   assert.match(html, /policy:[^}]*bullish:'Hawkish'[^}]*bearish:'Dovish'/);
-  assert.match(html, /return `<span class="sb-state \$\{valid\} sb-kind-\$\{kind\}" aria-label="\$\{ariaLabel\}"><\/span>`/);
+  assert.match(html, /return `<span class="sb-state \$\{valid\} sb-kind-\$\{kind\}" role="img" aria-label="\$\{escHtml\(spoken\)\}"><\/span>`/);
+  assert.match(renderer, /<tr class="smart-bias-row" tabindex="0" aria-expanded="\$\{isOpen\}"/);
+  assert.match(renderer, /onkeydown="if\(event\.key==='Enter'\|\|event\.key===' '\)/);
   assert.doesNotMatch(html, /<span class="sb-state \$\{valid\} sb-kind-\$\{kind\}"[^>]*>\$\{_sbStateLabel/);
   assert.match(html, /\.sb-state\.bullish \{ color:var\(--green\); \}/);
   assert.match(html, /\.sb-state\.bearish \{ color:#f87171; \}/);
@@ -50,6 +52,12 @@ test('Dashboard memakai tabel arah mata uang enam kolom data dan tidak lagi mema
   assert.doesNotMatch(renderer, /<th>Trend<\/th>|<th>Seasonality<\/th>/);
   assert.match(html, /@media \(max-width: 1023px\)[\s\S]*?#dashboardPanel\.visible \{ display:flex;/);
   assert.match(html, /view:'dashboard',\s+label:'Dashboard'/);
+});
+
+test('Tabel bias tidak menyimpan payload kosong atau error sebagai hasil segar', () => {
+  const fetcher = between('async function fetchDashSmartBias(', '\nfunction _sbStateLabel(');
+  assert.match(fetcher, /if \(!Array\.isArray\(data\.rows\) \|\| !data\.rows\.length \|\| data\.error\) throw new Error/);
+  assert.match(fetcher, /dashSmartBiasFetchedAt = Date\.now\(\);/);
 });
 
 test('Rincian Dashboard merangkum kondisi tanpa headline mentah, angka atau tautan eksternal', () => {

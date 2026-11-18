@@ -150,7 +150,10 @@ test('Tahap 1 blok: dua kaki dirender berurutan dengan header & cara pakai; kaki
 test('Tahap 1 e2e: blok [DATA RILIS EKONOMI] kedua kaki masuk Call 1 DAN Kritikus; TIDAK masuk Call 2; jalur manual TIDAK berubah', async () => {
   const hashes = {
     'fundamental:GBP': { 'CPI YoY': { actual: '0.3%', forecast: '0.3%', previous: '0.1%', date: new Date(Date.now()-86400000).toISOString().slice(0,10), source: 'calendar' } },
-    'fundamental:USD': { 'NFP': { actual: '162K', forecast: '56K', previous: '21K', date: '2026-09-04', source: 'calendar' } },
+    // Tanggal relatif, bukan tanggal mati: fixture lama (2026-09-04) melewati ambang
+    // 45 hari pada November 2026 sehingga baris NFP tersaring sebagai data LAMA dan
+    // uji gagal padahal perilaku kode benar.
+    'fundamental:USD': { 'NFP': { actual: '162K', forecast: '56K', previous: '21K', date: new Date(Date.now()-5*86400000).toISOString().slice(0,10), source: 'calendar' } },
   };
   await withEnv({ CRON_SECRET: 'topsecret', DEEPSEEK_API_KEY: 'k' }, async () => {
     const cap = [];

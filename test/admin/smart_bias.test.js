@@ -153,6 +153,28 @@ test('Smart Bias Overall: Inflation yang bergantung pada CB tidak dihitung dua k
   assert.ok(result.rationale_codes.includes('core_independence_low'));
 });
 
+test('Smart Bias Overall: tiga pilar lengkap tetapi datar adalah Netral, bukan data kurang', () => {
+  const layer = state => ({ state });
+  const result = buildOverall({
+    growth:layer('neutral'), inflation:{ state:'neutral', policy_context:'neutral' }, central_bank:layer('neutral'),
+    banks:layer('neutral'), positioning:layer('neutral'),
+  });
+  assert.equal(result.state, 'neutral');
+  assert.deepEqual(result.missing, []);
+  assert.ok(result.rationale_codes.includes('core_neutral_complete'));
+  assert.ok(!result.rationale_codes.includes('core_coverage_low'));
+});
+
+test('Smart Bias Overall: pilar yang benar-benar kosong tetap data kurang', () => {
+  const layer = state => ({ state });
+  const result = buildOverall({
+    growth:layer('neutral'), inflation:layer('neutral'), central_bank:layer('insufficient'),
+    banks:layer('insufficient'), positioning:layer('insufficient'),
+  });
+  assert.equal(result.state, 'insufficient');
+  assert.ok(result.rationale_codes.includes('core_coverage_low'));
+});
+
 test('Smart Bias Overall: Pandangan Marc tidak memengaruhi kesimpulan sebelum track record layak', () => {
   const layer = state => ({ state });
   const result = buildOverall({

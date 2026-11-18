@@ -410,6 +410,10 @@ function buildOverall({ growth, inflation, central_bank: centralBank, banks, pos
     else if (bear >= 2 && bull === 0) state = 'bearish';
     else state = 'mixed';
   } else if (core.some(x => x.state === 'mixed')) state = 'mixed';
+  // Tiga pilar lengkap tetapi semuanya datar BUKAN "data kurang". Tanpa cabang ini
+  // state tetap 'insufficient' sementara `missing` kosong, sehingga tabel menampilkan
+  // "—" padahal tidak ada data yang hilang (bertentangan dengan teks Petunjuk).
+  else if (core.every(x => x.state === 'neutral')) state = 'neutral';
 
   const confirmations = [];
   const conflicts = [];
@@ -430,7 +434,7 @@ function buildOverall({ growth, inflation, central_bank: centralBank, banks, pos
   return {
     state, confidence, confirmations, conflicts, missing,
     rationale_codes: [
-      directional.length < 2 ? 'core_coverage_low' : 'core_coverage_ok',
+      directional.length >= 2 ? 'core_coverage_ok' : state === 'neutral' ? 'core_neutral_complete' : 'core_coverage_low',
       inflationDependsOnPolicy ? 'inflation_policy_context_overlap' : 'inflation_policy_independent',
       dependentPairOnly ? 'core_independence_low' : 'core_independence_ok',
       bull && bear ? 'core_conflict' : 'core_consistent',

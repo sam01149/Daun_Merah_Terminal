@@ -29,7 +29,7 @@ const { allowAiCall } = require('./_ai_guard');
 const { isDeepSeekDisabled, getDeepSeekApiKey, getDeepSeekUrl, isRelinkActive, resolveDeepSeekCircuit } = require('./_deepseek');
 const { requireAppKey, safeEqual } = require('./_app_key');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, mapYahooSymbolToTwelveData, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
-const { buildSmartBiasRows, buildPanelTone } = require('./_smart_bias');
+const { CURRENCIES, buildSmartBiasRows, buildPanelTone } = require('./_smart_bias');
 const {loadMacroConditions}=require('./_macro_conditions_store');
 const {buildMacroConditions,buildQualitativeBiasRows}=require('./_macro_candidate');
 const statsNzCore=require('./_statsnz_core');
@@ -9901,8 +9901,7 @@ async function smartBiasHandler(req, res) {
 
   try {
     const nowMs=Date.now();
-    const [liveRates, rawBias, rawCot, observations, rawInstitutions, coreSnapshot, chfCoreSnapshot] = await Promise.all([
-      getLiveCbRates().catch(() => []),
+    const [rawBias, rawCot, observations, rawInstitutions, coreSnapshot, chfCoreSnapshot] = await Promise.all([
       redisCmd('GET', 'cb_bias').catch(() => null),
       redisCmd('GET', 'cot_cache_v2').catch(() => null),
       loadMacroConditions(redisCmd,{asOfMs:nowMs}).catch(error => {
@@ -9914,12 +9913,17 @@ async function smartBiasHandler(req, res) {
       fsoCore.getSnapshot(redisCmd),
     ]);
     const biasMap = _parseJsonValue(rawBias, {});
-    const cbBanks = (Array.isArray(liveRates) ? liveRates : []).map(rate => ({
-      ...rate,
-      bias: biasMap[rate.currency]?.bias || null,
-      confidence: biasMap[rate.currency]?.confidence || null,
-      bias_updated: biasMap[rate.currency]?.updated_at || null,
-      source_headlines: biasMap[rate.currency]?.source_headlines || [],
+    // Tabel Dashboard hanya membaca tone dari `cb_bias`; buildPanelTone membuang
+    // rate/meeting, jadi nilai hasil scrape BIS/FRED tidak pernah sampai ke pengguna.
+    // Karena itu handler ini TIDAK memanggil getLiveCbRates(): saat cache 6 jam
+    // kedaluwarsa fungsi itu memindai 8 situs bank sentral di dalam request, sementara
+    // klien berhenti di 20 detik. Pola sama dengan fundLegs di handler Analisa.
+    const cbBanks = CURRENCIES.map(currency => ({
+      currency,
+      bias: biasMap[currency]?.bias || null,
+      confidence: biasMap[currency]?.confidence || null,
+      bias_updated: biasMap[currency]?.updated_at || null,
+      source_headlines: biasMap[currency]?.source_headlines || [],
     }));
     // Existing adapters supply only policy and positioning.
     // Growth/inflation come from reported conditions, never a surprise fallback.

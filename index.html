@@ -4939,7 +4939,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.17.1';
+const APP_VERSION = '2026.11.18.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -18918,7 +18918,10 @@ async function fetchDashSmartBias(force = false) {
     const r = await fetch(`/api/admin?action=smart_bias${force ? '&force=1' : ''}`, { signal:AbortSignal.timeout(20000) });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
-    if (!Array.isArray(data.rows)) throw new Error('Schema tabel tidak valid');
+    // Hitung segar yang gagal dibalas HTTP 200 dengan rows:[] + error. Itu kegagalan,
+    // bukan tabel kosong: jangan disimpan sebagai hasil segar 15 menit, supaya
+    // percobaan berikutnya (interval 60 detik) tetap mengambil data dari server.
+    if (!Array.isArray(data.rows) || !data.rows.length || data.error) throw new Error(data.error || 'Schema tabel tidak valid');
     dashSmartBiasData = data;
     dashSmartBiasFetchedAt = Date.now();
   } catch(e) {
@@ -18941,8 +18944,12 @@ function _sbStateLabel(state, kind = 'currency') {
 function _sbStateHtml(state, confidence, kind = 'currency') {
   const valid = ['bullish','bearish','mixed','neutral','insufficient'].includes(state) ? state : 'insufficient';
   const label = _sbStateLabel(valid, kind);
-  const ariaLabel = escHtml(label);
-  return `<span class="sb-state ${valid} sb-kind-${kind}" aria-label="${ariaLabel}"></span>`;
+  // Penanda hanya bentuk/warna, jadi teksnya wajib terbaca pembaca layar.
+  // role="img" membuat aria-label benar-benar diumumkan; aria-label pada span
+  // generik diabaikan sebagian pembaca layar. "—" dibacakan sebagai "Data kurang"
+  // agar sama dengan arti di Petunjuk.
+  const spoken = valid === 'insufficient' ? 'Data kurang' : label;
+  return `<span class="sb-state ${valid} sb-kind-${kind}" role="img" aria-label="${escHtml(spoken)}"></span>`;
 }
 
 function _sbBankHtml(banks) {
@@ -19013,7 +19020,7 @@ function renderDashSmartBias() {
   const body = rows.map(row => {
     const p = row.positioning || {};
     const isOpen = dashSmartBiasOpen === row.currency;
-    return `<tr class="smart-bias-row" onclick="toggleDashSmartBias('${row.currency}')" aria-expanded="${isOpen}">
+    return `<tr class="smart-bias-row" tabindex="0" aria-expanded="${isOpen}" onclick="toggleDashSmartBias('${row.currency}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleDashSmartBias('${row.currency}');}">
       <td><span class="smart-bias-cur">${escHtml(row.currency)}</span></td>
       <td>${_sbStateHtml(row.growth?.state, row.growth?.confidence, 'growth')}</td>
       <td>${_sbStateHtml(row.inflation?.inflation_impulse, row.inflation?.confidence, 'inflation')}</td>
