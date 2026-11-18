@@ -34,7 +34,11 @@ SOP: `audit_daun_merah.md` §1 (A-E) dan §3.7. Bahan: payload produksi `GET /ap
 
 **Uji.** Area terdampak (smart_bias, macro_candidate, institution_views, smart_bias_dashboard, ringkasan/desain Dashboard) 52/52 lulus; suite penuh 1.678/1.678 lulus. Fixture `test/admin/aatas.test.js` memakai NFP USD bertanggal mati 2026-09-04 yang kini berumur 75 hari sehingga tersaring ambang "LAMA" 45 hari (gagal sebelum perubahan sesi ini, bukan akibatnya); tanggal dibuat relatif 5 hari tanpa mengubah maksud uji.
 
-**Catatan.** Entri S504 dan S505 sebelumnya masih belum ter-commit di working tree; keduanya ikut terkirim bersama entri ini. Setelah deploy, perilaku baru (Netral untuk tiga pilar datar, retry setelah payload gagal) belum diverifikasi di produksi.
+**Catatan.** Entri S504 dan S505 sebelumnya masih belum ter-commit di working tree; keduanya ikut terkirim bersama entri ini.
+
+**Verifikasi produksi setelah deploy `9d61fe8`.** `/index.html` memuat `APP_VERSION 2026.11.18.1` beserta `role="img"` dan baris `tabindex="0"` (alamat `/` hanya 307 ke `/index.html`). `smart_bias` HTTP 200, 8 baris, delapan mata uang, tanpa `error`, 0,34-0,38 detik pada cache aktif dan 2,24 detik pada satu permintaan dingin. Panel bank sentral `/api/cb-status` HTTP 200 dalam 0,39 detik, 8 bank dengan `rate_source: live_cached`, jadi penghapusan pemanggilan scrape tidak merusak panel. Perilaku baru belum terbukti di produksi: tidak ada mata uang dengan tiga pilar datar hari ini, dan jalur retry setelah payload gagal belum diuji dengan memaksa kegagalan server.
+
+**Tindak lanjut sesi yang sama (analisis, belum diputuskan).** Setelah verifikasi, user meminta perbandingan arti "Campur" dan bertanya soal ambang signifikansi serta keselarasan Academy. Hasil hitungan dari payload 2026-11-18T09:35Z: opsi sekarang 1 Naik/7 Campur; opsi ketat 3 Naik/3 Campur/2 "—"; varian pakai komponen berarah 4 Naik/4 Campur. Tidak ada ambang materialitas di jalur tabel; 7 dari 32 panah komponen lahir dari perubahan 0,1 atau kurang. Rincian di `daun_merah_riset.md` entri 2026-11-18 dan `daun_merah_progress.md` (lokal). Tidak ada kode tambahan yang diubah.
 
 ## Changelog Session 505 (2026-11-18) — Audit mekanisme panah Naik/Turun tabel Bias (read-only, belum ada perbaikan kode)
 
