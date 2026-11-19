@@ -1,0 +1,28 @@
+# Analisis forex dengan metode Prime Academy
+
+Bantu saya memilih peluang FX yang layak hari ini. Gunakan pertimbangan analis makro berpengalaman. Beri satu keputusan per pair: ENTRY, TUNGGU, atau RELAKAN. Boleh menyarankan entry jika alasannya jelas. Kalau tidak ada peluang, katakan langsung.
+
+Gunakan aplikasi Daun Merah (https://financial-feed-app.vercel.app) sebagai sumber utama. Kalau perlu data lain, gunakan sumber di luar Daun Merah, misalnya bank sentral untuk keputusan suku bunga, badan statistik untuk rilis, CFTC untuk positioning, atau feed harga untuk candle. Sebutkan sumber yang benar-benar dibaca dan waktu data penting beserta zona waktunya. Jika aplikasi tidak bisa diakses, katakan singkat dan gunakan sumber alternatif yang sesuai. Jika satu data penentu tetap belum diketahui, sebutkan apa yang kurang. Data pelengkap yang kosong tidak otomatis menggugurkan peluang.
+
+## 1. Pilih ide sebelum melihat titik masuk
+
+Mulai dari bias mingguan tiap mata uang dan ringkasan alasannya. Bobot terbesar ada pada pertumbuhan, inflasi, tenaga kerja, dan arah kebijakan bank sentral. Riset bank dan positioning memperkuat atau mengurangi keyakinan. Sentimen, musim, dan tren memberi konteks. Untuk satu rilis atau headline, cek apa yang sudah diharapkan pasar dan bagaimana harga bereaksi. Jangan membuat bobot angka sendiri.
+
+Untuk tren, utamakan mata uang terkuat melawan terlemah. Sisi yang netral masih bisa jadi pasangan bila perbedaan arah ke depan jelas. Dua bank sentral yang sama-sama menahan suku bunga bisa punya prospek berbeda. Untuk pasar mendatar, jelaskan mengapa harga bertahan di dalam range dan apa yang mendukung pantulan di tepinya. Cek empat ancaman secara singkat: kalender, headline, perubahan sentimen, dan posisi pasar yang terlalu berat ke satu sisi.
+
+## 2. Pakai sistem yang cocok dengan harga
+
+- Momentum. Harga jelas di atas EMA200 Daily untuk buy atau di bawahnya untuk sell. Di H4, EMA21 di atas EMA100 untuk buy, di bawah untuk sell. Jarak keduanya harus lebih besar dari ATR(14) H6, dalam satuan yang sama. Tandai support/resistance H1, H4, atau Daily. Tunggu candle H1 selesai, menyentuh level lalu ditutup menjauh searah tren pada sesi London atau New York. Body harus 0,5–1 ATR, termasuk kedua batas. SL berjarak 1 ATR dari entry dan harus mencakup wick. Kalau tidak muat, lewati pemicu itu. TP standar 2 ATR. Pilihan 2,5 atau 3 ATR hanya bila sesuai rencana yang didukung jurnal.
+- Range. Harga berulang kali berbalik di dalam batas yang terlihat. EMA21 dan EMA100 H1 harus benar-benar bersilang setidaknya dua kali di dalam range dalam 250 bar terakhir. Cari sell di tepi atas (di atas VAH atau di atas 70% tinggi range), buy di tepi bawah (di bawah VAL atau di bawah 30%, diukur dari dasar). Tunggu candle H1 sesi London atau New York yang selesai dan menolak level searah ide. Ukuran body bebas. Divergensi RSI(14) H1 hanya penguat. SL 1 ATR(14) H6, TP 2 ATR. Jika harga menembus lalu kembali, periksa apakah tesis bertahan. Penembusan jauh, misalnya 1 ATR atau lebih di luar batas, apalagi dengan kelanjutan dan narasi baru, menggugurkan ide pantulan lama.
+
+## 3. Putuskan apa yang bisa dilakukan sekarang
+
+- ENTRY jika alasan, pemicu, harga yang masih tersedia, dan ruang ke target mendukung. Tulis buy/sell, harga acuan dan waktunya, SL, TP, serta rasio risiko:imbalan dari harga tersebut (1:2 atau lebih sesuai sistem). Jangan mengejar harga yang sudah lari. Cek posisi terbuka dan kandidat lain agar maksimal dua pair berbagi mata uang yang sama. Pilih ide terbaik jika beberapa posisi sebenarnya bertaruh pada cerita yang sama.
+- TUNGGU jika idenya masih hidup tetapi harga belum di level, candle belum sah, rilis penting terlalu dekat, atau bukti penentu belum tersedia. Beri satu hal konkret untuk ditunggu dan alert harga atau waktu jika diketahui. Pemicu sesi Asia perlu diganti pemicu baru yang sah. Untuk Momentum, hindari menit atau jam menjelang rilis besar yang relevan. Untuk pemula pada sistem Range, Academy menyarankan melewatkan entry menjelang berita pada hari rilis besar. Nilai kembali reaksi pasar sebelum mengambil setup baru.
+- RELAKAN jika alasan sudah gugur, struktur rusak, eksposur penuh, atau harga yang tersedia sudah merusak rasio. Yang dilewatkan adalah setup saat ini. Pullback baru boleh dinilai lagi dari awal.
+
+## Bentuk jawaban
+
+Awali dengan tabel singkat: Pair | Sistem | Keputusan | Alasan utama | Tindakan berikutnya. Untuk kandidat terbaik, tulis tesis lima baris: arah, penggerak, suasana pasar, peristiwa berikutnya, dan apa yang membatalkan ide. Cantumkan keyakinan dan kejelasan (1–5) sebagai penilaian kualitatif. Untuk rilis yang bisa membalikkan tesis, beri dua skenario singkat “jika … maka …”. Ukuran posisi mengikuti risiko yang saya tetapkan dan jarak SL. Tampilkan lot hanya jika data akun dan nilai pip tersedia. Untuk posisi Range, rencana standar menggeser SL ke entry saat untung 1R dan mengunci 0,5R saat untung 1,5R (1R = risiko awal). Tulis saran dalam bahasa Indonesia yang lugas.
+
+Input opsional dari saya: [pair yang ingin dipantau, posisi terbuka atau “kosong”, risiko per transaksi, dan data/grafik jika ada]. Jika pair tidak ditentukan, pilih kandidat terbaik dari mata uang yang datanya tersedia. Jika posisi terbuka belum diketahui, tandai rekomendasi yang siap secara teknis sebagai TUNGGU konfirmasi eksposur.
