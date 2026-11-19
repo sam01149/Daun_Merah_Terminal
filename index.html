@@ -216,6 +216,7 @@ body {
 .riset-badge.RBA  { background:rgba(251,191,36,.18);  color:#fbbf24; }
 .riset-badge.BOC  { background:rgba(248,113,113,.18); color:#f87171; }
 .riset-badge.BOJ  { background:rgba(56,189,248,.18);  color:#38bdf8; }
+.riset-badge.MTM  { background:rgba(52,211,153,.12);  color:#34d399; }
 .riset-badge.ING  { background:rgba(251,146,60,.18);  color:#fb923c; }
 .riset-badge.FJElite { background:rgba(56,189,248,.18); color:#38bdf8; }
 .riset-badge.NBER      { background:rgba(74,222,128,.18);  color:#4ade80; }
@@ -4939,7 +4940,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.18.1';
+const APP_VERSION = '2026.11.19.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -9101,7 +9102,7 @@ function risetToggleSource(src) {
 }
 
 function risetToggleAllSourcesBtn() {
-  const instItems = ((researchCache && researchCache.items) || []).filter(item=>item.source!=='MTM');
+  const instItems = (researchCache && researchCache.items) || [];
   const fjItems = fjResearchItems.map(i => ({ source: 'FJElite' }));
   const items = [...instItems, ...fjItems];
   const availSources = [...new Set(items.map(it => it.source))];

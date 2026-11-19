@@ -12,6 +12,9 @@ const {
   parseRePEcIfnItems,
   parseScopusEntries,
   RESEARCH_RELEVANCE_RE,
+  CB_RESEARCH_SOURCES,
+  parseCBRSSItems,
+  pickAtomLink,
 } = require('../../api/feeds.js');
 
 // ── NBER ────────────────────────────────────────────────────────────────────
@@ -181,4 +184,31 @@ test('RESEARCH_RELEVANCE_RE: cocok untuk topik FX/makro/LLM-trading', () => {
 test('RESEARCH_RELEVANCE_RE: tidak cocok untuk topik tak-relevan (politik/pertanian)', () => {
   assert.equal(RESEARCH_RELEVANCE_RE.test('Elite Political Selection in American History'), false);
   assert.equal(RESEARCH_RELEVANCE_RE.test('Sri Lanka apparel sector lean manufacturing'), false);
+});
+
+// ── CB Research / Macro Sources (MTM & Atom) ────────────────────────────────
+
+test('CB_RESEARCH_SOURCES: memuat sumber makro Marc to Market (MTM) dan ING', () => {
+  const mtm = CB_RESEARCH_SOURCES.find(s => s.key === 'MTM');
+  assert.ok(mtm, 'MTM harus ada di CB_RESEARCH_SOURCES');
+  assert.equal(mtm.url, 'https://www.marctomarket.com/feeds/posts/default');
+});
+
+test('parseCBRSSItems & pickAtomLink: mem-parse Atom feed Blogger/Marc to Market dengan rel="alternate" link', () => {
+  const ATOM_XML = `<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title type="text">Dollar Consolidates Ahead of Key Speeches</title>
+    <published>2026-11-19T06:47:09.158-05:00</published>
+    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/123/posts/default/456"/>
+    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/123/posts/default/456"/>
+    <link rel="alternate" type="text/html" href="https://www.marctomarket.com/2026/11/dollar-consolidates.html" title="Dollar Consolidates Ahead of Key Speeches"/>
+  </entry>
+</feed>`;
+  const items = parseCBRSSItems(ATOM_XML, 'MTM');
+  assert.equal(items.length, 1);
+  assert.equal(items[0].source, 'MTM');
+  assert.equal(items[0].title, 'Dollar Consolidates Ahead of Key Speeches');
+  assert.equal(items[0].link, 'https://www.marctomarket.com/2026/11/dollar-consolidates.html');
+  assert.equal(items[0].pubDate, '2026-11-19T06:47:09.158-05:00');
 });

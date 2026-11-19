@@ -1016,6 +1016,8 @@ const CB_RESEARCH_SOURCES = [
   { key: 'BOE',  url: 'https://www.bankofengland.co.uk/rss/speeches' },
   { key: 'BOEP', url: 'https://www.bankofengland.co.uk/rss/publications' },
   // ── Macro Research / Institutional Analysis ───────────────────────────────
+  // Marc to Market (Blogger backend) — direct fetch works fine
+  { key: 'MTM',  url: 'https://www.marctomarket.com/feeds/posts/default' },
   // ING Think has native RSS at /rss/ — direct accessible from Vercel IPs
   { key: 'ING',  url: 'https://think.ing.com/rss/' },
 ];
@@ -1034,7 +1036,7 @@ async function researchHandler(req, res) {
       if (cached) {
         const obj = JSON.parse(cached);
         if (Date.now() - new Date(obj.fetched_at).getTime() < RESEARCH_CACHE_TTL_MS) {
-          return res.json({...obj,items:(obj.items||[]).filter(item=>item.source!=='MTM')});
+          return res.json(obj);
         }
       }
     } catch(e) {}
@@ -1076,7 +1078,7 @@ async function researchHandler(req, res) {
   if (items.length === 0) {
     try {
       const stale = await redisCmd('GET', RESEARCH_CACHE_KEY);
-      if (stale) { const data=JSON.parse(stale); return res.json({ ...data, items:(data.items||[]).filter(item=>item.source!=='MTM'), stale: true }); }
+      if (stale) return res.json({ ...JSON.parse(stale), stale: true });
     } catch(e) {}
     return res.status(502).json({ error: 'All CB research feeds failed' });
   }
@@ -1979,4 +1981,7 @@ module.exports.parseNBERItems = parseNBERItems;
 module.exports.parseRePEcIfnItems = parseRePEcIfnItems;
 module.exports.parseScopusEntries = parseScopusEntries;
 module.exports.RESEARCH_RELEVANCE_RE = RESEARCH_RELEVANCE_RE;
+module.exports.CB_RESEARCH_SOURCES = CB_RESEARCH_SOURCES;
+module.exports.parseCBRSSItems = parseCBRSSItems;
+module.exports.pickAtomLink = pickAtomLink;
 

@@ -11,12 +11,26 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-18 (Perbaikan tabel Bias Dashboard setelah audit S504-S505)
+> **Last updated:** 2026-11-19 (Session 507 — Pengaktifan kembali sumber Marc to Market di tab Artikel)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 507 (2026-11-19) — Pengaktifan kembali sumber Marc to Market di tab Artikel
+
+**Arahan.** User meminta sumber Marc to Market (MTM) ditambahkan kembali khusus di fitur/tab Artikel (riset makro). MTM tetap tidak diaktifkan pada Smart Bias / institusi dashboard (fungsi dashboard tetap fokus pada panel institusi yang terpisah).
+
+**Perubahan teknis.**
+1. `api/feeds.js`: Tambahkan kembali `{ key: 'MTM', url: 'https://www.marctomarket.com/feeds/posts/default' }` ke array `CB_RESEARCH_SOURCES`. Feed langsung Blogger (`/feeds/posts/default`) digunakan karena menyediakan 25 artikel terkini dengan HTTPS link valid, dibandingkan feed FeedBurner lama yang terbatasi 2 artikel. Filter cache `item.source !== 'MTM'` di `researchHandler` (cache hit & stale cache fallback) dihapus agar publikasi MTM dapat di-cache dan disajikan normal ke pengguna.
+2. `index.html`: Tambahkan kembali badge style `.riset-badge.MTM { background:rgba(52,211,153,.12); color:#34d399; }` dan bersihkan filter MTM di `risetToggleAllSourcesBtn`. `APP_VERSION` dinaikkan ke `2026.11.19.1` bersama `sw.js` (lockstep).
+3. `Dokumentasi/daun_merah_vendor.md`: Status Marc to Market diperbarui menjadi aktif kembali khusus untuk feed tab Artikel.
+4. `test/feeds/feeds_research.test.js`: Ditambahkan unit test untuk keberadaan MTM pada `CB_RESEARCH_SOURCES` serta verifikasi parsing feed Atom dengan rel="alternate" link melalui `parseCBRSSItems` & `pickAtomLink`.
+
+**Verifikasi.**
+- Node test suite: `feeds_research.test.js` (17/17 lulus), `smart_bias_dashboard.test.js` & `static_integrity.test.js` (11/11 lulus).
+- Live fetch feed MTM: `https://www.marctomarket.com/feeds/posts/default` terbukti mengembalikan HTTP 200 dan berhasil diparsing 20 artikel terbaru termasuk terbitan 19 November 2026.
 
 ## Changelog Session 506 (2026-11-18) — Perbaikan tabel Bias Dashboard (4 cacat kecil) setelah audit S504-S505
 
