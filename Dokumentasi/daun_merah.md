@@ -33,7 +33,9 @@ Entri yang melanggar = salah tempat, wajib dipindah.
 
 **Uji.** `npm test` 1.711/1.711 lulus (termasuk 31 test baru). Satu bug tertangkap test saat menulis: `Number(null)` = 0 membuat sampel harga pertama dianggap harga 0 sehingga setiap alert `cross_up` bunyi palsu — diperbaiki dengan penjagaan `null`/string kosong eksplisit pada evaluasi maupun teks "dari bawah/atas". Verifikasi DOM di halaman nyata (server statis lokal, backend tidak tersedia): dropdown hanya D1/H4/H1, banner XAU tampil di XAU/USD dan hilang di pair lain, bar alert mati untuk BTCUSD, mode fokus menyembunyikan chart (`display:none`), memulihkannya saat dimatikan, serta chip alert dan teks kartu fokus tampil benar.
 
-**Belum diverifikasi.** Alur POST/GET/DELETE ke Redis produksi (butuh deploy + kredensial), eksekusi tick daemon ke Telegram di Railway, dan tampilan di perangkat mobile. Pemeriksaan produksi setelah deploy menyusul di entri lanjutan bila dilakukan.
+**Verifikasi produksi setelah deploy `2168bea`.** `/index.html` memuat `APP_VERSION 2026.11.20.1` dan tidak lagi memuat opsi M15. Endpoint `?action=price_alerts` hidup: POST menyimpan alert (HTTP 200, id `pa_...`, `status: active`), GET dengan filter `&pair=` mengembalikan alert tersebut, POST duplikat ditolak HTTP 400, DELETE menghapus (HTTP 200) hingga daftar kosong, dan DELETE id asing menjawab HTTP 404. Siklus uji memakai level 9,99999 (mustahil tersentuh) lalu dibersihkan, jadi tidak ada alert percobaan yang tertinggal.
+
+**Belum diverifikasi.** Eksekusi tick daemon sampai kirim Telegram di Railway: kode `vps/daemon.js` hanya aktif setelah container daemon di-redeploy (Vercel dan Railway deploy terpisah), dan tampilan di perangkat mobile belum dilihat.
 
 ## Changelog Session 508 (2026-11-20) — Penarikan dokumen prompt trading manual
 
