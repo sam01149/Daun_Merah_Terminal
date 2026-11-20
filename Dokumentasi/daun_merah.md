@@ -11,12 +11,16 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-19 (Session 507 — Pengaktifan kembali sumber Marc to Market di tab Artikel)
+> **Last updated:** 2026-11-20 (Session 508 — Penarikan dokumen prompt trading manual)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 508 (2026-11-20) — Penarikan dokumen prompt trading manual
+
+Prompt mandiri dan catatan riset yang diterbitkan bersama pada 19 November ditarik dari versi aktif repositori atas arahan pengguna. Catatan hasil uji telah dibatalkan pada 19 November. Perubahan terbatas pada berkas dokumentasi dan prompt mandiri.
 
 ## Changelog Session 507 (2026-11-19) — Pengaktifan kembali sumber Marc to Market di tab Artikel
 

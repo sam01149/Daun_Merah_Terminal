@@ -651,8 +651,6 @@ Prinsip: VPS = penambah, bukan tulang punggung — heartbeat di Redis, UI tampil
 
 ## Pembelajaran Proyek
 
-- **[2026-11-19 | Review prompt trading manual] Pilih rezim sebelum menilai pemicu.** Divergensi membantu memilih tren. Range membutuhkan alasan pantulan di tepi dan dapat layak saat makro campur. Batas body 0,5–1 ATR serta opsi target di atas 2 ATR berlaku untuk Momentum. Range memakai konfirmasi penolakan tanpa batas ukuran body dan target 2 ATR. Sumber lokal Prime Academy: `the-macro-filter`, `entry-area-and-trigger`, `stops-targets-and-rules`, `trigger-session-and-exits` dan `trade-management`. [Prompt siap pakai dengan Daun Merah sebagai sumber pertama](../standalone/prompt-trading-prime.txt).
-
 - **[2026-11-07 | S476] Jumlah interval bukan jumlah bar trading.** Pada Deriv, request 260 interval Daily menghasilkan 185 candle karena gap weekend; warm-up EMA200 perlu jendela kalender lebih panjang dan pemeriksaan jumlah bar selesai yang benar-benar diterima. Verifikasi sumber dua pair dan implementasi cache manual terpisah ada di changelog S476.
 
 
