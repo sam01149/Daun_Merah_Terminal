@@ -5013,7 +5013,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.20.1';
+const APP_VERSION = '2026.11.20.2';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -18453,6 +18453,14 @@ function renderTekFocusMode() {
   const body = document.getElementById('tekFocusBody');
   if (!body) return;
   const label = tekPairLabel(tekPair);
+  // Alert yang sudah bunyi/dibatalkan dihapus di server, jadi teks kartu TIDAK boleh
+  // terus mengklaim "alert aktif" — trader harus tahu kalau sudah tidak ada yang
+  // memantau dan dia sedang menunggu tanpa jaring pengaman.
+  const hasAlert = tekAlerts.some(a => a.pair === tekPair);
+  if (!hasAlert) {
+    body.textContent = `Mode fokus aktif, tetapi tidak ada alert yang terpasang di ${label}. Pasang alert baru supaya level tetap dipantau, atau buka kembali chart.`;
+    return;
+  }
   const target = tekFocus.target != null
     ? ` pada level ${Number(tekFocus.target).toFixed(tekAlertDecimals(tekPair))}`
     : '';
