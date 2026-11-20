@@ -239,6 +239,304 @@ const pendingCandle = {};
 const lastWrittenEpoch = {};
 const lastLivePrice = {}; // yahooSymbol -> harga close terkini (live, dipakai Q-5)
 
+// ══════════════════════════════════════════════════════════════════════════
+// PLAN AJ: alert harga discretionary tab Teknikal.
+//
+// Alur: api/admin.js?action=price_alerts menulis daftar alert ke Redis → daemon
+// membaca daftar itu (cache 10 detik), memastikan tick symbol yang dibutuhkan
+// tersubscribe di WS Deriv yang SAMA dengan candle Q-3, mengevaluasi tiap tick,
+// lalu mengirim Telegram dan MENGHAPUS alert yang sudah bunyi.
+//
+// Sumber harga (diverifikasi live 2026-11-20):
+//   1. Pair yang sudah dialirkan candle Q-3 (14 pair) → lastLivePrice, tanpa
+//      langganan tambahan sama sekali.
+//   2. Pair yang punya simbol Deriv tetapi tidak dialirkan candle (EURCAD,
+//      EURNZD, EURCHF, GBPNZD, GBPCHF, AUDNZD, AUDCHF, AUDCAD, NZDJPY, XAUUSD)
+//      → langganan tick on-demand, hanya selama ada alert aktif di pair itu.
+//   3. 4 pair yang TIDAK tersedia di endpoint market-data publik Deriv (NZDCAD,
+//      NZDCHF, CADCHF, CADJPY) → dihitung silang lewat leg USD yang sudah live
+//      (mis. NZDCAD = NZDUSD / USDCAD).
+//   4. Cadangan terakhir: Yahoo (pair=X, XAUUSD pakai GC=F) tiap 60 detik HANYA
+//      untuk pair yang alertnya belum bisa dihargai — mis. leg USD basi karena
+//      ws sedang reconnect.
+//
+// Kenapa tidak semua lewat Yahoo: kebutuhan alert adalah reaksi cepat pada level
+// discretionary; tick Deriv yang sudah tersambung tidak menambah panggilan HTTP
+// maupun kuota, sedangkan polling Yahoo per pair per menit boros dan rawan 429.
+
+const PRICE_ALERTS_KEY = 'price_alerts:active'; // DUPLIKASI SADAR dari api/_price_alerts.js
+const PRICE_ALERTS_CACHE_TTL_MS = 10 * 1000;
+const ALERT_FIRE_DEDUPE_MS = 60 * 1000;
+const ALERT_PRICE_STALE_MS = 3 * 60 * 1000;
+const ALERT_YAHOO_POLL_MS = 60 * 1000;
+
+const ALERT_CANDLE_SYMBOLS = new Set(Object.values(YAHOO_TO_DERIV_SYMBOL));
+// Daftar symbol Deriv yang TERBUKTI tersedia di wss://api.derivws.com/.../public
+// (uji subscribe tick per symbol, 2026-11-20). Jangan menambah tanpa uji live:
+// symbol yang tidak ada akan dibalas InvalidSymbol dan alert-nya tidak pernah bunyi.
+const ALERT_DERIV_SYMBOLS = [
+  'frxEURUSD', 'frxGBPUSD', 'frxUSDJPY', 'frxAUDUSD', 'frxNZDUSD', 'frxUSDCAD', 'frxUSDCHF',
+  'frxEURJPY', 'frxGBPJPY', 'frxEURGBP', 'frxAUDJPY', 'frxEURAUD', 'frxGBPAUD', 'frxGBPCAD',
+  'frxEURCAD', 'frxEURNZD', 'frxEURCHF', 'frxGBPNZD', 'frxGBPCHF', 'frxAUDNZD', 'frxAUDCHF',
+  'frxAUDCAD', 'frxNZDJPY', 'frxXAUUSD',
+];
+
+const liveFxPrice = {};        // 'EURUSD' -> harga live terakhir (candle stream / tick alert / Yahoo)
+const liveFxAt = {};           // 'EURUSD' -> epoch ms update terakhir
+const alertTickSubs = new Map(); // symbol Deriv -> subscription id (kalau server sudah memberi)
+const alertLastPrice = {};     // pair -> harga sampel sebelumnya (dasar deteksi cross)
+const alertFiredAt = new Map();// alert id -> epoch ms terakhir dikirim (anti dobel)
+let priceAlerts = [];
+let priceAlertsFetchedAt = 0;
+let priceAlertsInFlight = null;
+
+function alertPriceDecimals(pair) {
+  if (pair === 'XAUUSD') return 2;
+  return String(pair).slice(3) === 'JPY' ? 3 : 5;
+}
+
+// 1 pip = satuan gerak terkecil yang wajar untuk pair itu; dipakai sebagai
+// toleransi "sentuh" dan pembulatan target (SAMA dengan api/_price_alerts.js).
+function alertPipSize(pair) {
+  if (pair === 'XAUUSD') return 0.1;
+  return String(pair).slice(3) === 'JPY' ? 0.01 : 0.0001;
+}
+
+// Pure: apakah harga live sudah memenuhi syarat alert?
+// cross_up/cross_down memakai INTERVAL (prev di satu sisi, current di sisi lain),
+// bukan kesamaan persis — harga bisa melompati level lewat gap antar-tick.
+function evaluatePriceAlert(alert, currentPrice, previousPrice) {
+  if (!alert) return false;
+  const target = Number(alert.target_price);
+  // Number(null) = 0 dan Number('') = 0 — keduanya BUKAN harga. Tanpa penjagaan
+  // eksplisit, sampel pertama (prev null) dianggap harga 0 dan setiap cross_up
+  // langsung bunyi palsu karena 0 < target.
+  const toPrice = (value) => (value == null || value === '' ? null : (Number.isFinite(Number(value)) ? Number(value) : null));
+  const current = toPrice(currentPrice);
+  const prev = toPrice(previousPrice);
+  if (current == null || !Number.isFinite(target) || target <= 0) return false;
+  const direction = alert.direction || 'touch';
+  if (direction === 'cross_up') return prev != null && prev < target && current >= target;
+  if (direction === 'cross_down') return prev != null && prev > target && current <= target;
+  // touch: harga menyentuh level (toleransi 1 pip) ATAU tick melompatinya
+  if (Math.abs(current - target) <= alertPipSize(alert.pair)) return true;
+  return prev != null && ((prev < target && current > target) || (prev > target && current < target));
+}
+
+function wibClock(nowMs) {
+  const d = new Date(nowMs + 7 * 60 * 60 * 1000);
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+// Pure: pesan Telegram alert harga. TANPA emoji (ATURAN.md §4.1).
+function formatPriceAlertTelegram(alert, { currentPrice, previousPrice, nowMs = Date.now() } = {}) {
+  const pair = alert.pair || '';
+  const label = pair === 'XAUUSD' ? 'XAU/USD' : `${pair.slice(0, 3)}/${pair.slice(3)}`;
+  const digits = alertPriceDecimals(pair);
+  const direction = alert.direction || 'touch';
+  const status = direction === 'cross_up' ? 'Harga menembus naik level alert'
+    : direction === 'cross_down' ? 'Harga menembus turun level alert'
+    : 'Harga menyentuh level alert';
+  const prevPrice = previousPrice == null || previousPrice === '' ? null : Number(previousPrice);
+  const arah = Number.isFinite(prevPrice) && prevPrice !== Number(currentPrice)
+    ? (prevPrice < Number(alert.target_price) ? '(dari bawah)' : '(dari atas)')
+    : '';
+  return [
+    '*[ALERT HARGA - DAUN MERAH]*',
+    `Pair: ${label}`,
+    `Status: ${status}`,
+    `Level Target: ${Number(alert.target_price).toFixed(digits)}`,
+    `Harga Pasar: ${Number(currentPrice).toFixed(digits)}${arah ? ' ' + arah : ''}`,
+    `Waktu: ${wibClock(nowMs)} WIB`,
+    `Catatan: ${alert.note || 'Tidak ada catatan'}`,
+  ].join('\n');
+}
+
+// Pure: harga 1 unit `from` dalam `to`, dari peta harga pair yang live.
+function alertRateOf(rates, at, from, to, now) {
+  if (from === to) return 1;
+  for (const key of [from + to, to + from]) {
+    const value = Number(rates[key]);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    const ts = Number(at[key]) || 0;
+    if (now - ts > ALERT_PRICE_STALE_MS) continue;
+    return key === from + to ? value : 1 / value;
+  }
+  return null;
+}
+
+// Pure: harga pair dari snapshot harga live. Pair tanpa simbol Deriv dihitung
+// silang lewat USD (semua leg USD selalu ikut stream candle).
+function alertPairPrice(pair, rates = liveFxPrice, at = liveFxAt, now = Date.now()) {
+  if (typeof pair !== 'string' || pair.length < 6) return null;
+  const base = pair.slice(0, 3), quote = pair.slice(3);
+  const direct = alertRateOf(rates, at, base, quote, now);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const baseUsd = alertRateOf(rates, at, base, 'USD', now);
+  const quoteUsd = alertRateOf(rates, at, quote, 'USD', now);
+  if (Number.isFinite(baseUsd) && baseUsd > 0 && Number.isFinite(quoteUsd) && quoteUsd > 0) {
+    return baseUsd / quoteUsd;
+  }
+  return null;
+}
+
+function parsePriceAlerts(raw) {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(a => a && typeof a.pair === 'string' && a.pair.length >= 6 && Number.isFinite(Number(a.target_price)));
+  } catch (e) { return []; }
+}
+
+function derivLegSymbol(from, to) {
+  if (ALERT_DERIV_SYMBOLS.includes('frx' + from + to)) return 'frx' + from + to;
+  if (ALERT_DERIV_SYMBOLS.includes('frx' + to + from)) return 'frx' + to + from;
+  return null;
+}
+
+// Symbol yang HARUS dilanggan tick karena tidak tercakup candle Q-3.
+function planAlertSymbols(alerts = priceAlerts) {
+  const needed = new Set();
+  const add = (symbol) => { if (symbol && !ALERT_CANDLE_SYMBOLS.has(symbol)) needed.add(symbol); };
+  for (const alert of alerts) {
+    if (!alert || typeof alert.pair !== 'string') continue;
+    const pair = alert.pair;
+    if (ALERT_DERIV_SYMBOLS.includes('frx' + pair)) { add('frx' + pair); continue; }
+    add(derivLegSymbol(pair.slice(0, 3), 'USD'));
+    add(derivLegSymbol('USD', pair.slice(3)));
+  }
+  return needed;
+}
+
+async function fetchPriceAlerts(force = false) {
+  const now = Date.now();
+  if (!force && now - priceAlertsFetchedAt < PRICE_ALERTS_CACHE_TTL_MS) return priceAlerts;
+  if (priceAlertsInFlight) return priceAlertsInFlight;
+  priceAlertsInFlight = (async () => {
+    try {
+      if (!redisGuard.isDegraded()) {
+        const raw = await redisCmd('GET', PRICE_ALERTS_KEY);
+        priceAlerts = parsePriceAlerts(raw);
+      }
+    } catch (e) { /* pertahankan cache lama — alert tidak boleh hilang karena Redis hiccup */ }
+    priceAlertsFetchedAt = Date.now();
+    priceAlertsInFlight = null;
+    syncAlertSubscriptions();
+    return priceAlerts;
+  })();
+  return priceAlertsInFlight;
+}
+
+function syncAlertSubscriptions() {
+  const ws = derivWs;
+  if (!ws || ws.readyState !== 1) return;
+  const needed = planAlertSymbols();
+  for (const symbol of needed) {
+    if (alertTickSubs.has(symbol)) continue;
+    try {
+      ws.send(JSON.stringify({ ticks: symbol, subscribe: 1 }));
+      alertTickSubs.set(symbol, null);
+    } catch (e) { /* socket sedang tutup — sync berikutnya yang mencoba */ }
+  }
+  for (const [symbol] of Array.from(alertTickSubs)) {
+    if (needed.has(symbol)) continue;
+    const subId = alertTickSubs.get(symbol);
+    try {
+      ws.send(JSON.stringify(subId ? { forget: subId } : { ticks: symbol, unsubscribe: 1 }));
+    } catch (e) { /* abaikan */ }
+    alertTickSubs.delete(symbol);
+  }
+}
+
+async function fetchYahooAlertPrice(pair) {
+  const symbol = pair === 'XAUUSD' ? 'GC=F' : `${pair}=X`;
+  try {
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) return null;
+    const json = await r.json();
+    const result = json?.chart?.result?.[0];
+    const metaPrice = Number(result?.meta?.regularMarketPrice);
+    if (Number.isFinite(metaPrice) && metaPrice > 0) return metaPrice;
+    const closes = result?.indicators?.quote?.[0]?.close || [];
+    for (let i = closes.length - 1; i >= 0; i--) {
+      if (Number.isFinite(closes[i]) && closes[i] > 0) return closes[i];
+    }
+    return null;
+  } catch (e) { return null; }
+}
+
+async function pollYahooAlertPrices() {
+  const alerts = await fetchPriceAlerts();
+  if (!alerts.length) return;
+  if (redisGuard.isDegraded()) return;
+  if (!isFxMarketOpen()) return;
+  const now = Date.now();
+  const unresolved = new Set();
+  for (const alert of alerts) {
+    if (!Number.isFinite(alertPairPrice(alert.pair, liveFxPrice, liveFxAt, now))) unresolved.add(alert.pair);
+  }
+  for (const pair of unresolved) {
+    const price = await fetchYahooAlertPrice(pair);
+    if (price != null) { liveFxPrice[pair] = price; liveFxAt[pair] = now; }
+  }
+  if (unresolved.size) processPriceAlerts();
+}
+
+function processPriceAlerts() {
+  if (!priceAlerts.length) return;
+  if (redisGuard.isDegraded()) return;
+  if (!isFxMarketOpen()) return; // pasar tutup: alert tetap tersimpan, evaluasi berhenti
+  const now = Date.now();
+  for (const alert of priceAlerts.slice()) {
+    const price = alertPairPrice(alert.pair, liveFxPrice, liveFxAt, now);
+    if (!Number.isFinite(price)) continue;
+    const prev = alertLastPrice[alert.pair];
+    alertLastPrice[alert.pair] = price;
+    if (!Number.isFinite(prev)) continue; // butuh minimal dua sampel untuk deteksi tembus
+    if (!evaluatePriceAlert(alert, price, prev)) continue;
+    firePriceAlert(alert, price, prev).catch(e => console.warn('daemon: kirim alert harga gagal:', e.message));
+  }
+}
+
+async function firePriceAlert(alert, price, previousPrice) {
+  const now = Date.now();
+  const last = alertFiredAt.get(alert.id) || 0;
+  if (now - last < ALERT_FIRE_DEDUPE_MS) return;
+  alertFiredAt.set(alert.id, now);
+
+  await sendTelegram(formatPriceAlertTelegram(alert, { currentPrice: price, previousPrice, nowMs: now }));
+  console.log(`daemon: alert harga ${alert.id} ${alert.pair} target ${alert.target_price} — Telegram dikirim`);
+
+  // Sekali bunyi = alert dihapus (keputusan yang sama dengan deduplikasi Q-5):
+  // trader memasang alert baru kalau ingin memantau level itu lagi.
+  priceAlerts = priceAlerts.filter(a => a.id !== alert.id);
+  priceAlertsFetchedAt = Date.now();
+  try {
+    const list = parsePriceAlerts(await redisCmd('GET', PRICE_ALERTS_KEY)).filter(a => a.id !== alert.id);
+    await redisCmd('SET', PRICE_ALERTS_KEY, JSON.stringify(list));
+  } catch (e) { console.warn('daemon: hapus alert harga setelah bunyi gagal:', e.message); }
+  syncAlertSubscriptions();
+}
+
+function handleAlertTick(tick) {
+  if (!tick || !tick.symbol) return;
+  const price = parseFloat(tick.quote);
+  if (!Number.isFinite(price) || price <= 0) return;
+  const pair = String(tick.symbol).replace(/^frx/, '');
+  liveFxPrice[pair] = price;
+  liveFxAt[pair] = Date.now();
+  processPriceAlerts();
+}
+
 function normalizeDerivCandle(ohlcv) {
   const t = Number(ohlcv.open_time ?? ohlcv.epoch);
   const o = parseFloat(ohlcv.open), h = parseFloat(ohlcv.high), l = parseFloat(ohlcv.low), c = parseFloat(ohlcv.close);
@@ -282,6 +580,12 @@ async function handleOhlcvUpdate(ohlcv) {
   const candle = normalizeDerivCandle(ohlcv);
   if (!candle) return;
   lastLivePrice[yahooSymbol] = candle.c;
+  // PLAN AJ: candle stream juga jadi sumber harga alert untuk 14 pair ini —
+  // setiap update ohlcv membawa close candle yang masih terbentuk (live), jadi
+  // tidak perlu langganan tick tambahan untuk pair yang sudah ada di sini.
+  const fxPair = String(ohlcv.symbol).replace(/^frx/, '');
+  liveFxPrice[fxPair] = candle.c;
+  liveFxAt[fxPair] = Date.now();
   // Harga live berubah -> reaksi Q-5 di sini juga (event-driven), BUKAN nunggu
   // timer terpisah — dibatasi ZONE_MIN_CHECK_INTERVAL_MS per symbol supaya
   // tick yang deras (banyak per menit) tidak memaksa GET Redis per-tick juga
@@ -389,6 +693,10 @@ function connectDerivStream() {
     reconnectDelayMs = 1000;
     firstDegradedAt = null;
     lastWsActivityAt = Date.now();
+    // PLAN AJ: langganan tick alert hidup di socket ini — socket baru = langganan
+    // lama hilang, jadi peta langganan dikosongkan lalu disinkronkan ulang.
+    alertTickSubs.clear();
+    setTimeout(() => { fetchPriceAlerts(true).catch(() => {}); }, 2000);
     let i = 0;
     for (const derivSymbol of Object.values(YAHOO_TO_DERIV_SYMBOL)) {
       // Stagger subscribe supaya tidak burst 14 request dalam 1 tick.
@@ -421,6 +729,13 @@ function connectDerivStream() {
     }
     if (data.msg_type === 'ohlcv' && data.ohlcv) {
       handleOhlcvUpdate(data.ohlcv).catch(e => console.warn('daemon: handleOhlcvUpdate gagal:', e.message));
+    }
+    // PLAN AJ: tick harga untuk pair yang hanya dipantau saat ada alert aktif.
+    if (data.msg_type === 'tick' && data.tick) {
+      if (data.subscription && data.subscription.id && alertTickSubs.has(data.tick.symbol)) {
+        alertTickSubs.set(data.tick.symbol, data.subscription.id);
+      }
+      handleAlertTick(data.tick);
     }
   });
 
@@ -2157,6 +2472,8 @@ function startHttpServer() {
       ws_last_activity_age_s: lastWsActivityAt ? Math.round((Date.now() - lastWsActivityAt) / 1000) : null,
       redis_guard: redisGuard.state(),
       last_supervisor_heal_at: lastSupervisorHealAt,
+      // PLAN AJ observability — jumlah alert aktif & langganan tick yang hidup.
+      price_alerts: { active: priceAlerts.length, tick_subs: alertTickSubs.size },
       // U-3 observability — Lapis 2 (auto-cancel) SENGAJA tidak ada di sini,
       // di-descope (lihat komentar besar U-3 di atas).
       auto_entry: { pairs: AUTO_ENTRY_PAIRS, hours_utc: AUTO_ENTRY_HOURS_UTC, hours_utc_audnzd: AUTO_ENTRY_HOURS_UTC_AUDNZD, consistency_hour_utc: AUTO_CONSISTENCY_HOUR_UTC, friday_tighten_hour_utc: FRIDAY_TIGHTEN_HOUR_UTC },
@@ -2178,6 +2495,11 @@ async function main() {
   await loadNewsBufferFromRedis();
   setInterval(() => pollNews().catch(() => {}), NEWS_POLL_INTERVAL_MS);
   setInterval(() => supervisorTick().catch(() => {}), SUPERVISOR_INTERVAL_MS);
+  // PLAN AJ: daftar alert disegarkan berkala (alert baru langsung dipantau tanpa
+  // menunggu tick pair itu), dan Yahoo dipakai hanya untuk alert yang belum bisa
+  // dihargai dari stream Deriv.
+  setInterval(() => fetchPriceAlerts(true).catch(() => {}), PRICE_ALERTS_CACHE_TTL_MS);
+  setInterval(() => pollYahooAlertPrices().catch(() => {}), ALERT_YAHOO_POLL_MS);
   // Q-5 TIDAK pakai timer sendiri lagi — dipicu langsung dari handleOhlcvUpdate
   // (event-driven, lihat komentar di atas maybeCheckPriceZone).
   // U-3 sub-riset 3a: poll murni observasi, tidak butuh CRON_SECRET (baca
@@ -2210,6 +2532,10 @@ module.exports = {
   checkHardNewsSkip, runAutoEntryCycle, runConsistencyCheck, runFridayTightenCycle, pollCalendarLatency, checkBreakingNewsSkip,
   // Plan X (async, di-export untuk simulasi lokal manual — bukan dipakai node:test):
   checkSurpriseSkip, fetchMergedSurpriseEvents,
+  // PLAN AJ (pure/testable) — alert harga manual tab Teknikal:
+  evaluatePriceAlert, formatPriceAlertTelegram, alertPairPrice, planAlertSymbols,
+  parsePriceAlerts, alertPipSize, alertPriceDecimals,
+  ALERT_DERIV_SYMBOLS, PRICE_ALERTS_KEY,
   // Audit AATAS 2026-11-17 — SOT "posisi hidup" (cermin isLiveExposure api/_auto_entry_guard.js):
   isLiveAutoSetup,
   // U-5b (pure/testable):

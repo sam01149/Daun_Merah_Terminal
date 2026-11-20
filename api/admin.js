@@ -28,6 +28,8 @@ const rateLimit = require('./_ratelimit');
 const { allowAiCall } = require('./_ai_guard');
 const { isDeepSeekDisabled, getDeepSeekApiKey, getDeepSeekUrl, isRelinkActive, resolveDeepSeekCircuit } = require('./_deepseek');
 const { requireAppKey, safeEqual } = require('./_app_key');
+// PLAN AJ: alert harga manual tab Teknikal (numpang endpoint, slot function penuh).
+const priceAlerts = require('./_price_alerts');
 const { fetchYahooOhlcv1h, fetchFallbackCandles, shouldSendYahooAlert, mapYahooSymbolToDeriv, mapYahooSymbolToTwelveData, fetchDerivCandles, mergeVolumeByTimestamp } = require('./_ohlcv_fetch');
 const { CURRENCIES, buildSmartBiasRows, buildPanelTone } = require('./_smart_bias');
 const {loadMacroConditions}=require('./_macro_conditions_store');
@@ -127,6 +129,7 @@ const PUBLIC_ACTION_LIMITS = {
   setup_stats:          20,
   polymarket:           30,
   gdpnow:               10,
+  price_alerts:         60,
 };
 
 module.exports = async function handler(req, res) {
@@ -183,8 +186,9 @@ module.exports = async function handler(req, res) {
   if (action === 'friday_tighten')     return fridayTightenHandler(req, res);
   if (action === 'polymarket')         return polymarketHandler(req, res);
   if (action === 'push_subscribe_dev') return pushSubscribeDevHandler(req, res);
+  if (action === 'price_alerts')       return priceAlertsHandler(req, res);
   if (action === 'setup_log_archive')  return setupLogArchiveHandler(req, res);
-  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, ohlcv_dashboard, smart_bias, institution_views, statsnz_core, fso_core, prime_execution, setup_stats, setup_override, position_review, friday_tighten, polymarket, push_subscribe_dev, or setup_log_archive' });
+  return res.status(400).json({ error: 'Missing ?action= — use health, redis-keys, admin-prompts, push, inflation_staleness_check, fundamental_get, fundamental_seed, fundamental_refresh, fundamental_analysis, journal_import, circuit-reset, circuit-status, deepseek_balance, gdpnow, ohlcv_sync, ohlcv_read, ohlcv_chart, ohlcv_analyze, ohlcv_critic, ohlcv_dashboard, smart_bias, institution_views, statsnz_core, fso_core, prime_execution, setup_stats, setup_override, position_review, friday_tighten, polymarket, push_subscribe_dev, price_alerts, or setup_log_archive' });
 };
 
 // ── Shared Redis helper ────────────────────────────────────────────────────────
@@ -10261,3 +10265,55 @@ module.exports._detectSqueezeInversion = _detectSqueezeInversion;
 
 // Export internal untuk uji kontrak prompt tanpa membuat setup/entry produksi.
 module.exports._runAatasTwoCall = _runAatasTwoCall;
+
+// ── PLAN AJ: alert harga manual tab Teknikal ────────────────────────────────
+// Endpoint ini PUBLIK untuk aplikasi (dipanggil frontend tab Teknikal), jadi
+// pengamannya APP_KEY (requireAppKey di awal handler) + rate limit
+// PUBLIC_ACTION_LIMITS. Tanpa userId karena aplikasi ini single-operator: satu
+// daftar alert global. Read-modify-write dibungkus lock yang sama dengan daemon
+// supaya POST tidak bertabrakan dengan daemon yang menghapus alert setelah bunyi.
+async function priceAlertsHandler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  const lockKey = priceAlerts.PRICE_ALERTS_LOCK_KEY;
+
+  try {
+    if (req.method === 'GET') {
+      const alerts = await priceAlerts.getActiveAlerts(redisCmd);
+      const pair = req.query.pair ? priceAlerts.sanitizePair(req.query.pair) : null;
+      return res.status(200).json({ ok: true, alerts: pair ? alerts.filter(a => a.pair === pair) : alerts });
+    }
+
+    if (req.method === 'DELETE') {
+      const id = req.query.id;
+      if (!id) return res.status(400).json({ error: 'id wajib diisi' });
+      const gotLock = await _acquireLockWithRetry(lockKey);
+      if (!gotLock) return res.status(409).json({ error: 'daftar alert sedang ditulis proses lain, coba lagi sesaat lagi' });
+      try {
+        const result = await priceAlerts.removeActiveAlert(redisCmd, id);
+        if (!result.ok) return res.status(404).json({ error: result.error });
+        return res.status(200).json({ ok: true, removed: result.removed });
+      } finally { redisCmd('DEL', lockKey).catch(() => {}); }
+    }
+
+    if (req.method === 'POST') {
+      let body = '';
+      await new Promise(r => { req.on('data', c => body += c); req.on('end', r); });
+      let parsed;
+      try { parsed = JSON.parse(body || '{}'); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); }
+      const gotLock = await _acquireLockWithRetry(lockKey);
+      if (!gotLock) return res.status(409).json({ error: 'daftar alert sedang ditulis proses lain, coba lagi sesaat lagi' });
+      try {
+        const result = await priceAlerts.addActiveAlert(redisCmd, parsed, { now: Date.now() });
+        if (!result.ok) return res.status(400).json({ error: result.error });
+        return res.status(200).json({ ok: true, alert: result.alert });
+      } finally { redisCmd('DEL', lockKey).catch(() => {}); }
+    }
+
+    return res.status(405).json({ error: 'GET, POST, atau DELETE' });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}

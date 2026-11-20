@@ -11,12 +11,29 @@ FORMAT   : ## Changelog Session NNN (YYYY-MM-DD) — Judul   (sesi terbaru SELAL
 Entri yang melanggar = salah tempat, wajib dipindah.
 ```
 
-> **Last updated:** 2026-11-20 (Session 508 — Penarikan dokumen prompt trading manual)
+> **Last updated:** 2026-11-20 (Session 509 — Plan AJ: alert harga + mode fokus tab Teknikal)
 > **Branch:** main — semua perubahan deployed ke production
 > **Working directory:** `c:\Users\sam\Documents\kerja\Daun_Merah`
 > **Struktur dokumentasi:** mulai dari [peta dokumentasi](README.md); semua file `daun_merah*.md` berada di folder ini (dipindah dari root). Referensi khusus: [daun_merah_ai.md](daun_merah_ai.md) (pemakaian AI: fitur, provider, limit, estimasi frekuensi) dan [daun_merah_vendor.md](daun_merah_vendor.md) (inventaris vendor/layanan eksternal).
 
 **Catatan riset S365:** evaluasi set lima pair AATAS menyimpulkan pair saat ini sudah cukup untuk fase asisten entry. Perluas pair hanya setelah outcome bersih per pair dan kualitas sumber harga cukup; rinciannya di `professional_llm_trader/riset.md` S365.
+
+## Changelog Session 509 (2026-11-20) — Plan AJ: alert harga, mode fokus, dan pangkas M15 di tab Teknikal
+
+**Arahan.** Eksekusi Plan AJ (`daun_merah_plan.md`, lokal). Tujuannya bukan menambah alat analisa, tapi memutus kontak mata dengan candle live: trader memasang level, chart boleh disembunyikan, dan notifikasi datang lewat Telegram. Empat bagian: Quick-Alert Bar, mode fokus, penghapusan M15, peringatan XAU/USD. Gerbang/filter makro di tab Teknikal tetap tidak ditambahkan (keputusan user di plan).
+
+**Perubahan teknis.**
+1. `api/_price_alerts.js` (baru): validasi input (pair FX 6 huruf atau XAUUSD, target positif, arah `touch`/`cross_up`/`cross_down`, catatan maksimal 120 karakter), pembulatan desimal per instrumen (FX 5, JPY 3, XAU 2), deduplikasi pair+arah+level berimpit (<0,5 pip), batas 6 alert per pair dan 40 total, serta I/O key Redis tunggal `price_alerts:active`.
+2. `api/admin.js`: `?action=price_alerts` (GET daftar, POST tambah, DELETE batal) numpang di function existing sesuai batas 12/12 slot, rate limit publik 60/menit, read-modify-write dibungkus lock `lock:price_alerts_write` supaya tidak bertabrakan dengan daemon yang menghapus alert setelah bunyi.
+3. `vps/daemon.js`: memantau alert dari WS Deriv yang sudah ada, kirim Telegram tanpa emoji, lalu menghapus alert yang sudah bunyi. Cache daftar 10 detik (bukan GET per tick, semangat budget Q-2), evaluasi dilewati saat pasar tutup atau Redis degraded, langganan tick hanya hidup selama ada alert terkait, dan `/status` menambah `price_alerts: {active, tick_subs}`.
+4. `index.html`: opsi M15 dihapus (sisa D1/H4/H1, nilai sisa `'15'` dipaksa H4), bar alert + chip daftar alert + pesan status, banner peringatan XAU/USD, kartu mode fokus (chart hanya `display:none`, iframe TradingView tidak dibuang agar gambar analisa user selamat), status fokus disimpan di `sessionStorage`. `APP_VERSION` naik ke `2026.11.20.1` bersama `sw.js` (lockstep).
+5. `test/admin/price_alerts.test.js` dan `test/vps/price_alerts_daemon.test.js`: 31 test baru.
+
+**Keputusan sumber harga (hasil uji live, 2026-11-20).** Subscribe tick per symbol ke `wss://api.derivws.com/.../public` membuktikan hanya 24 dari 29 instrumen tab Teknikal yang tersedia di feed itu: `frxNZDCAD`, `frxNZDCHF`, `frxCADCHF`, `frxCADJPY` dibalas `InvalidSymbol` (padahal simbol itu ada di platform Deriv). Karena itu harga alert disusun berlapis: (a) 14 pair yang sudah dialirkan candle Q-3 dipakai langsung tanpa langganan tambahan, (b) 10 pair bersimbol Deriv tapi tanpa candle dilanggan tick on-demand, (c) 4 pair sisa dihitung silang lewat leg USD yang sudah live (mis. NZDCAD = NZDUSD x USDCAD), (d) Yahoo (`pair=X`) tiap 60 detik hanya untuk alert yang belum bisa dihargai — dicek live bahwa keempat pair itu tersedia di Yahoo (NZDCAD 0,7860; NZDCHF 0,4606; CADCHF 0,5860; CADJPY 110,825). Harga yang lebih tua dari 3 menit tidak dipakai agar tidak memicu alert dari level basi.
+
+**Uji.** `npm test` 1.711/1.711 lulus (termasuk 31 test baru). Satu bug tertangkap test saat menulis: `Number(null)` = 0 membuat sampel harga pertama dianggap harga 0 sehingga setiap alert `cross_up` bunyi palsu — diperbaiki dengan penjagaan `null`/string kosong eksplisit pada evaluasi maupun teks "dari bawah/atas". Verifikasi DOM di halaman nyata (server statis lokal, backend tidak tersedia): dropdown hanya D1/H4/H1, banner XAU tampil di XAU/USD dan hilang di pair lain, bar alert mati untuk BTCUSD, mode fokus menyembunyikan chart (`display:none`), memulihkannya saat dimatikan, serta chip alert dan teks kartu fokus tampil benar.
+
+**Belum diverifikasi.** Alur POST/GET/DELETE ke Redis produksi (butuh deploy + kredensial), eksekusi tick daemon ke Telegram di Railway, dan tampilan di perangkat mobile. Pemeriksaan produksi setelah deploy menyusul di entri lanjutan bila dilakukan.
 
 ## Changelog Session 508 (2026-11-20) — Penarikan dokumen prompt trading manual
 

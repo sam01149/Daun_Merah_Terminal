@@ -2604,6 +2604,53 @@ body.light-theme .cal-date-input { color-scheme: light; }
   color: var(--muted); font: 11px 'DM Mono',monospace; background: var(--surface);
   border-bottom: 1px solid var(--border); flex-direction: column; gap: 8px;
 }
+/* PLAN AJ — peringatan pair, bar alert harga, dan kartu mode fokus. */
+.tek-xau-warning {
+  border-bottom: 1px solid var(--red); background: rgba(168,50,38,.08);
+  padding: 8px 14px; flex-shrink: 0;
+}
+.tek-xau-warning-title { font: 700 9px 'Syne',sans-serif; color: var(--red); letter-spacing: .1em; }
+.tek-xau-warning-body { font: 10px 'DM Mono',monospace; color: var(--text-mid); line-height: 1.6; margin-top: 4px; }
+.tek-alert-bar { border-bottom: 1px solid var(--border); background: var(--surface); padding: 8px 14px 9px; flex-shrink: 0; }
+.tek-alert-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tek-alert-row + .tek-alert-row { margin-top: 6px; }
+.tek-alert-input, .tek-alert-select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
+  padding: 6px 8px; font: 11px 'DM Mono',monospace; outline: none;
+}
+.tek-alert-input { width: 118px; }
+.tek-alert-note { width: 210px; flex: 1 1 160px; }
+.tek-alert-input:disabled, .tek-alert-select:disabled { opacity: .45; }
+.tek-alert-btn {
+  background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 5px;
+  padding: 6px 10px; font: 700 9px 'DM Mono',monospace; letter-spacing: .05em; cursor: pointer;
+}
+.tek-alert-btn:hover { border-color: var(--green); }
+.tek-alert-btn-focus { border-color: var(--green); color: var(--green); }
+.tek-alert-btn-ghost { color: var(--muted); }
+.tek-alert-btn:disabled { opacity: .45; cursor: default; }
+.tek-alert-msg { font: 10px 'DM Mono',monospace; color: var(--muted); flex: 1 1 100%; }
+.tek-alert-msg.error { color: var(--red); }
+.tek-alert-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.tek-alert-chip {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 12px;
+  padding: 3px 8px; font: 10px 'DM Mono',monospace; color: var(--text);
+}
+.tek-alert-chip-price { font-weight: 700; }
+.tek-alert-chip-dir { color: var(--muted); }
+.tek-alert-chip-note { color: var(--text-mid); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tek-alert-chip-del {
+  background: transparent; border: none; color: var(--muted); cursor: pointer;
+  font: 10px 'DM Mono',monospace; padding: 0;
+}
+.tek-alert-chip-del:hover { color: var(--red); }
+.tek-focus-card {
+  border-bottom: 1px solid var(--border); background: var(--surface);
+  padding: 22px 18px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
+  flex-shrink: 0;
+}
+.tek-focus-title { font: 700 10px 'Syne',sans-serif; color: var(--green); letter-spacing: .12em; }
+.tek-focus-body { font: 11px 'DM Mono',monospace; color: var(--text-mid); line-height: 1.7; max-width: 520px; }
 .tek-mtf-section { padding: 14px 14px 10px; }
 .tek-prime-panel { border-bottom: 1px solid var(--border); padding: 0 14px; background: var(--surface); flex-shrink: 0; }
 .tek-prime-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0 7px; border-bottom:1px solid rgba(var(--fg-rgb),.06); }
@@ -4521,10 +4568,36 @@ body:not(.light-theme) .ringkasan-gen-btn {
       <option value="D">D1</option>
       <option value="240" selected>H4</option>
       <option value="60">H1</option>
-      <option value="15">M15</option>
     </select>
   </div>
-  <div class="tek-chart-wrap">
+  <div id="tekXauWarning" class="tek-xau-warning" style="display:none">
+    <div class="tek-xau-warning-title">PERINGATAN: PAIR RISIKO TINGGI DAN NOISE</div>
+    <div class="tek-xau-warning-body">XAU/USD memiliki volatilitas tinggi dan rentan pergerakan acak (stop-hunt). Gunakan timeframe besar (H4/D1) dan delegasikan pemantauan ke Alert Harga.</div>
+  </div>
+  <div id="tekAlertBar" class="tek-alert-bar">
+    <div class="tek-alert-row">
+      <input id="tekAlertPrice" class="tek-alert-input" type="text" inputmode="decimal" placeholder="Level harga" autocomplete="off">
+      <select id="tekAlertDir" class="tek-alert-select">
+        <option value="touch">Sentuh</option>
+        <option value="cross_up">Tembus Naik</option>
+        <option value="cross_down">Tembus Turun</option>
+      </select>
+      <input id="tekAlertNote" class="tek-alert-input tek-alert-note" type="text" maxlength="120" placeholder="Catatan setup (opsional)" autocomplete="off">
+    </div>
+    <div class="tek-alert-row tek-alert-actions">
+      <button type="button" class="tek-alert-btn" id="tekAlertSubmit" onclick="submitTekAlert(false)">+ Pasang Alert</button>
+      <button type="button" class="tek-alert-btn tek-alert-btn-focus" id="tekAlertSubmitFocus" onclick="submitTekAlert(true)">Pasang &amp; Mode Fokus</button>
+      <button type="button" class="tek-alert-btn tek-alert-btn-ghost" id="tekFocusToggleBtn" onclick="toggleTekFocusMode()">Mode Fokus</button>
+      <span class="tek-alert-msg" id="tekAlertMsg"></span>
+    </div>
+    <div class="tek-alert-chips" id="tekAlertChips"></div>
+  </div>
+  <div id="tekFocusCard" class="tek-focus-card" style="display:none">
+    <div class="tek-focus-title">MODE FOKUS AKTIF</div>
+    <div class="tek-focus-body" id="tekFocusBody"></div>
+    <button type="button" class="tek-alert-btn" onclick="toggleTekFocusMode(false)">Buka Kembali Chart</button>
+  </div>
+  <div class="tek-chart-wrap" id="tekChartWrap">
     <div id="tekChartContainer"></div>
   </div>
   <div class="tek-event-strip" id="tekEventStrip" style="display:none"></div>
@@ -4940,7 +5013,7 @@ window.addEventListener('DOMContentLoaded', () => _updateNewsLangBtn());
 
 // Stempel versi terlihat — naikkan tiap kali ada perubahan fungsional, supaya
 // gampang konfirmasi user sedang pakai build mana (lihat daun_merah.md insiden versi-lama PWA).
-const APP_VERSION = '2026.11.19.1';
+const APP_VERSION = '2026.11.20.1';
 const FETCH_URL = '/api/feeds?type=rss';
 
 // Session 158: tabel keyword & logika kategori pindah SELURUHNYA ke /newscat.js
@@ -18124,6 +18197,14 @@ function selectTekPair(p) {
   if (corrData) renderCorrelations(); // tabel korelasi kontekstual ikut pair aktif
   fetchTekRange();
   renderTekPosisiBias();
+  // PLAN AJ: pair baru = konteks baru. Peringatan XAU dan daftar alert ikut pair,
+  // dan mode fokus ditutup kalau dipasang untuk pair yang berbeda.
+  updateTekXauWarning();
+  updateTekAlertAvailability();
+  if (tekFocus && tekFocus.pair !== p) { tekFocus = null; _saveTekFocus(); }
+  if (tekAlertSupported(p)) fetchTekAlerts(true);
+  else { tekAlerts = []; renderTekAlerts(); }
+  renderTekFocusMode();
 }
 
 // ── ANALISA pair list — dikelola user (tambah "+" / hapus "-"), persist ke ────
@@ -18264,11 +18345,213 @@ function onTekTFChange() {
 
 function syncTekPairTimeframe() {
   const tf = document.getElementById('tekTFSelect');
+  // PLAN AJ: M15 dihapus dari tab Teknikal. Nilai sisa dari sesi/browser lama
+  // (atau sisa kode lain yang masih menyetel '15') dipaksa balik ke H4 supaya
+  // dropdown tidak pernah menunjuk opsi yang sudah tidak ada.
+  if (!['D', '240', '60'].includes(String(tekTF))) tekTF = '240';
   const desired = TEK_YIELD_INSTRUMENTS.includes(tekPair) ? 'D' : '240';
   if (tekTF === desired && (!tf || tf.value === desired)) return false;
   tekTF = desired;
   if (tf) tf.value = desired;
   return true;
+}
+
+// ── PLAN AJ: alert harga + mode fokus (intervensi perilaku tab TEKNIKAL) ──────
+// Tujuan fiturnya bukan menambah alat analisa, tapi MEMUTUS kontak mata dengan
+// candle live: trader memasang level, chart boleh ditutup, dan notifikasi datang
+// lewat Telegram. Karena itu alert disimpan di server (Redis) lalu dieksekusi
+// daemon Railway, bukan timer di browser yang mati saat tab ditutup.
+const TEK_ALERT_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CAD', 'CHF'];
+const TEK_FOCUS_KEY = 'tek_focus_mode';
+let tekAlerts = [];
+let tekAlertsInFlight = null;
+let tekFocus = null; // { pair, target, direction } — null = chart tampil normal
+
+function tekAlertSupported(pair) {
+  if (pair === 'XAUUSD') return true;
+  if (typeof pair !== 'string' || pair.length !== 6) return false;
+  return TEK_ALERT_CURRENCIES.includes(pair.slice(0, 3)) && TEK_ALERT_CURRENCIES.includes(pair.slice(3));
+}
+
+function tekAlertDecimals(pair) {
+  if (pair === 'XAUUSD') return 2;
+  return String(pair).slice(3) === 'JPY' ? 3 : 5;
+}
+
+function tekAlertDirLabel(dir) {
+  if (dir === 'cross_up') return 'Tembus Naik';
+  if (dir === 'cross_down') return 'Tembus Turun';
+  return 'Sentuh';
+}
+
+function setTekAlertMsg(text, isError) {
+  const el = document.getElementById('tekAlertMsg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('error', !!isError);
+}
+
+function updateTekAlertAvailability() {
+  const supported = tekAlertSupported(tekPair);
+  const bar = document.getElementById('tekAlertBar');
+  if (!bar) return;
+  bar.style.display = supported ? '' : 'none';
+  const ids = ['tekAlertPrice', 'tekAlertDir', 'tekAlertNote', 'tekAlertSubmit', 'tekAlertSubmitFocus'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !supported; });
+}
+
+function updateTekXauWarning() {
+  const el = document.getElementById('tekXauWarning');
+  if (!el) return;
+  el.style.display = tekPair === 'XAUUSD' ? '' : 'none';
+}
+
+function _loadTekFocus() {
+  try {
+    const raw = sessionStorage.getItem(TEK_FOCUS_KEY);
+    tekFocus = raw ? JSON.parse(raw) : null;
+  } catch(e) { tekFocus = null; }
+  if (!tekFocus || typeof tekFocus !== 'object' || !tekFocus.pair) tekFocus = null;
+}
+
+function _saveTekFocus() {
+  try {
+    if (tekFocus) sessionStorage.setItem(TEK_FOCUS_KEY, JSON.stringify(tekFocus));
+    else sessionStorage.removeItem(TEK_FOCUS_KEY);
+  } catch(e) { /* mode privat / storage penuh — mode fokus tetap jalan di sesi ini */ }
+}
+
+function toggleTekFocusMode(force) {
+  const next = typeof force === 'boolean' ? force : !tekFocus;
+  if (next) {
+    const target = tekAlerts.length ? tekAlerts[0] : null;
+    tekFocus = {
+      pair: tekPair,
+      target: target ? target.target_price : null,
+      direction: target ? (target.direction || 'touch') : null,
+    };
+  } else {
+    tekFocus = null;
+  }
+  _saveTekFocus();
+  renderTekFocusMode();
+}
+
+// Chart TradingView hanya disembunyikan (display:none), TIDAK dibuang dari DOM:
+// garis analisa yang digambar user hidup di dalam iframe dan hilang kalau
+// container dikosongkan (alasan yang sama dengan komentar createTVChart).
+function renderTekFocusMode() {
+  const card = document.getElementById('tekFocusCard');
+  const wrap = document.getElementById('tekChartWrap');
+  const btn = document.getElementById('tekFocusToggleBtn');
+  if (!card || !wrap) return;
+  const active = !!(tekFocus && tekFocus.pair === tekPair);
+  card.style.display = active ? 'flex' : 'none';
+  wrap.style.display = active ? 'none' : '';
+  if (btn) btn.textContent = active ? 'Kembali ke Chart' : 'Mode Fokus';
+  if (!active) return;
+  const body = document.getElementById('tekFocusBody');
+  if (!body) return;
+  const label = tekPairLabel(tekPair);
+  const target = tekFocus.target != null
+    ? ` pada level ${Number(tekFocus.target).toFixed(tekAlertDecimals(tekPair))}`
+    : '';
+  body.textContent = `Alert aktif${target ? ` di ${label}${target}` : ` di ${label}`} (${tekAlertDirLabel(tekFocus.direction)}). Chart disembunyikan agar Anda terlepas dari dorongan stimulus visual. Sistem akan mengirim notifikasi Telegram begitu level tersentuh — Anda tidak perlu menatap candle.`;
+}
+
+function renderTekAlerts() {
+  const el = document.getElementById('tekAlertChips');
+  if (!el) return;
+  if (!tekAlerts.length) {
+    el.innerHTML = '<span class="tek-alert-msg">Belum ada alert aktif untuk pair ini.</span>';
+    return;
+  }
+  el.innerHTML = tekAlerts.map(a => {
+    const price = Number(a.target_price).toFixed(tekAlertDecimals(a.pair));
+    const note = a.note ? `<span class="tek-alert-chip-note">${escHtml(a.note)}</span>` : '';
+    return `<span class="tek-alert-chip">`
+      + `<span class="tek-alert-chip-price">${escHtml(price)}</span>`
+      + `<span class="tek-alert-chip-dir">${tekAlertDirLabel(a.direction)}</span>`
+      + note
+      + `<button type="button" class="tek-alert-chip-del" onclick="deleteTekAlert('${escHtml(a.id)}')" title="Batalkan alert">Batal</button>`
+      + `</span>`;
+  }).join('');
+}
+
+async function fetchTekAlerts(force) {
+  if (tekAlertsInFlight && !force) return tekAlertsInFlight;
+  const pair = tekPair;
+  const p = (async () => {
+    try {
+      const r = await fetch(`/api/admin?action=price_alerts&pair=${encodeURIComponent(pair)}`, { signal: AbortSignal.timeout(12000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      if (pair !== tekPair) return tekAlerts; // pair sudah berganti saat menunggu
+      tekAlerts = Array.isArray(data.alerts) ? data.alerts : [];
+    } catch(e) {
+      console.warn('fetchTekAlerts gagal:', e.message);
+    }
+    tekAlertsInFlight = null;
+    renderTekAlerts();
+    renderTekFocusMode();
+    return tekAlerts;
+  })();
+  tekAlertsInFlight = p;
+  return p;
+}
+
+async function submitTekAlert(withFocus) {
+  if (!tekAlertSupported(tekPair)) { setTekAlertMsg('Alert harga hanya tersedia untuk pair FX dan XAU/USD.', true); return; }
+  const priceEl = document.getElementById('tekAlertPrice');
+  const dirEl = document.getElementById('tekAlertDir');
+  const noteEl = document.getElementById('tekAlertNote');
+  const raw = String((priceEl && priceEl.value) || '').trim().replace(',', '.');
+  const value = Number(raw);
+  if (!raw || !Number.isFinite(value) || value <= 0) {
+    setTekAlertMsg('Isi level harga dengan angka positif, mis. 1.0850.', true);
+    if (priceEl) priceEl.focus();
+    return;
+  }
+  setTekAlertMsg('Memasang alert...', false);
+  try {
+    const r = await fetch('/api/admin?action=price_alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pair: tekPair,
+        target_price: value,
+        direction: dirEl ? dirEl.value : 'touch',
+        note: noteEl ? noteEl.value : '',
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    if (priceEl) priceEl.value = '';
+    if (noteEl) noteEl.value = '';
+    setTekAlertMsg('Alert terpasang. Notifikasi dikirim ke Telegram saat level tersentuh.', false);
+    await fetchTekAlerts(true);
+    if (withFocus) toggleTekFocusMode(true);
+  } catch(e) {
+    setTekAlertMsg('Gagal memasang alert: ' + e.message, true);
+  }
+}
+
+async function deleteTekAlert(id) {
+  if (!id) return;
+  setTekAlertMsg('Membatalkan alert...', false);
+  try {
+    const r = await fetch(`/api/admin?action=price_alerts&id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(12000),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    setTekAlertMsg('Alert dibatalkan.', false);
+    await fetchTekAlerts(true);
+  } catch(e) {
+    setTekAlertMsg('Gagal membatalkan alert: ' + e.message, true);
+  }
 }
 
 // ── Option Expiries (TEK tab) ─────────────────────────────────────────────────
@@ -18622,6 +18905,13 @@ function initTeknikal() {
   fetchTekRange();
   renderTekPosisiBias(); // render dulu pakai cache yang ada, lalu refresh kalau data COT/retail/CB stale
   ckFetchDataIfNeeded().then(renderTekPosisiBias);
+  // PLAN AJ: peringatan XAU, bar alert, dan mode fokus ikut dipulihkan saat tab dibuka.
+  _loadTekFocus();
+  updateTekXauWarning();
+  updateTekAlertAvailability();
+  if (tekAlertSupported(tekPair)) fetchTekAlerts();
+  else { tekAlerts = []; renderTekAlerts(); }
+  renderTekFocusMode();
 }
 
 // US10Y nominal + real yield — driver utama Gold (inverse correlation), konteks makro untuk pair USD lain.
